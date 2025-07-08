@@ -1,133 +1,94 @@
-"use client";
+"use client"
 
-import { useEffect, useRef, useState } from 'react';
-import * as THREE from 'three';
+import { useRaycastVehicle } from '@react-three/cannon';
+import { useFrame, useLoader } from '@react-three/fiber';
+import { useEffect, useRef } from 'react';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
-import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
+import { useControls } from '@/hooks/use-mobile';
+import { useStore } from '@/hooks/use-toast';
+import { vehicleConfig, wheelInfos } from '@/lib/utils';
+import type { Group, Mesh } from 'three';
+import { Quaternion, Vector3 } from 'three';
 
-export function VehicleScene() {
-    const mountRef = useRef<HTMLDivElement>(null);
-    const [loading, setLoading] = useState(true);
-    const [error, setError] = useState<string | null>(null);
+export function Vehicle() {
+  const controls = useControls();
+  const setSpeed = useStore((state) => state.setSpeed);
+  
+  const chassisRef = useRef<Group>(null!);
+  
+  const gltf = useLoader(GLTFLoader, 'https://tuomashatakka.github.io/public/resources/models/vehicles/honda_s2000_gt_ap2/scene.gltf');
+  
+  const wheelRefs: React.MutableRefObject<any>[] = [useRef(), useRef(), useRef(), useRef()];
 
-    useEffect(() => {
-        if (!mountRef.current) return;
+  const [vehicle, api] = useRaycastVehicle(() => ({
+    chassisBody: chassisRef,
+    wheels: wheelRefs,
+    wheelInfos,
+    indexForwardAxis: 2,
+    indexRightAxis: 0,
+    indexUpAxis: 1,
+  }));
 
-        const currentMount = mountRef.current;
-        let animationFrameId: number;
+  useEffect(() => {
+    if (gltf.scene) {
+      gltf.scene.traverse((child) => {
+        if ((child as Mesh).isMesh) {
+          child.castShadow = true;
+        }
+      });
+    }
+  }, [gltf]);
 
-        const scene = new THREE.Scene();
-        const camera = new THREE.PerspectiveCamera(50, currentMount.clientWidth / currentMount.clientHeight, 0.1, 1000);
-        camera.position.set(5, 2, 5);
+  useFrame((state, delta) => {
+    if (!vehicle.current) return;
+    
+    const { force, steer, maxBrake } = vehicleConfig;
+    
+    const engineForce = controls.forward ? -force : controls.backward ? force : 0;
+    api.applyEngineForce(engineForce, 2);
+    api.applyEngineForce(engineForce, 3);
+    
+    const steerValue = controls.left ? steer : controls.right ? -steer : 0;
+    api.setSteeringValue(steerValue, 0);
+    api.setSteeringValue(steerValue, 1);
+    
+    api.setBrake(controls.brake ? maxBrake : 0, 0);
+    api.setBrake(controls.brake ? maxBrake : 0, 1);
+    api.setBrake(controls.brake ? maxBrake : 0, 2);
+    api.setBrake(controls.brake ? maxBrake : 0, 3);
+    
+    if (controls.reset) {
+      api.chassis.position.set(0, 2, 0);
+      api.chassis.velocity.set(0, 0, 0);
+      api.chassis.angularVelocity.set(0, 0, 0);
+      api.chassis.quaternion.set(0, 0, 0, 1);
+    }
 
-        const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
-        renderer.setSize(currentMount.clientWidth, currentMount.clientHeight);
-        renderer.setPixelRatio(window.devicePixelRatio);
-        renderer.toneMapping = THREE.ACESFilmicToneMapping;
-        renderer.outputColorSpace = THREE.SRGBColorSpace;
-        currentMount.appendChild(renderer.domElement);
+    const speed = vehicle.current.getVehicleSpeed();
+    setSpeed(speed);
 
-        const controls = new OrbitControls(camera, renderer.domElement);
-        controls.enableDamping = true;
-        controls.dampingFactor = 0.05;
-        controls.minDistance = 3;
-        controls.maxDistance = 10;
-        controls.target.set(0, 0.5, 0);
-        controls.autoRotate = true;
-        controls.autoRotateSpeed = 0.5;
+    const vehiclePosition = new Vector3();
+    const vehicleQuaternion = new Quaternion();
+    chassisRef.current.getWorldPosition(vehiclePosition);
+    chassisRef.current.getWorldQuaternion(vehicleQuaternion);
+    
+    const cameraOffset = new Vector3(0, 4.5, 9);
+    cameraOffset.applyQuaternion(vehicleQuaternion);
+    cameraOffset.add(vehiclePosition);
 
-        const ambientLight = new THREE.AmbientLight(0xffffff, 0.5);
-        scene.add(ambientLight);
-        
-        const directionalLight = new THREE.DirectionalLight(0xffffff, 3);
-        directionalLight.position.set(5, 10, 7.5);
-        scene.add(directionalLight);
-        
-        const hemisphereLight = new THREE.HemisphereLight(0xBE63FF, 0xFF63B4, 1);
-        scene.add(hemisphereLight);
+    state.camera.position.lerp(cameraOffset, delta * 4);
+    state.camera.lookAt(vehiclePosition);
+  });
 
-        const groundGeometry = new THREE.PlaneGeometry(20, 20);
-        const groundMaterial = new THREE.ShadowMaterial({ opacity: 0.3 });
-        const groundPlane = new THREE.Mesh(groundGeometry, groundMaterial);
-        groundPlane.rotation.x = -Math.PI / 2;
-        groundPlane.position.y = 0;
-        scene.add(groundPlane);
-
-        const loader = new GLTFLoader();
-        loader.load(
-            'https://tuomashatakka.github.io/public/resources/models/vehicles/honda_s2000_gt_ap2/scene.gltf',
-            (gltf) => {
-                const model = gltf.scene;
-                
-                const box = new THREE.Box3().setFromObject(model);
-                const center = box.getCenter(new THREE.Vector3());
-                const size = box.getSize(new THREE.Vector3());
-                
-                const maxDim = Math.max(size.x, size.y, size.z);
-                const scale = 3 / maxDim;
-                model.scale.set(scale, scale, scale);
-                
-                const newBox = new THREE.Box3().setFromObject(model);
-                const newCenter = newBox.getCenter(new THREE.Vector3());
-                const newSize = newBox.getSize(new THREE.Vector3());
-
-                model.position.sub(newCenter);
-                model.position.y += newSize.y / 2;
-
-                scene.add(model);
-                setLoading(false);
-            },
-            undefined, 
-            (err) => {
-                console.error('An error happened during model loading:', err);
-                setError('Failed to load vehicle model.');
-                setLoading(false);
-            }
-        );
-
-        const handleResize = () => {
-            if (!currentMount) return;
-            camera.aspect = currentMount.clientWidth / currentMount.clientHeight;
-            camera.updateProjectionMatrix();
-            renderer.setSize(currentMount.clientWidth, currentMount.clientHeight);
-        };
-        window.addEventListener('resize', handleResize);
-
-        const animate = () => {
-            animationFrameId = requestAnimationFrame(animate);
-            controls.update();
-            renderer.render(scene, camera);
-        };
-        animate();
-
-        return () => {
-            window.removeEventListener('resize', handleResize);
-            cancelAnimationFrame(animationFrameId);
-            if (currentMount) {
-                currentMount.removeChild(renderer.domElement);
-            }
-            scene.traverse(object => {
-                if (object instanceof THREE.Mesh) {
-                    object.geometry.dispose();
-                    if (Array.isArray(object.material)) {
-                        object.material.forEach(material => material.dispose());
-                    } else {
-                        object.material.dispose();
-                    }
-                }
-            });
-        };
-    }, []);
-
-    return (
-        <div ref={mountRef} className="h-full w-full">
-            {(loading || error) && (
-                 <div className="absolute inset-0 flex items-center justify-center bg-background/50">
-                     <p className="text-xl font-headline text-foreground">
-                         {loading ? "Loading 3D Scene..." : error}
-                     </p>
-                 </div>
-            )}
-        </div>
-    );
+  return (
+    <group ref={vehicle}>
+      <group ref={chassisRef}>
+        <primitive object={gltf.scene} rotation={[0, Math.PI, 0]} position={[0, -0.38, 0]}/>
+      </group>
+      {/* Wheels are physically present but not rendered; raycast handles them */}
+      {wheelInfos.map((wheel, index) => (
+        <group key={index} ref={wheelRefs[index]}></group>
+      ))}
+    </group>
+  );
 }

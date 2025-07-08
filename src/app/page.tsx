@@ -1,17 +1,42 @@
-import { AftertouchControlPanel } from '@/components/aftertouch-control-panel';
-import { GameHud } from '@/components/game-hud';
-import { VehicleScene } from '@/components/vehicle-scene';
+"use client";
+
+import { Suspense } from 'react';
+import { Canvas } from '@react-three/fiber';
+import { Physics } from '@react-three/cannon';
+import { Sky } from '@react-three/drei';
+import { Vehicle } from '@/components/vehicle-scene';
+import { Ground } from '@/components/game-hud';
+import { GameUI } from '@/components/aftertouch-control-panel';
+import { EffectComposer, Bloom } from '@react-three/postprocessing';
 
 export default function Home() {
   return (
-    <main className="relative min-h-screen w-full bg-background text-foreground overflow-hidden">
-      <div className="absolute inset-0">
-        <VehicleScene />
-      </div>
-      <GameHud />
-      <div className="relative flex min-h-screen w-full flex-col items-center justify-center p-4 md:items-end md:justify-end md:p-8">
-        <AftertouchControlPanel />
-      </div>
-    </main>
+    <>
+      <Canvas shadows>
+        <Suspense fallback={null}>
+          <ambientLight intensity={0.5} />
+          <directionalLight
+            position={[10, 10, 5]}
+            intensity={1.5}
+            castShadow
+            shadow-mapSize-width={2048}
+            shadow-mapSize-height={2048}
+          />
+          <Sky sunPosition={[100, 10, 100]} />
+          <Physics
+            broadphase="SAP"
+            gravity={[0, -9.81, 0]}
+            defaultContactMaterial={{ friction: 0, restitution: 0.1 }}
+          >
+            <Ground />
+            <Vehicle />
+          </Physics>
+           <EffectComposer>
+            <Bloom luminanceThreshold={0.7} luminanceSmoothing={0.9} height={300} />
+          </EffectComposer>
+        </Suspense>
+      </Canvas>
+      <GameUI />
+    </>
   );
 }
