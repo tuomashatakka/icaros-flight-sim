@@ -31,9 +31,10 @@ export function Vehicle() {
   }));
 
   useEffect(() => {
+    if (!api?.chassis) return;
     const unsubscribe = api.chassis.velocity.subscribe((v) => (velocity.current = v));
     return unsubscribe;
-  }, [api]);
+  }, [api.chassis]);
 
   useEffect(() => {
     if (gltf.scene) {
@@ -46,7 +47,7 @@ export function Vehicle() {
   }, [gltf]);
 
   useFrame((state, delta) => {
-    if (!vehicle.current) return;
+    if (!vehicle.current || !api?.chassis) return;
     
     const { force, steer, maxBrake } = vehicleConfig;
     
