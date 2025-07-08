@@ -18,14 +18,15 @@ export function Vehicle() {
 
   const gltf = useLoader(GLTFLoader, 'https://tuomashatakka.github.io/public/resources/models/vehicles/honda_s2000_gt_ap2/scene.gltf');
 
+  const chassisRef = useRef<Group>(null!);
   const wheelRefs: React.MutableRefObject<any>[] = [useRef(), useRef(), useRef(), useRef()];
 
-  const [chassisRef, chassisApi] = useBox(() => ({
+  const [, chassisApi] = useBox(() => ({
     mass: 150,
     args: [vehicleConfig.width, 1, vehicleConfig.front * 2],
     position: [0, 1, 0],
     angularDamping: 0.95,
-  }), useRef<Group>(null!));
+  }), chassisRef);
 
   const [vehicle, api] = useRaycastVehicle(() => ({
     chassisBody: chassisRef,
