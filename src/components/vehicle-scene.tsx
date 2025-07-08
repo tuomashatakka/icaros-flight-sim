@@ -15,6 +15,7 @@ export function Vehicle() {
   const setSpeed = useStore((state) => state.setSpeed);
   
   const chassisRef = useRef<Group>(null!);
+  const velocity = useRef([0, 0, 0]);
   
   const gltf = useLoader(GLTFLoader, 'https://tuomashatakka.github.io/public/resources/models/vehicles/honda_s2000_gt_ap2/scene.gltf');
   
@@ -28,6 +29,11 @@ export function Vehicle() {
     indexRightAxis: 0,
     indexUpAxis: 1,
   }));
+
+  useEffect(() => {
+    const unsubscribe = api.chassis.velocity.subscribe((v) => (velocity.current = v));
+    return unsubscribe;
+  }, [api]);
 
   useEffect(() => {
     if (gltf.scene) {
@@ -64,7 +70,7 @@ export function Vehicle() {
       api.chassis.quaternion.set(0, 0, 0, 1);
     }
 
-    const speed = vehicle.current.getVehicleSpeed();
+    const speed = new Vector3(...velocity.current).length();
     setSpeed(speed);
 
     const vehiclePosition = new Vector3();
