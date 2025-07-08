@@ -2,16 +2,16 @@
 import { usePlane } from '@react-three/cannon';
 import { MeshReflectorMaterial } from '@react-three/drei';
 
-export function Ground() {
+export function Track() {
   const [ref] = usePlane(() => ({
     type: 'Static',
     rotation: [-Math.PI / 2, 0, 0],
-    material: { friction: 0.5 }
+    material: { friction: 0.01 }
   }));
 
   return (
     <mesh ref={ref} receiveShadow>
-      <planeGeometry args={[200, 200]} />
+      <planeGeometry args={[500, 500]} />
        <MeshReflectorMaterial
         color="#333"
         blur={[400, 400]}
