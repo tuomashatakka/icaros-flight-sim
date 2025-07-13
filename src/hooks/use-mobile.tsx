@@ -14,7 +14,14 @@ export type Controls = {
 };
 
 export const useControls = (): Controls => {
-  const [controls, setControls] = useState<Controls>({});
+  const [controls, setControls] = useState<Controls>({
+    forward: false,
+    backward: false,
+    left: false,
+    right: false,
+    brake: false,
+    reset: false,
+  });
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {

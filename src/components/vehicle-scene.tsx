@@ -24,6 +24,7 @@ export function Vehicle() {
       position: [0, 1, 0],
       angularDamping: 0.95,
     }),
+    useRef<Group>(null)
   );
 
   const wheelRefs: React.MutableRefObject<any>[] = [useRef(), useRef(), useRef(), useRef()];
