@@ -11,7 +11,7 @@ import { vehicleConfig, wheelInfos } from '@/lib/utils';
 import type { Object3D } from 'three';
 import { Quaternion, Vector3, Group } from 'three';
 
-const Wheel = forwardRef<Group, { wheelRef: React.RefObject<Object3D> }>(({ wheelRef }, ref) => {
+const Wheel = forwardRef<Group>((props, ref) => {
   const wheelGltf = useLoader(GLTFLoader, 'https://tuomashatakka.github.io/public/resources/models/vehicles/vorsteiner_v-ff109/scene.gltf');
   
   useEffect(() => {
@@ -26,7 +26,7 @@ const Wheel = forwardRef<Group, { wheelRef: React.RefObject<Object3D> }>(({ whee
   }, [wheelGltf]);
 
   return (
-    <group ref={wheelRef}>
+    <group ref={ref}>
       <primitive object={wheelGltf.scene.clone()} rotation={[0, -Math.PI / 2, 0]} scale={0.08} />
     </group>
   );
@@ -39,22 +39,22 @@ export function Vehicle() {
   const setSpeed = useStore((state) => state.setSpeed);
   
   const carGltf = useLoader(GLTFLoader, 'https://tuomashatakka.github.io/public/resources/models/vehicles/honda_s2000_gt_ap2/scene.gltf');
+  
+  const vehicleRef = useRef<Object3D>(null);
+  const wheelRefs = [useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null)];
 
-  const [chassisRef, chassisApi] = useBox(
+  const [, chassisApi] = useBox(
     () => ({
       mass: 150,
       position: [0, 2, 0],
-      rotation: [0, Math.PI, 0], 
       angularDamping: 0.5,
       args: [vehicleConfig.width, vehicleConfig.height, vehicleConfig.front * 2]
     }),
-    useRef<Object3D>(null)
+    vehicleRef
   );
 
-  const wheelRefs = [useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null)];
-  
-  const [vehicleRef, vehicleApi] = useRaycastVehicle(() => ({
-    chassisBody: chassisRef,
+  const [, vehicleApi] = useRaycastVehicle(() => ({
+    chassisBody: vehicleRef,
     wheels: wheelRefs,
     wheelInfos,
     indexForwardAxis: 2,
@@ -76,12 +76,14 @@ export function Vehicle() {
   const velocity = useRef(new Vector3());
   
   useEffect(() => {
-    const unsubscribe = chassisApi.velocity.subscribe((v) => velocity.current.fromArray(v));
-    return unsubscribe;
+    if (chassisApi) {
+        const unsubscribe = chassisApi.velocity.subscribe((v) => velocity.current.fromArray(v));
+        return unsubscribe;
+    }
   }, [chassisApi]);
 
   useFrame((state, delta) => {
-    if (!vehicleRef.current || !chassisRef.current || !vehicleApi.wheelInfos) return;
+    if (!vehicleRef.current || !vehicleApi || !vehicleApi.wheelInfos) return;
 
     const { force, steer } = vehicleConfig;
 
@@ -110,8 +112,8 @@ export function Vehicle() {
 
     const vehiclePosition = new Vector3();
     const vehicleQuaternion = new Quaternion();
-    chassisRef.current.getWorldPosition(vehiclePosition);
-    chassisRef.current.getWorldQuaternion(vehicleQuaternion);
+    vehicleRef.current.getWorldPosition(vehiclePosition);
+    vehicleRef.current.getWorldQuaternion(vehicleQuaternion);
 
     const cameraOffset = new Vector3(0, 4.5, 9);
     cameraOffset.applyQuaternion(vehicleQuaternion);
@@ -132,14 +134,14 @@ export function Vehicle() {
   });
 
   return (
-    <group ref={vehicleRef as React.Ref<Group>}>
-      <group ref={chassisRef as React.Ref<Group>}>
-        <primitive object={carGltf.scene} position={[0, -0.5, 0]}/>
-      </group>
-      <Wheel wheelRef={wheelRefs[0]} />
-      <Wheel wheelRef={wheelRefs[1]} />
-      <Wheel wheelRef={wheelRefs[2]} />
-      <Wheel wheelRef={wheelRefs[3]} />
+    <group>
+        <group ref={vehicleRef as React.Ref<Group>}>
+            <primitive object={carGltf.scene} position={[0, -0.5, 0]}/>
+        </group>
+        <Wheel ref={wheelRefs[0]} />
+        <Wheel ref={wheelRefs[1]} />
+        <Wheel ref={wheelRefs[2]} />
+        <Wheel ref={wheelRefs[3]} />
     </group>
   );
 }
