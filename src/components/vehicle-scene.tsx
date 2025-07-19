@@ -27,7 +27,7 @@ const Wheel = forwardRef<Group, { radius: number }>(({ radius }, ref) => {
 
   return (
     <group ref={ref}>
-      <primitive object={wheelGltf.scene.clone()} rotation={[0, -Math.PI / 2, 0]} scale={0.052} />
+      <primitive object={wheelGltf.scene.clone()} rotation={[0, -Math.PI / 2, 0]} scale={0.026} />
     </group>
   );
 });
