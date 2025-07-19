@@ -9,7 +9,7 @@ import { useControls } from '@/hooks/use-mobile';
 import { useStore } from '@/hooks/use-store';
 import { vehicleConfig, wheelInfos } from '@/lib/utils';
 import type { Object3D } from 'three';
-import { Quaternion, Vector3, Group, MathUtils } from 'three';
+import { Quaternion, Vector3, Group } from 'three';
 
 const Wheel = forwardRef<Group, { radius: number }>(({ radius }, ref) => {
   const wheelGltf = useLoader(GLTFLoader, 'https://tuomashatakka.github.io/public/resources/models/vehicles/vorsteiner_v-ff109/scene.gltf');
@@ -128,22 +128,23 @@ export function Vehicle() {
     const speed = velocity.current.length();
     setSpeed(speed);
 
+    // Chase camera logic
     const vehiclePosition = new Vector3();
     const vehicleQuaternion = new Quaternion();
-    vehicle.current.getWorldPosition(vehiclePosition);
-    vehicle.current.getWorldQuaternion(vehicleQuaternion);
 
-    // Dynamic camera based on speed
-    const speedFactor = Math.min(speed / 50, 1); // Normalize speed to a 0-1 range, capping at 50 m/s
-    const cameraDistance = MathUtils.lerp(9, 15, speedFactor); // Further back
-    const cameraHeight = MathUtils.lerp(4.5, 3.5, speedFactor); // Lower
+    // Ensure the chassis physics body has been created
+    if (chassisRef.current) {
+      chassisRef.current.getWorldPosition(vehiclePosition);
+      chassisRef.current.getWorldQuaternion(vehicleQuaternion);
 
-    const cameraOffset = new Vector3(0, cameraHeight, cameraDistance);
-    cameraOffset.applyQuaternion(vehicleQuaternion);
-    cameraOffset.add(vehiclePosition);
+      const cameraOffset = new Vector3(0, 4.5, 9); // Position camera behind and slightly above
+      cameraOffset.applyQuaternion(vehicleQuaternion);
+      cameraOffset.add(vehiclePosition);
 
-    state.camera.position.lerp(cameraOffset, delta * 4);
-    state.camera.lookAt(vehiclePosition);
+      // Smoothly interpolate camera position
+      state.camera.position.lerp(cameraOffset, delta * 4);
+      state.camera.lookAt(vehiclePosition);
+    }
   });
 
   return (
