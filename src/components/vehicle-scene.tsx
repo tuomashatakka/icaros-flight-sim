@@ -143,7 +143,6 @@ export function Vehicle() {
 
     // Update wheel transforms
     for (let i = 0; i < wheelRefs.length; i++) {
-        vehicleApi.updateWheelTransform(i);
         const t = vehicleApi.wheelInfos[i].worldTransform;
         const wheel = wheelRefs[i].current;
         if(wheel) {
