@@ -40,7 +40,18 @@ export function Vehicle() {
   
   const carGltf = useLoader(GLTFLoader, 'https://tuomashatakka.github.io/public/resources/models/vehicles/honda_s2000_gt_ap2/scene.gltf');
 
-  const chassisRef = useRef<Object3D>(null);
+  const [chassisRef, chassisApi] = useBox(
+    () => ({
+      mass: 150,
+      position: [0, 2, 0],
+      angularDamping: 0.5,
+      args: [vehicleConfig.width, vehicleConfig.height, vehicleConfig.front * 2]
+    }),
+    useRef<Object3D>(null)
+  );
+
+  const wheelRefs = [useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null)];
+  
   const [vehicleRef, vehicleApi] = useRaycastVehicle(() => ({
     chassisBody: chassisRef,
     wheels: wheelRefs,
@@ -49,18 +60,6 @@ export function Vehicle() {
     indexRightAxis: 0,
     indexUpAxis: 1,
   }));
-
-  const wheelRefs = [useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null)];
-
-  useBox(
-    () => ({
-      mass: 150,
-      position: [0, 2, 0],
-      angularDamping: 0.5,
-      args: [vehicleConfig.width, vehicleConfig.height, vehicleConfig.front * 2]
-    }),
-    chassisRef
-  );
   
   useEffect(() => {
     if (carGltf.scene) {
@@ -74,33 +73,14 @@ export function Vehicle() {
   }, [carGltf]);
   
   const velocity = useRef(new Vector3());
-  const chassisApi = {
-    velocity: { subscribe: (callback: (v: number[]) => void) => {
-      const unsubscribe = useStore.subscribe(
-        (state) => state.speed,
-        (speed) => {
-          if (chassisRef.current) {
-            const worldDir = new Vector3();
-            chassisRef.current.getWorldDirection(worldDir);
-            const v = worldDir.multiplyScalar(speed).toArray();
-            callback(v as [number, number, number]);
-          }
-        }
-      );
-      return unsubscribe;
-    }},
-    position: { set: (x: number, y: number, z: number) => chassisRef.current?.position.set(x, y, z) },
-    angularVelocity: { set: (x: number, y: number, z: number) => chassisRef.current?.rotation.set(x,y,z) },
-    rotation: { set: (x: number, y: number, z: number) => chassisRef.current?.rotation.set(x,y,z) },
-  }
   
   useEffect(() => {
-    const unsubscribe = velocity.current && chassisApi.velocity.subscribe((v) => velocity.current.fromArray(v));
+    const unsubscribe = chassisApi.velocity.subscribe((v) => velocity.current.fromArray(v));
     return unsubscribe;
   }, [chassisApi]);
 
   useFrame((state, delta) => {
-    if (!vehicleRef.current || !vehicleApi || !chassisRef.current) return;
+    if (!vehicleRef.current || !chassisRef.current || !vehicleApi.wheelInfos) return;
 
     const { force, steer } = vehicleConfig;
 
@@ -113,21 +93,13 @@ export function Vehicle() {
     vehicleApi.setSteeringValue(steerValue, 1);
 
     if (controls.reset) {
-      if (chassisRef.current) {
-        chassisRef.current.position.set(0, 2, 0);
-        chassisRef.current.rotation.set(0, 0, 0);
-      }
-      vehicleApi.sliding.set(false);
-      vehicleApi.angularVelocity.set(0, 0, 0);
-      vehicleApi.velocity.set(0, 0, 0);
+      chassisApi.position.set(0, 2, 0);
+      chassisApi.velocity.set(0, 0, 0);
+      chassisApi.angularVelocity.set(0, 0, 0);
+      chassisApi.rotation.set(0, 0, 0);
     }
     
-    // This is a simplified velocity calculation
-    const currentSpeed = vehicleRef.current.userData.speed || 0;
-    const newSpeed = currentSpeed + (engineForce / 150) * delta;
-    vehicleRef.current.userData.speed = newSpeed;
-    setSpeed(Math.abs(newSpeed));
-
+    setSpeed(velocity.current.length());
 
     const vehiclePosition = new Vector3();
     const vehicleQuaternion = new Quaternion();
@@ -154,7 +126,7 @@ export function Vehicle() {
 
   return (
     <group ref={vehicleRef as React.Ref<Group>}>
-      <group ref={chassisRef}>
+      <group ref={chassisRef as React.Ref<Group>}>
         <primitive object={carGltf.scene} position={[0, -0.5, 0]}/>
       </group>
       <Wheel wheelRef={wheelRefs[0]} />
