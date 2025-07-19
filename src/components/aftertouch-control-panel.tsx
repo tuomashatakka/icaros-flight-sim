@@ -4,7 +4,7 @@ import { Leva } from 'leva';
 import { useStore } from "@/hooks/use-store";
 import { useControls } from '@/hooks/use-mobile';
 import { Button } from './ui/button';
-import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from 'lucide-react';
 import { useEffect, useState } from 'react';
 
 function Speedometer() {
@@ -31,7 +31,9 @@ function Minimap() {
 function Controls() {
     return (
         <div className="absolute bottom-8 left-8 text-white text-sm font-mono bg-black/50 p-4 rounded-lg hidden md:block">
+            <p>W, S / Arrows: Accel/Brake</p>
             <p>A, D / Arrows: Steer</p>
+            <p>Space: Brake</p>
             <p>R: Reset</p>
         </div>
     );
@@ -51,21 +53,39 @@ function TouchControls() {
     if (!isMobile) return null;
 
     return (
-        <div className="absolute bottom-8 left-8 right-8 flex justify-between md:hidden">
-            <Button 
-                className="w-24 h-24 rounded-full bg-black/30 text-white text-4xl"
-                onTouchStart={() => setControls({ left: true })}
-                onTouchEnd={() => setControls({ left: false })}
-            >
-                <ChevronLeft size={48} />
-            </Button>
-            <Button 
-                className="w-24 h-24 rounded-full bg-black/30 text-white text-4xl"
-                onTouchStart={() => setControls({ right: true })}
-                onTouchEnd={() => setControls({ right: false })}
-            >
-                <ChevronRight size={48} />
-            </Button>
+        <div className="absolute bottom-8 inset-x-8 flex justify-between md:hidden">
+            <div className="flex flex-col gap-4">
+                 <Button 
+                    className="w-24 h-24 rounded-full bg-black/30 text-white text-4xl"
+                    onTouchStart={() => setControls({ forward: true })}
+                    onTouchEnd={() => setControls({ forward: false })}
+                >
+                    <ArrowUp size={48} />
+                </Button>
+                 <Button 
+                    className="w-24 h-24 rounded-full bg-black/30 text-white text-4xl"
+                    onTouchStart={() => setControls({ backward: true })}
+                    onTouchEnd={() => setControls({ backward: false })}
+                >
+                    <ArrowDown size={48} />
+                </Button>
+            </div>
+            <div className="flex items-center gap-4">
+                <Button 
+                    className="w-24 h-24 rounded-full bg-black/30 text-white text-4xl"
+                    onTouchStart={() => setControls({ left: true })}
+                    onTouchEnd={() => setControls({ left: false })}
+                >
+                    <ChevronLeft size={48} />
+                </Button>
+                <Button 
+                    className="w-24 h-24 rounded-full bg-black/30 text-white text-4xl"
+                    onTouchStart={() => setControls({ right: true })}
+                    onTouchEnd={() => setControls({ right: false })}
+                >
+                    <ChevronRight size={48} />
+                </Button>
+            </div>
         </div>
     )
 }

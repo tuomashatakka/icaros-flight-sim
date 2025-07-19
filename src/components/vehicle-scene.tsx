@@ -49,7 +49,8 @@ export function Vehicle() {
       mass: 150,
       position,
       angularDamping: 0.5,
-      args: [vehicleConfig.width, vehicleConfig.height, vehicleConfig.front * 2]
+      args: [vehicleConfig.width, vehicleConfig.height, vehicleConfig.front * 2],
+      rotation: [0, Math.PI, 0]
     }),
     chassisRef
   );
@@ -101,20 +102,21 @@ export function Vehicle() {
   useFrame((state, delta) => {
     if (!vehicle.current || !vehicleApi) return;
 
-    const { force, steer } = vehicleConfig;
+    const { force, steer, maxBrake } = vehicleConfig;
 
-    if (controls.forward) {
-        const engineForce = -force;
-        vehicleApi.applyEngineForce(engineForce, 2);
-        vehicleApi.applyEngineForce(engineForce, 3);
-    } else {
-        vehicleApi.applyEngineForce(0, 2);
-        vehicleApi.applyEngineForce(0, 3);
-    }
-
+    const engineForce = controls.forward ? -force : controls.backward ? force / 2 : 0;
+    vehicleApi.applyEngineForce(engineForce, 2);
+    vehicleApi.applyEngineForce(engineForce, 3);
+    
     const steerValue = controls.left ? steer : controls.right ? -steer : 0;
     vehicleApi.setSteeringValue(steerValue, 0);
     vehicleApi.setSteeringValue(steerValue, 1);
+
+    const brakeForce = controls.brake ? maxBrake : 0;
+    vehicleApi.setBrake(brakeForce, 0);
+    vehicleApi.setBrake(brakeForce, 1);
+    vehicleApi.setBrake(brakeForce, 2);
+    vehicleApi.setBrake(brakeForce, 3);
 
     if (controls.reset) {
       chassisApi.position.set(0, 2, 0);

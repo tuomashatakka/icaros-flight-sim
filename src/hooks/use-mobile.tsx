@@ -2,8 +2,11 @@ import { useEffect, useState } from 'react';
 import { create } from 'zustand';
 
 const keys = [
+  { name: 'forward', keys: ['ArrowUp', 'w', 'W'] },
+  { name: 'backward', keys: ['ArrowDown', 's', 'S'] },
   { name: 'left', keys: ['ArrowLeft', 'a', 'A'] },
   { name: 'right', keys: ['ArrowRight', 'd', 'D'] },
+  { name: 'brake', keys: [' '] },
   { name: 'reset', keys: ['r', 'R'] },
 ];
 
@@ -18,9 +21,11 @@ type ControlsState = {
 
 const useControlsStore = create<ControlsState>((set) => ({
   controls: {
-    forward: true,
+    forward: false,
+    backward: false,
     left: false,
     right: false,
+    brake: false,
     reset: false,
   },
   setControls: (newControls) => set(state => ({ controls: { ...state.controls, ...newControls }})),
