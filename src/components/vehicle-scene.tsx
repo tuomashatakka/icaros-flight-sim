@@ -20,8 +20,8 @@ export function Vehicle() {
     () => ({
       mass: 150,
       args: [vehicleConfig.width, 1, vehicleConfig.front * 2],
-      position: [0, 1, 0],
-      angularDamping: 0.95,
+      position: [0, 2, 0],
+      angularDamping: 0.5,
     }),
     useRef<Group>(null)
   );
@@ -44,6 +44,8 @@ export function Vehicle() {
           child.castShadow = true;
         }
       });
+      // Rotate the model to face forward
+      gltf.scene.rotation.y = Math.PI;
     }
   }, [gltf]);
   
@@ -101,7 +103,7 @@ export function Vehicle() {
   return (
     <group ref={vehicle}>
       <group ref={chassisRef}>
-        <primitive object={gltf.scene} rotation={[0, Math.PI, 0]} position={[0, -0.5, 0]}/>
+        <primitive object={gltf.scene} position={[0, -0.5, 0]}/>
       </group>
       {wheelInfos.map((_, index) => (
         <group key={index} ref={wheelRefs[index]}></group>
