@@ -7,7 +7,7 @@ export function cn(...inputs: ClassValue[]) {
 
 export const vehicleConfig = {
   width: 1.7,
-  height: -0.3,
+  height: 0.3,
   front: 1.35,
   back: -1.3,
   steer: 0.35,
@@ -36,22 +36,22 @@ export const wheelInfo = {
 const wheelInfo_fr = {
   ...wheelInfo,
   isFrontWheel: true,
-  chassisConnectionPointLocal: [vehicleConfig.width / 2, vehicleConfig.height, vehicleConfig.front],
+  chassisConnectionPointLocal: [vehicleConfig.width / 2, -vehicleConfig.height / 2, vehicleConfig.front],
 };
 const wheelInfo_fl = {
   ...wheelInfo,
   isFrontWheel: true,
-  chassisConnectionPointLocal: [-vehicleConfig.width / 2, vehicleConfig.height, vehicleConfig.front],
+  chassisConnectionPointLocal: [-vehicleConfig.width / 2, -vehicleConfig.height / 2, vehicleConfig.front],
 };
 const wheelInfo_br = {
   ...wheelInfo,
   isFrontWheel: false,
-  chassisConnectionPointLocal: [vehicleConfig.width / 2, vehicleConfig.height, vehicleConfig.back],
+  chassisConnectionPointLocal: [vehicleConfig.width / 2, -vehicleConfig.height / 2, vehicleConfig.back],
 };
 const wheelInfo_bl = {
   ...wheelInfo,
   isFrontWheel: false,
-  chassisConnectionPointLocal: [-vehicleConfig.width / 2, vehicleConfig.height, vehicleConfig.back],
+  chassisConnectionPointLocal: [-vehicleConfig.width / 2, -vehicleConfig.height / 2, vehicleConfig.back],
 };
 
 export const wheelInfos = [wheelInfo_fl, wheelInfo_fr, wheelInfo_bl, wheelInfo_br];
