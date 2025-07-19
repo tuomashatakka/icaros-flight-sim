@@ -137,7 +137,7 @@ export function Vehicle() {
       chassisRef.current.getWorldPosition(vehiclePosition);
       chassisRef.current.getWorldQuaternion(vehicleQuaternion);
 
-      const cameraOffset = new Vector3(0, 4.5, 9); // Position camera behind and slightly above
+      const cameraOffset = new Vector3(0, 2.5, -5); // Position camera behind and slightly above
       cameraOffset.applyQuaternion(vehicleQuaternion);
       cameraOffset.add(vehiclePosition);
 
