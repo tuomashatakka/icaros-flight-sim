@@ -27,7 +27,7 @@ export function Vehicle() {
     useRef<Group>(null)
   );
 
-  const wheelRefs: React.MutableRefObject<any>[] = [useRef(), useRef(), useRef(), useRef()];
+  const wheelRefs: React.MutableRefObject<any>[] = [useRef(null), useRef(null), useRef(null), useRef(null)];
 
   const [vehicle, api] = useRaycastVehicle(() => ({
     chassisBody: chassisRef,
@@ -103,8 +103,7 @@ export function Vehicle() {
       <group ref={chassisRef}>
         <primitive object={gltf.scene} rotation={[0, Math.PI, 0]} position={[0, -0.5, 0]}/>
       </group>
-      {/* Wheels are physically present but not rendered; raycast handles them */}
-      {wheelInfos.map((wheel, index) => (
+      {wheelInfos.map((_, index) => (
         <group key={index} ref={wheelRefs[index]}></group>
       ))}
     </group>
