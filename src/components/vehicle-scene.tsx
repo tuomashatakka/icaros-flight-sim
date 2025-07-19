@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useCompoundBody, useRaycastVehicle } from '@react-three/cannon';
+import { useBox, useRaycastVehicle } from '@react-three/cannon';
 import { useFrame, useLoader } from '@react-three/fiber';
 import { useEffect, useRef } from 'react';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -17,23 +17,28 @@ export function Vehicle() {
   
   const gltf = useLoader(GLTFLoader, 'https://tuomashatakka.github.io/public/resources/models/vehicles/honda_s2000_gt_ap2/scene.gltf');
 
-  const { width, height, front, back, radius } = vehicleConfig;
+  const { width, height, front } = vehicleConfig;
 
-  const [ref, api] = useCompoundBody(
+  const chassisBody = useRef<Group>(null);
+  const [ref, api] = useBox(
     () => ({
       mass: 150,
       position: [0, 2, 0],
       angularDamping: 0.5,
-      shapes: [
-        { type: 'Box', args: [width, height, front * 2], position: [0, 0, 0] },
-        { type: 'Cylinder', args: [radius, radius, 0.5, 8], rotation: [0, 0, -Math.PI / 2] },
-      ],
+      args: [width, height, front * 2]
     }),
-    useRef<Group>(null)
+    chassisBody
   );
 
+  const wheel1 = useRef<Group>(null)
+  const wheel2 = useRef<Group>(null)
+  const wheel3 = useRef<Group>(null)
+  const wheel4 = useRef<Group>(null)
+  const wheelRefs = [wheel1, wheel2, wheel3, wheel4]
+
   const [vehicle, vehicleApi] = useRaycastVehicle(() => ({
-    chassisBody: ref,
+    chassisBody: chassisBody,
+    wheels: wheelRefs,
     wheelInfos,
     indexForwardAxis: 2,
     indexRightAxis: 0,
@@ -60,7 +65,7 @@ export function Vehicle() {
   }, [api]);
 
   useFrame((state, delta) => {
-    if (!vehicle.current || !vehicleApi || !ref.current) return;
+    if (!vehicle.current || !vehicleApi || !chassisBody.current) return;
 
     const { force, steer } = vehicleConfig;
 
@@ -84,8 +89,8 @@ export function Vehicle() {
 
     const vehiclePosition = new Vector3();
     const vehicleQuaternion = new Quaternion();
-    ref.current.getWorldPosition(vehiclePosition);
-    ref.current.getWorldQuaternion(vehicleQuaternion);
+    chassisBody.current.getWorldPosition(vehiclePosition);
+    chassisBody.current.getWorldQuaternion(vehicleQuaternion);
 
     const cameraOffset = new Vector3(0, 4.5, 9);
     cameraOffset.applyQuaternion(vehicleQuaternion);
@@ -97,9 +102,13 @@ export function Vehicle() {
 
   return (
     <group ref={vehicle}>
-      <group ref={ref}>
+      <group ref={chassisBody}>
         <primitive object={gltf.scene} position={[0, -0.5, 0]}/>
       </group>
+      <group ref={wheel1}></group>
+      <group ref={wheel2}></group>
+      <group ref={wheel3}></group>
+      <group ref={wheel4}></group>
     </group>
   );
 }
