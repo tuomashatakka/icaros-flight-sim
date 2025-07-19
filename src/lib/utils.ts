@@ -11,7 +11,7 @@ export const vehicleConfig = {
   front: 1.35,
   back: -1.3,
   steer: 0.35,
-  force: 1250,
+  force: 625,
   brake: 50,
   maxBrake: 100,
   radius: 0.35,
