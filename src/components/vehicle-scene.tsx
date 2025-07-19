@@ -35,7 +35,7 @@ const Wheel = forwardRef<Group, { wheelRef: React.RefObject<Object3D> }>(({ whee
 Wheel.displayName = 'Wheel';
 
 export function Vehicle() {
-  const controls = useControls(state => state.controls);
+  const { controls } = useControls();
   const setSpeed = useStore((state) => state.setSpeed);
   
   const carGltf = useLoader(GLTFLoader, 'https://tuomashatakka.github.io/public/resources/models/vehicles/honda_s2000_gt_ap2/scene.gltf');
@@ -69,8 +69,6 @@ export function Vehicle() {
           child.castShadow = true;
         }
       });
-      // The model is rotated to face forward relative to the chassis body.
-      // The chassis body itself is rotated 180 deg, so the car faces 0,0,0
       carGltf.scene.rotation.y = Math.PI;
     }
   }, [carGltf]);
@@ -87,9 +85,15 @@ export function Vehicle() {
 
     const { force, steer } = vehicleConfig;
 
-    const engineForce = -force;
-    vehicleApi.applyEngineForce(engineForce, 2);
-    vehicleApi.applyEngineForce(engineForce, 3);
+    if (controls.forward) {
+        const engineForce = -force;
+        vehicleApi.applyEngineForce(engineForce, 2);
+        vehicleApi.applyEngineForce(engineForce, 3);
+    } else {
+        vehicleApi.applyEngineForce(0, 2);
+        vehicleApi.applyEngineForce(0, 3);
+    }
+
 
     const steerValue = controls.left ? steer : controls.right ? -steer : 0;
     vehicleApi.setSteeringValue(steerValue, 0);
