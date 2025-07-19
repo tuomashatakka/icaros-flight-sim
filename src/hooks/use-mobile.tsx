@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { create } from 'zustand';
 
 const keys = [
-  { name: 'forward', keys: ['ArrowUp', 'w', 'W'] },
   { name: 'left', keys: ['ArrowLeft', 'a', 'A'] },
   { name: 'right', keys: ['ArrowRight', 'd', 'D'] },
   { name: 'reset', keys: ['r', 'R'] },
