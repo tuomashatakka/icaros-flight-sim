@@ -1,7 +1,7 @@
 
 "use client"
 
-import { useBox, useRaycastVehicle } from '@react-three/cannon';
+import { useBox, useRaycastVehicle, useSphere } from '@react-three/cannon';
 import { useFrame, useLoader } from '@react-three/fiber';
 import { useEffect, useRef, forwardRef } from 'react';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -11,7 +11,7 @@ import { vehicleConfig, wheelInfos } from '@/lib/utils';
 import type { Object3D } from 'three';
 import { Quaternion, Vector3, Group } from 'three';
 
-const Wheel = forwardRef<Group>((props, ref) => {
+const Wheel = forwardRef<Group, { radius: number }>(({ radius }, ref) => {
   const wheelGltf = useLoader(GLTFLoader, 'https://tuomashatakka.github.io/public/resources/models/vehicles/vorsteiner_v-ff109/scene.gltf');
   
   useEffect(() => {
@@ -40,22 +40,38 @@ export function Vehicle() {
   
   const carGltf = useLoader(GLTFLoader, 'https://tuomashatakka.github.io/public/resources/models/vehicles/honda_s2000_gt_ap2/scene.gltf');
   
-  const vehicleRef = useRef<Object3D>(null);
-  const wheelRefs = [useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null)];
+  const position: [number, number, number] = [0, 2, 0];
+  const { radius } = vehicleConfig;
 
-  const [, chassisApi] = useBox(
+  const chassisRef = useRef<Object3D>(null);
+  const [chassisBody, chassisApi] = useBox(
     () => ({
       mass: 150,
-      position: [0, 2, 0],
+      position,
       angularDamping: 0.5,
       args: [vehicleConfig.width, vehicleConfig.height, vehicleConfig.front * 2]
     }),
-    vehicleRef
+    chassisRef
   );
 
-  const [, vehicleApi] = useRaycastVehicle(() => ({
-    chassisBody: vehicleRef,
-    wheels: wheelRefs,
+  const wheelRefs = [useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null)];
+  const wheelBodies = [useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null)];
+  const [_, wheelApi] = useSphere(
+    () => ({
+      mass: 1,
+      type: 'Kinematic',
+      collisionFilterGroup: 0,
+      args: [radius],
+    }),
+    wheelBodies[0]
+  );
+  useSphere(() => ({ mass: 1, type: 'Kinematic', collisionFilterGroup: 0, args: [radius] }), wheelBodies[1]);
+  useSphere(() => ({ mass: 1, type: 'Kinematic', collisionFilterGroup: 0, args: [radius] }), wheelBodies[2]);
+  useSphere(() => ({ mass: 1, type: 'Kinematic', collisionFilterGroup: 0, args: [radius] }), wheelBodies[3]);
+
+  const [vehicle, vehicleApi] = useRaycastVehicle(() => ({
+    chassisBody: chassisRef,
+    wheels: wheelBodies,
     wheelInfos,
     indexForwardAxis: 2,
     indexRightAxis: 0,
@@ -83,7 +99,7 @@ export function Vehicle() {
   }, [chassisApi]);
 
   useFrame((state, delta) => {
-    if (!vehicleRef.current || !vehicleApi || !vehicleApi.wheelInfos) return;
+    if (!vehicle.current || !vehicleApi) return;
 
     const { force, steer } = vehicleConfig;
 
@@ -95,7 +111,6 @@ export function Vehicle() {
         vehicleApi.applyEngineForce(0, 2);
         vehicleApi.applyEngineForce(0, 3);
     }
-
 
     const steerValue = controls.left ? steer : controls.right ? -steer : 0;
     vehicleApi.setSteeringValue(steerValue, 0);
@@ -112,8 +127,8 @@ export function Vehicle() {
 
     const vehiclePosition = new Vector3();
     const vehicleQuaternion = new Quaternion();
-    vehicleRef.current.getWorldPosition(vehiclePosition);
-    vehicleRef.current.getWorldQuaternion(vehicleQuaternion);
+    vehicle.current.getWorldPosition(vehiclePosition);
+    vehicle.current.getWorldQuaternion(vehicleQuaternion);
 
     const cameraOffset = new Vector3(0, 4.5, 9);
     cameraOffset.applyQuaternion(vehicleQuaternion);
@@ -121,27 +136,17 @@ export function Vehicle() {
 
     state.camera.position.lerp(cameraOffset, delta * 4);
     state.camera.lookAt(vehiclePosition);
-
-    // Update wheel transforms
-    for (let i = 0; i < wheelRefs.length; i++) {
-        const t = vehicleApi.wheelInfos[i].worldTransform;
-        const wheel = wheelRefs[i].current;
-        if(wheel) {
-            wheel.position.set(t.position.x, t.position.y, t.position.z);
-            wheel.quaternion.set(t.quaternion.x, t.quaternion.y, t.quaternion.z, t.quaternion.w);
-        }
-    }
   });
 
   return (
-    <group>
-        <group ref={vehicleRef as React.Ref<Group>}>
-            <primitive object={carGltf.scene} position={[0, -0.5, 0]}/>
-        </group>
-        <Wheel ref={wheelRefs[0]} />
-        <Wheel ref={wheelRefs[1]} />
-        <Wheel ref={wheelRefs[2]} />
-        <Wheel ref={wheelRefs[3]} />
+    <group ref={vehicle as React.Ref<Group>}>
+      <group ref={chassisRef}>
+        <primitive object={carGltf.scene} position={[0, -0.5, 0]}/>
+      </group>
+      <Wheel ref={wheelRefs[0]} radius={radius} />
+      <Wheel ref={wheelRefs[1]} radius={radius} />
+      <Wheel ref={wheelRefs[2]} radius={radius} />
+      <Wheel ref={wheelRefs[3]} radius={radius} />
     </group>
   );
 }
