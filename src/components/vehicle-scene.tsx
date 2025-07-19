@@ -1,6 +1,7 @@
+
 "use client"
 
-import { useBox, useRaycastVehicle } from '@react-three/cannon';
+import { useCompoundBody, useRaycastVehicle } from '@react-three/cannon';
 import { useFrame, useLoader } from '@react-three/fiber';
 import { useEffect, useRef } from 'react';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
@@ -16,21 +17,23 @@ export function Vehicle() {
   
   const gltf = useLoader(GLTFLoader, 'https://tuomashatakka.github.io/public/resources/models/vehicles/honda_s2000_gt_ap2/scene.gltf');
 
-  const [chassisRef, chassisApi] = useBox(
+  const { width, height, front, back, radius } = vehicleConfig;
+
+  const [ref, api] = useCompoundBody(
     () => ({
       mass: 150,
-      args: [vehicleConfig.width, 1, vehicleConfig.front * 2],
       position: [0, 2, 0],
       angularDamping: 0.5,
+      shapes: [
+        { type: 'Box', args: [width, height, front * 2], position: [0, 0, 0] },
+        { type: 'Cylinder', args: [radius, radius, 0.5, 8], rotation: [0, 0, -Math.PI / 2] },
+      ],
     }),
     useRef<Group>(null)
   );
 
-  const wheelRefs: React.MutableRefObject<any>[] = [useRef(null), useRef(null), useRef(null), useRef(null)];
-
-  const [vehicle, api] = useRaycastVehicle(() => ({
-    chassisBody: chassisRef,
-    wheels: wheelRefs,
+  const [vehicle, vehicleApi] = useRaycastVehicle(() => ({
+    chassisBody: ref,
     wheelInfos,
     indexForwardAxis: 2,
     indexRightAxis: 0,
@@ -50,58 +53,53 @@ export function Vehicle() {
   
   const velocity = useRef(new Vector3());
   useEffect(() => {
-    if (chassisApi) {
-      const unsubscribe = chassisApi.velocity.subscribe((v) => velocity.current.fromArray(v));
+    if (api) {
+      const unsubscribe = api.velocity.subscribe((v) => velocity.current.fromArray(v));
       return unsubscribe;
     }
-  }, [chassisApi]);
+  }, [api]);
 
   useFrame((state, delta) => {
-    if (!vehicle.current || !api || !chassisApi) return;
+    if (!vehicle.current || !vehicleApi || !ref.current) return;
 
     const { force, steer } = vehicleConfig;
 
     // Autonomous forward movement
     const engineForce = -force;
-    api.applyEngineForce(engineForce, 2);
-    api.applyEngineForce(engineForce, 3);
+    vehicleApi.applyEngineForce(engineForce, 2);
+    vehicleApi.applyEngineForce(engineForce, 3);
 
     const steerValue = controls.left ? steer : controls.right ? -steer : 0;
-    api.setSteeringValue(steerValue, 0);
-    api.setSteeringValue(steerValue, 1);
+    vehicleApi.setSteeringValue(steerValue, 0);
+    vehicleApi.setSteeringValue(steerValue, 1);
 
     if (controls.reset) {
-      chassisApi.position.set(0, 2, 0);
-      chassisApi.velocity.set(0, 0, 0);
-      chassisApi.angularVelocity.set(0, 0, 0);
-      chassisApi.rotation.set(0, 0, 0);
+      api.position.set(0, 2, 0);
+      api.velocity.set(0, 0, 0);
+      api.angularVelocity.set(0, 0, 0);
+      api.rotation.set(0, 0, 0);
     }
     
     setSpeed(velocity.current.length());
 
-    if (chassisRef.current) {
-        const vehiclePosition = new Vector3();
-        const vehicleQuaternion = new Quaternion();
-        chassisRef.current.getWorldPosition(vehiclePosition);
-        chassisRef.current.getWorldQuaternion(vehicleQuaternion);
+    const vehiclePosition = new Vector3();
+    const vehicleQuaternion = new Quaternion();
+    ref.current.getWorldPosition(vehiclePosition);
+    ref.current.getWorldQuaternion(vehicleQuaternion);
 
-        const cameraOffset = new Vector3(0, 4.5, 9);
-        cameraOffset.applyQuaternion(vehicleQuaternion);
-        cameraOffset.add(vehiclePosition);
+    const cameraOffset = new Vector3(0, 4.5, 9);
+    cameraOffset.applyQuaternion(vehicleQuaternion);
+    cameraOffset.add(vehiclePosition);
 
-        state.camera.position.lerp(cameraOffset, delta * 4);
-        state.camera.lookAt(vehiclePosition);
-    }
+    state.camera.position.lerp(cameraOffset, delta * 4);
+    state.camera.lookAt(vehiclePosition);
   });
 
   return (
     <group ref={vehicle}>
-      <group ref={chassisRef}>
+      <group ref={ref}>
         <primitive object={gltf.scene} position={[0, -0.5, 0]}/>
       </group>
-      {wheelInfos.map((_, index) => (
-        <group key={index} ref={wheelRefs[index]}></group>
-      ))}
     </group>
   );
 }
