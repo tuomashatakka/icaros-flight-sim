@@ -9,7 +9,7 @@ import { useControls } from '@/hooks/use-mobile';
 import { useStore } from '@/hooks/use-store';
 import { vehicleConfig, wheelInfos } from '@/lib/utils';
 import type { Object3D } from 'three';
-import { Quaternion, Vector3, Group } from 'three';
+import { Quaternion, Vector3, Group, MathUtils } from 'three';
 
 const Wheel = forwardRef<Group, { radius: number }>(({ radius }, ref) => {
   const wheelGltf = useLoader(GLTFLoader, 'https://tuomashatakka.github.io/public/resources/models/vehicles/vorsteiner_v-ff109/scene.gltf');
@@ -125,14 +125,20 @@ export function Vehicle() {
       chassisApi.rotation.set(0, Math.PI, 0);
     }
     
-    setSpeed(velocity.current.length());
+    const speed = velocity.current.length();
+    setSpeed(speed);
 
     const vehiclePosition = new Vector3();
     const vehicleQuaternion = new Quaternion();
     vehicle.current.getWorldPosition(vehiclePosition);
     vehicle.current.getWorldQuaternion(vehicleQuaternion);
 
-    const cameraOffset = new Vector3(0, 4.5, 9);
+    // Dynamic camera based on speed
+    const speedFactor = Math.min(speed / 50, 1); // Normalize speed to a 0-1 range, capping at 50 m/s
+    const cameraDistance = MathUtils.lerp(9, 15, speedFactor); // Further back
+    const cameraHeight = MathUtils.lerp(4.5, 3.5, speedFactor); // Lower
+
+    const cameraOffset = new Vector3(0, cameraHeight, cameraDistance);
     cameraOffset.applyQuaternion(vehicleQuaternion);
     cameraOffset.add(vehiclePosition);
 
