@@ -27,7 +27,7 @@ const Wheel = forwardRef<Group, { wheelRef: React.RefObject<Object3D> }>(({ whee
 
   return (
     <group ref={wheelRef}>
-      <primitive object={wheelGltf.scene.clone()} rotation={[0, -Math.PI / 2, 0]} />
+      <primitive object={wheelGltf.scene.clone()} rotation={[0, -Math.PI / 2, 0]} scale={0.4} />
     </group>
   );
 });
