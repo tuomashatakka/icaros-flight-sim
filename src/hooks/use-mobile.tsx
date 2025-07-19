@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react';
+import { useEffect } from 'react';
+import { create } from 'zustand';
 
 const keys = [
-  { name: 'forward', keys: ['ArrowUp', 'w', 'W'] },
-  { name: 'backward', keys: ['ArrowDown', 's', 'S'] },
   { name: 'left', keys: ['ArrowLeft', 'a', 'A'] },
   { name: 'right', keys: ['ArrowRight', 'd', 'D'] },
   { name: 'brake', keys: [' '] }, // Note: 'Space' is ' '
@@ -13,28 +12,36 @@ export type Controls = {
   [key: string]: boolean;
 };
 
-export const useControls = (): Controls => {
-  const [controls, setControls] = useState<Controls>({
-    forward: false,
-    backward: false,
+type ControlsState = {
+  controls: Controls;
+  setControls: (newControls: Partial<Controls>) => void;
+}
+
+export const useControls = create<ControlsState>((set, get) => ({
+  controls: {
     left: false,
     right: false,
     brake: false,
     reset: false,
-  });
+  },
+  setControls: (newControls) => set(state => ({ controls: { ...state.controls, ...newControls }})),
+}));
+
+export const useKeyboardControls = () => {
+  const setControls = useControls(state => state.setControls);
 
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       keys.forEach((key) => {
         if (key.keys.includes(e.key)) {
-          setControls((prev) => ({ ...prev, [key.name]: true }));
+          setControls({ [key.name]: true });
         }
       });
     };
     const handleKeyUp = (e: KeyboardEvent) => {
       keys.forEach((key) => {
         if (key.keys.includes(e.key)) {
-          setControls((prev) => ({ ...prev, [key.name]: false }));
+          setControls({ [key.name]: false });
         }
       });
     };
@@ -44,7 +51,5 @@ export const useControls = (): Controls => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
     };
-  }, []);
-
-  return controls;
+  }, [setControls]);
 };

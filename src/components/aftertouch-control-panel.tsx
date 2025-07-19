@@ -2,6 +2,7 @@
 
 import { Leva } from 'leva';
 import { useStore } from "@/hooks/use-toast";
+import { useControls } from '@/hooks/use-mobile';
 
 function Speedometer() {
     const speed = useStore((state) => state.speed);
@@ -27,7 +28,7 @@ function Minimap() {
 function Controls() {
     return (
         <div className="absolute bottom-8 left-8 text-white text-sm font-mono bg-black/50 p-4 rounded-lg">
-            <p>W, A, S, D / Arrows: Drive</p>
+            <p>A, D / Arrows / Touch: Steer</p>
             <p>Space: Brake</p>
             <p>R: Reset</p>
         </div>
@@ -38,10 +39,29 @@ function Editor() {
     return <Leva collapsed />;
 }
 
-
 export function GameUI() {
+    const setControls = useControls(state => state.setControls);
+
+    const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
+        const touchX = e.touches[0].clientX;
+        if (touchX < window.innerWidth / 2) {
+            setControls({ left: true, right: false });
+        } else {
+            setControls({ left: false, right: true });
+        }
+    };
+
+    const handleTouchEnd = () => {
+        setControls({ left: false, right: false });
+    };
+
     return (
         <>
+            <div 
+                className="absolute inset-0 z-10"
+                onTouchStart={handleTouchStart}
+                onTouchEnd={handleTouchEnd}
+            />
             <Editor />
             <Speedometer />
             <Minimap />

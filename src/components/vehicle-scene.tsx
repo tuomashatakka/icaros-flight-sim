@@ -11,7 +11,7 @@ import type { Group, Mesh } from 'three';
 import { Quaternion, Vector3 } from 'three';
 
 export function Vehicle() {
-  const controls = useControls();
+  const controls = useControls(state => state.controls);
   const setSpeed = useStore((state) => state.setSpeed);
   const velocity = useRef([0, 0, 0]);
 
@@ -59,7 +59,7 @@ export function Vehicle() {
 
     const { force, steer, maxBrake } = vehicleConfig;
 
-    const engineForce = controls.forward ? -force : controls.backward ? force : 0;
+    const engineForce = -force * 0.7; // Autonomous driving
     api.applyEngineForce(engineForce, 2);
     api.applyEngineForce(engineForce, 3);
 
