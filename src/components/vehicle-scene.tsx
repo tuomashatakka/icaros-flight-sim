@@ -44,7 +44,6 @@ export function Vehicle() {
           child.castShadow = true;
         }
       });
-      // Rotate the model to face forward
       gltf.scene.rotation.y = Math.PI;
     }
   }, [gltf]);
@@ -60,21 +59,16 @@ export function Vehicle() {
   useFrame((state, delta) => {
     if (!vehicle.current || !api || !chassisApi) return;
 
-    const { force, steer, maxBrake } = vehicleConfig;
+    const { force, steer } = vehicleConfig;
 
-    const engineForce = controls.forward ? -force : controls.backward ? force : 0;
+    // Autonomous forward movement
+    const engineForce = -force;
     api.applyEngineForce(engineForce, 2);
     api.applyEngineForce(engineForce, 3);
 
     const steerValue = controls.left ? steer : controls.right ? -steer : 0;
     api.setSteeringValue(steerValue, 0);
     api.setSteeringValue(steerValue, 1);
-
-    const brake = controls.brake ? maxBrake : 0;
-    api.setBrake(brake, 0);
-    api.setBrake(brake, 1);
-    api.setBrake(brake, 2);
-    api.setBrake(brake, 3);
 
     if (controls.reset) {
       chassisApi.position.set(0, 2, 0);

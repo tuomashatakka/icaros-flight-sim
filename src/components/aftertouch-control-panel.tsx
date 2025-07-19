@@ -28,9 +28,7 @@ function Minimap() {
 function Controls() {
     return (
         <div className="absolute bottom-8 left-8 text-white text-sm font-mono bg-black/50 p-4 rounded-lg">
-            <p>W, S / Arrows: Accelerate/Brake</p>
             <p>A, D / Arrows: Steer</p>
-            <p>Space: Brake</p>
             <p>R: Reset</p>
         </div>
     );
