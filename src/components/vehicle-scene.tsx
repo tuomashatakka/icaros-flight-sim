@@ -5,7 +5,7 @@ import { useFrame, useLoader } from '@react-three/fiber';
 import { useEffect, useRef } from 'react';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { useControls } from '@/hooks/use-mobile';
-import { useStore } from '@/hooks/use-toast';
+import { useStore } from '@/hooks/use-store';
 import { vehicleConfig, wheelInfos } from '@/lib/utils';
 import type { Group, Mesh } from 'three';
 import { Quaternion, Vector3 } from 'three';
@@ -13,8 +13,7 @@ import { Quaternion, Vector3 } from 'three';
 export function Vehicle() {
   const controls = useControls(state => state.controls);
   const setSpeed = useStore((state) => state.setSpeed);
-  const velocity = useRef([0, 0, 0]);
-
+  
   const gltf = useLoader(GLTFLoader, 'https://tuomashatakka.github.io/public/resources/models/vehicles/honda_s2000_gt_ap2/scene.gltf');
 
   const [chassisRef, chassisApi] = useBox(
@@ -39,12 +38,6 @@ export function Vehicle() {
   }));
 
   useEffect(() => {
-    if (!chassisApi) return;
-    const unsubscribe = chassisApi.velocity.subscribe((v) => (velocity.current = v));
-    return unsubscribe;
-  }, [chassisApi]);
-
-  useEffect(() => {
     if (gltf.scene) {
       gltf.scene.traverse((child) => {
         if ((child as Mesh).isMesh) {
@@ -53,13 +46,21 @@ export function Vehicle() {
       });
     }
   }, [gltf]);
+  
+  const velocity = useRef(new Vector3());
+  useEffect(() => {
+    if (chassisApi) {
+      const unsubscribe = chassisApi.velocity.subscribe((v) => velocity.current.fromArray(v));
+      return unsubscribe;
+    }
+  }, [chassisApi]);
 
   useFrame((state, delta) => {
     if (!vehicle.current || !api || !chassisApi) return;
 
     const { force, steer, maxBrake } = vehicleConfig;
 
-    const engineForce = -force * 0.7; // Autonomous driving
+    const engineForce = controls.forward ? -force : controls.backward ? force : 0;
     api.applyEngineForce(engineForce, 2);
     api.applyEngineForce(engineForce, 3);
 
@@ -79,9 +80,8 @@ export function Vehicle() {
       chassisApi.angularVelocity.set(0, 0, 0);
       chassisApi.rotation.set(0, 0, 0);
     }
-
-    const speed = new Vector3(...velocity.current).length();
-    setSpeed(speed);
+    
+    setSpeed(velocity.current.length());
 
     if (chassisRef.current) {
         const vehiclePosition = new Vector3();

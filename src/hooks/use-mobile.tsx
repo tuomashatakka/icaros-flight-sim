@@ -2,6 +2,8 @@ import { useEffect } from 'react';
 import { create } from 'zustand';
 
 const keys = [
+  { name: 'forward', keys: ['ArrowUp', 'w', 'W'] },
+  { name: 'backward', keys: ['ArrowDown', 's', 'S'] },
   { name: 'left', keys: ['ArrowLeft', 'a', 'A'] },
   { name: 'right', keys: ['ArrowRight', 'd', 'D'] },
   { name: 'brake', keys: [' '] }, // Note: 'Space' is ' '
@@ -17,8 +19,10 @@ type ControlsState = {
   setControls: (newControls: Partial<Controls>) => void;
 }
 
-export const useControls = create<ControlsState>((set, get) => ({
+export const useControls = create<ControlsState>((set) => ({
   controls: {
+    forward: false,
+    backward: false,
     left: false,
     right: false,
     brake: false,

@@ -1,7 +1,7 @@
 "use client"
 
 import { Leva } from 'leva';
-import { useStore } from "@/hooks/use-toast";
+import { useStore } from "@/hooks/use-store";
 import { useControls, useKeyboardControls } from '@/hooks/use-mobile';
 
 function Speedometer() {
@@ -28,7 +28,8 @@ function Minimap() {
 function Controls() {
     return (
         <div className="absolute bottom-8 left-8 text-white text-sm font-mono bg-black/50 p-4 rounded-lg">
-            <p>A, D / Arrows / Touch: Steer</p>
+            <p>W, S / Arrows: Accelerate/Brake</p>
+            <p>A, D / Arrows: Steer</p>
             <p>Space: Brake</p>
             <p>R: Reset</p>
         </div>
@@ -48,7 +49,7 @@ export function GameUI() {
         const screenWidth = window.innerWidth;
 
         // Forward and brake controls
-        setControls({ brake: false });
+        setControls({ forward: true, brake: false });
 
         // Steering controls
         if (touchX < screenWidth / 2) {
@@ -59,7 +60,7 @@ export function GameUI() {
     };
 
     const handleTouchEnd = () => {
-        setControls({ left: false, right: false, brake: false });
+        setControls({ forward: false, left: false, right: false, brake: false });
     };
 
     return (
