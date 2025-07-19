@@ -2,7 +2,7 @@
 
 import { Leva } from 'leva';
 import { useStore } from "@/hooks/use-toast";
-import { useControls } from '@/hooks/use-mobile';
+import { useControls, useKeyboardControls } from '@/hooks/use-mobile';
 
 function Speedometer() {
     const speed = useStore((state) => state.speed);
@@ -40,11 +40,18 @@ function Editor() {
 }
 
 export function GameUI() {
+    useKeyboardControls(); // Initialize keyboard controls
     const setControls = useControls(state => state.setControls);
 
     const handleTouchStart = (e: React.TouchEvent<HTMLDivElement>) => {
         const touchX = e.touches[0].clientX;
-        if (touchX < window.innerWidth / 2) {
+        const screenWidth = window.innerWidth;
+
+        // Forward and brake controls
+        setControls({ brake: false });
+
+        // Steering controls
+        if (touchX < screenWidth / 2) {
             setControls({ left: true, right: false });
         } else {
             setControls({ left: false, right: true });
@@ -52,7 +59,7 @@ export function GameUI() {
     };
 
     const handleTouchEnd = () => {
-        setControls({ left: false, right: false });
+        setControls({ left: false, right: false, brake: false });
     };
 
     return (
