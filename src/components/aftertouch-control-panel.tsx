@@ -2,7 +2,10 @@
 
 import { Leva } from 'leva';
 import { useStore } from "@/hooks/use-store";
-import { useKeyboardControls } from '@/hooks/use-mobile';
+import { useControls } from '@/hooks/use-mobile';
+import { Button } from './ui/button';
+import { ChevronLeft, ChevronRight } from 'lucide-react';
+import { useEffect, useState } from 'react';
 
 function Speedometer() {
     const speed = useStore((state) => state.speed);
@@ -27,19 +30,53 @@ function Minimap() {
 
 function Controls() {
     return (
-        <div className="absolute bottom-8 left-8 text-white text-sm font-mono bg-black/50 p-4 rounded-lg">
+        <div className="absolute bottom-8 left-8 text-white text-sm font-mono bg-black/50 p-4 rounded-lg hidden md:block">
             <p>A, D / Arrows: Steer</p>
             <p>R: Reset</p>
         </div>
     );
 }
 
+function TouchControls() {
+    const { setControls } = useControls();
+    const [isMobile, setIsMobile] = useState(false);
+
+    useEffect(() => {
+        const checkMobile = () => setIsMobile(window.innerWidth < 768);
+        checkMobile();
+        window.addEventListener('resize', checkMobile);
+        return () => window.removeEventListener('resize', checkMobile);
+    }, []);
+    
+    if (!isMobile) return null;
+
+    return (
+        <div className="absolute bottom-8 left-8 right-8 flex justify-between md:hidden">
+            <Button 
+                className="w-24 h-24 rounded-full bg-black/30 text-white text-4xl"
+                onTouchStart={() => setControls({ left: true })}
+                onTouchEnd={() => setControls({ left: false })}
+            >
+                <ChevronLeft size={48} />
+            </Button>
+            <Button 
+                className="w-24 h-24 rounded-full bg-black/30 text-white text-4xl"
+                onTouchStart={() => setControls({ right: true })}
+                onTouchEnd={() => setControls({ right: false })}
+            >
+                <ChevronRight size={48} />
+            </Button>
+        </div>
+    )
+}
+
+
 function Editor() {
     return <Leva collapsed />;
 }
 
 export function GameUI() {
-    useKeyboardControls(); // Initialize keyboard controls
+    useControls(); // Initialize keyboard controls
 
     return (
         <>
@@ -47,6 +84,7 @@ export function GameUI() {
             <Speedometer />
             <Minimap />
             <Controls />
+            <TouchControls />
         </>
     )
 }

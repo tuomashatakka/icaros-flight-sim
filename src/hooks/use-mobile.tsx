@@ -16,7 +16,7 @@ type ControlsState = {
   setControls: (newControls: Partial<Controls>) => void;
 }
 
-export const useControls = create<ControlsState>((set) => ({
+const useControlsStore = create<ControlsState>((set) => ({
   controls: {
     left: false,
     right: false,
@@ -25,29 +25,34 @@ export const useControls = create<ControlsState>((set) => ({
   setControls: (newControls) => set(state => ({ controls: { ...state.controls, ...newControls }})),
 }));
 
-export const useKeyboardControls = () => {
-  const setControls = useControls(state => state.setControls);
 
-  useEffect(() => {
-    const handleKeyDown = (e: KeyboardEvent) => {
-      keys.forEach((key) => {
-        if (key.keys.includes(e.key)) {
-          setControls({ [key.name]: true });
-        }
-      });
-    };
-    const handleKeyUp = (e: KeyboardEvent) => {
-      keys.forEach((key) => {
-        if (key.keys.includes(e.key)) {
-          setControls({ [key.name]: false });
-        }
-      });
-    };
-    window.addEventListener('keydown', handleKeyDown);
-    window.addEventListener('keyup', handleKeyUp);
-    return () => {
-      window.removeEventListener('keydown', handleKeyDown);
-      window.removeEventListener('keyup', handleKeyUp);
-    };
-  }, [setControls]);
-};
+export const useControls = () => {
+    const { controls, setControls } = useControlsStore();
+
+    useEffect(() => {
+        const handleKeyDown = (e: KeyboardEvent) => {
+            keys.forEach((key) => {
+                if (key.keys.includes(e.key)) {
+                    setControls({ [key.name]: true });
+                }
+            });
+        };
+        const handleKeyUp = (e: KeyboardEvent) => {
+            keys.forEach((key) => {
+                if (key.keys.includes(e.key)) {
+                    setControls({ [key.name]: false });
+                }
+            });
+        };
+
+        window.addEventListener('keydown', handleKeyDown);
+        window.addEventListener('keyup', handleKeyUp);
+
+        return () => {
+            window.removeEventListener('keydown', handleKeyDown);
+            window.removeEventListener('keyup', handleKeyUp);
+        };
+    }, [setControls]);
+
+    return { controls, setControls };
+}

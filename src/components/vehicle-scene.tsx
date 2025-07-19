@@ -44,6 +44,7 @@ export function Vehicle() {
     () => ({
       mass: 150,
       position: [0, 2, 0],
+      rotation: [0, Math.PI, 0], 
       angularDamping: 0.5,
       args: [vehicleConfig.width, vehicleConfig.height, vehicleConfig.front * 2]
     }),
@@ -68,6 +69,8 @@ export function Vehicle() {
           child.castShadow = true;
         }
       });
+      // The model is rotated to face forward relative to the chassis body.
+      // The chassis body itself is rotated 180 deg, so the car faces 0,0,0
       carGltf.scene.rotation.y = Math.PI;
     }
   }, [carGltf]);
@@ -96,7 +99,7 @@ export function Vehicle() {
       chassisApi.position.set(0, 2, 0);
       chassisApi.velocity.set(0, 0, 0);
       chassisApi.angularVelocity.set(0, 0, 0);
-      chassisApi.rotation.set(0, 0, 0);
+      chassisApi.rotation.set(0, Math.PI, 0);
     }
     
     setSpeed(velocity.current.length());
