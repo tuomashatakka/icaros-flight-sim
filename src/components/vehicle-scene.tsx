@@ -26,6 +26,7 @@ export function Vehicle() {
       angularDamping: 0.5,
       args: [width, height, front * 2]
     }),
+    useRef<Object3D>(null)
   );
 
   const wheelRefs = [useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null)];
@@ -52,7 +53,8 @@ export function Vehicle() {
   
   const velocity = useRef(new Vector3());
   useEffect(() => {
-    chassisApi.velocity.subscribe((v) => velocity.current.fromArray(v));
+    const unsubscribe = chassisApi.velocity.subscribe((v) => velocity.current.fromArray(v));
+    return unsubscribe;
   }, [chassisApi]);
 
   useFrame((state, delta) => {
@@ -60,7 +62,6 @@ export function Vehicle() {
 
     const { force, steer } = vehicleConfig;
 
-    // Autonomous forward movement
     const engineForce = -force;
     vehicleApi.applyEngineForce(engineForce, 2);
     vehicleApi.applyEngineForce(engineForce, 3);
