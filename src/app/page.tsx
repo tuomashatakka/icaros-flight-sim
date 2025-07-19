@@ -69,7 +69,7 @@ export default function Home() {
               contactEquationRelaxation: 4,
               friction: 1e-3,
             }}
-            allowSleep
+            allowSleep={false}
             gravity={[0, -9.81, 0]}
           >
             <Debug color="white" scale={1.0001}>
