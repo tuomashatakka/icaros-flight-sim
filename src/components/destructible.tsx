@@ -94,7 +94,7 @@ export const DestructibleBuilding = ({ position, size }: { position: Triplet, si
   const addTakedown = useStore((state) => state.addTakedown);
 
   const fragments = useMemo(() => {
-    const points = Array.from({ length: 50 }, () => new THREE.Vector3(
+    const points = Array.from({ length: 20 }, () => new THREE.Vector3(
       (Math.random() - 0.5) * size.width,
       0,
       (Math.random() - 0.5) * size.depth
@@ -122,7 +122,7 @@ export const DestructibleBuilding = ({ position, size }: { position: Triplet, si
     return (
       <group>
         {fragments.map((frag, i) => (
-          <Fragment key={i} geometry={frag} position={position} />
+          <Fragment key={i} geometry={frag} position={position} mass={5} />
         ))}
       </group>
     );
