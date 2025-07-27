@@ -19,6 +19,17 @@ function Speedometer() {
     );
 }
 
+function TakedownCounter() {
+    const takedowns = useStore((state) => state.takedowns);
+
+    return (
+        <div className="absolute top-8 left-8 text-white text-2xl font-mono bg-black/50 p-3 rounded-lg">
+            <span>Takedowns: {takedowns}</span>
+        </div>
+    );
+}
+
+
 function Minimap() {
     return (
         <div className="absolute top-8 right-8 w-48 h-48 bg-black/50 rounded-full border-2 border-primary/50 flex items-center justify-center">
@@ -101,6 +112,7 @@ export function GameUI() {
     return (
         <>
             <Editor />
+            <TakedownCounter />
             <Speedometer />
             <Minimap />
             <Controls />

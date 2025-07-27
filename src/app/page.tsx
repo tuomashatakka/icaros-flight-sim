@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useMemo } from 'react';
+import { Suspense } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Physics, Debug } from '@react-three/cannon';
 import { Sky, Environment } from '@react-three/drei';
@@ -8,35 +8,27 @@ import { Vehicle } from '@/components/vehicle-scene';
 import { Track } from '@/components/game-hud';
 import { GameUI } from '@/components/aftertouch-control-panel';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
-import * as THREE from 'three';
+import { DestructibleBuilding } from '@/components/destructible';
 
-function Buildings() {
-  const buildingGeometries = useMemo(() => [
-    new THREE.BoxGeometry(1, 1, 1),
-    new THREE.BoxGeometry(1, 2, 1),
-    new THREE.BoxGeometry(2, 1, 1),
-  ], []);
+function CityBlocks() {
+  const buildingSize = { width: 10, height: 40, depth: 10 };
+  const spacing = 20;
+  const grid = 5;
 
   return (
     <group>
-      {Array.from({ length: 100 }).map((_, i) => {
-        const x = (Math.random() - 0.5) * 400;
-        const z = (Math.random() - 0.5) * 400;
-
-        // Ensure buildings are not on the main track area
-        if (Math.abs(x) < 20 && Math.abs(z) < 20) return null;
-
-        const height = Math.random() * 30 + 10;
-        const width = Math.random() * 10 + 5;
-        const depth = Math.random() * 10 + 5;
-
-        return (
-          <mesh key={i} position={[x, height / 2, z]} castShadow>
-            <boxGeometry args={[width, height, depth]} />
-            <meshStandardMaterial color={Math.random() * 0xffffff} />
-          </mesh>
-        );
-      })}
+      {Array.from({ length: grid }).map((_, i) =>
+        Array.from({ length: grid }).map((_, j) => {
+          if (i === Math.floor(grid / 2) && j === Math.floor(grid / 2)) return null; // Skip center for open space
+          return (
+            <DestructibleBuilding
+              key={`${i}-${j}`}
+              position={[(i - grid / 2) * spacing, buildingSize.height / 2, (j - grid / 2) * spacing]}
+              size={buildingSize}
+            />
+          );
+        })
+      )}
     </group>
   );
 }
@@ -75,7 +67,7 @@ export default function Home() {
             <Debug color="white" scale={1.0001}>
               <Track />
               <Vehicle />
-              <Buildings />
+              <CityBlocks />
             </Debug>
           </Physics>
            <EffectComposer>

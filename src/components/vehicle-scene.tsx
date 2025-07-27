@@ -3,7 +3,7 @@
 
 import { useBox, useRaycastVehicle, useSphere } from '@react-three/cannon';
 import { useFrame, useLoader } from '@react-three/fiber';
-import { useEffect, useRef, forwardRef } from 'react';
+import { useEffect, useRef, forwardRef, useCallback } from 'react';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { useControls } from '@/hooks/use-mobile';
 import { useStore } from '@/hooks/use-store';
@@ -44,28 +44,28 @@ export function Vehicle() {
   const { radius } = vehicleConfig;
 
   const chassisRef = useRef<Object3D>(null);
+  
+  const onCollide = useCallback((e: { contact: { impactVelocity: number } }) => {
+    if (e.contact.impactVelocity < 5) return;
+    // Potentially add crash effects here later
+  }, []);
+
   const [chassisBody, chassisApi] = useBox(
     () => ({
       mass: 150,
       position,
       angularDamping: 0.5,
       args: [vehicleConfig.width, vehicleConfig.height, vehicleConfig.front * 2],
-      rotation: [0, Math.PI, 0]
+      rotation: [0, Math.PI, 0],
+      onCollide
     }),
     chassisRef
   );
 
   const wheelRefs = [useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null)];
   const wheelBodies = [useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null)];
-  const [_, wheelApi] = useSphere(
-    () => ({
-      mass: 1,
-      type: 'Kinematic',
-      collisionFilterGroup: 0,
-      args: [radius],
-    }),
-    wheelBodies[0]
-  );
+  
+  useSphere(() => ({ mass: 1, type: 'Kinematic', collisionFilterGroup: 0, args: [radius] }), wheelBodies[0]);
   useSphere(() => ({ mass: 1, type: 'Kinematic', collisionFilterGroup: 0, args: [radius] }), wheelBodies[1]);
   useSphere(() => ({ mass: 1, type: 'Kinematic', collisionFilterGroup: 0, args: [radius] }), wheelBodies[2]);
   useSphere(() => ({ mass: 1, type: 'Kinematic', collisionFilterGroup: 0, args: [radius] }), wheelBodies[3]);
@@ -101,7 +101,6 @@ export function Vehicle() {
 
   const smoothedCameraPosition = useRef(new Vector3(0, 5, 15));
   const smoothedLookAtPosition = useRef(new Vector3(0, 0, 0));
-
 
   useFrame((state, delta) => {
     if (!vehicle.current || !vehicleApi) return;
@@ -140,7 +139,7 @@ export function Vehicle() {
       chassisRef.current.getWorldPosition(vehiclePosition);
       chassisRef.current.getWorldQuaternion(vehicleQuaternion);
 
-      const cameraOffset = new Vector3(0, 3.5, -8); // Position camera behind and slightly above
+      const cameraOffset = new Vector3(0, 3.5, 8); // Position camera behind and slightly above
       cameraOffset.applyQuaternion(vehicleQuaternion);
       cameraOffset.add(vehiclePosition);
       
