@@ -8,8 +8,33 @@ import { Delaunay } from 'd3-delaunay';
 import clipping from 'polygon-clipping';
 import type { Triplet } from '@react-three/cannon';
 import * as THREE from 'three';
+import { BufferGeometry, Float32BufferAttribute } from 'three';
 
 const toVec3 = (arr: Triplet) => new THREE.Vector3(...arr);
+
+// Utility to convert BufferGeometry to cannon-es convex polyhedron args
+const geometryToConvexArgs = (geometry: THREE.BufferGeometry): [number[][], number[][]] => {
+    const position = geometry.attributes.position.array;
+    const vertices: number[][] = [];
+    for (let i = 0; i < position.length; i += 3) {
+        vertices.push([position[i], position[i + 1], position[i + 2]]);
+    }
+
+    const faces: number[][] = [];
+    if (geometry.index) {
+        const index = geometry.index.array;
+        for (let i = 0; i < index.length; i += 3) {
+            faces.push([index[i], index[i + 1], index[i + 2]]);
+        }
+    } else {
+        for (let i = 0; i < vertices.length / 3; i++) {
+            faces.push([i * 3, i * 3 + 1, i * 3 + 2]);
+        }
+    }
+
+    return [vertices, faces];
+};
+
 
 function createVoronoiFragments(
   points: THREE.Vector3[],
@@ -23,6 +48,7 @@ function createVoronoiFragments(
     size.depth / 2,
   ]).cellPolygons();
   return Array.from(polygons).map((polygon) => {
+    if (!polygon) return null;
     const convexPolygon = polygon.map(([x, y]) => ({ x, y }));
     const shape = new THREE.Shape(convexPolygon);
     const extrudeSettings = {
@@ -34,14 +60,16 @@ function createVoronoiFragments(
     geometry.rotateX(Math.PI / 2);
 
     return geometry;
-  });
+  }).filter(g => g !== null) as THREE.BufferGeometry[];
 }
 
 const Fragment = ({ geometry, position, mass = 1 }: { geometry: THREE.BufferGeometry, position: Triplet, mass?: number }) => {
-  const [ref, api] = useConvexPolyhedron(() => ({
+  const args = useMemo(() => geometryToConvexArgs(geometry), [geometry]);
+  
+  const [ref] = useConvexPolyhedron(() => ({
     mass,
     position,
-    args: [geometry as any],
+    args: args as [THREE.Vector3[], number[][], THREE.Vector3[]],
     sleepSpeedLimit: 1.5,
   }));
 
