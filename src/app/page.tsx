@@ -3,7 +3,7 @@
 import { Suspense } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Physics, Debug } from '@react-three/cannon';
-import { Sky, Environment } from '@react-three/drei';
+import { Sky, Environment, OrbitControls } from '@react-three/drei';
 import { Vehicle } from '@/components/vehicle-scene';
 import { Track } from '@/components/game-hud';
 import { GameUI } from '@/components/aftertouch-control-panel';
@@ -73,6 +73,7 @@ export default function Home() {
            <EffectComposer>
             <Bloom luminanceThreshold={0.7} luminanceSmoothing={0.9} height={300} />
           </EffectComposer>
+          <OrbitControls />
         </Suspense>
       </Canvas>
       <GameUI />

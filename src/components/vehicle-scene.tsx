@@ -138,20 +138,34 @@ export function Vehicle() {
     if (chassisRef.current) {
       chassisRef.current.getWorldPosition(vehiclePosition);
       chassisRef.current.getWorldQuaternion(vehicleQuaternion);
-
-      const cameraOffset = new Vector3(0, 3.5, 8); // Position camera behind and slightly above
-      cameraOffset.applyQuaternion(vehicleQuaternion);
-      cameraOffset.add(vehiclePosition);
       
-      const lookAtPoint = vehiclePosition.clone();
-      lookAtPoint.y += 0.5;
+      const isMoving = speed > 1;
 
-      const lerpFactor = delta * 2.0;
-      smoothedCameraPosition.current.lerp(cameraOffset, lerpFactor);
-      smoothedLookAtPosition.current.lerp(lookAtPoint, lerpFactor);
+      if (isMoving) {
+        const cameraOffset = new Vector3(0, 3.5, 8); // Position camera behind and slightly above
+        cameraOffset.applyQuaternion(vehicleQuaternion);
+        cameraOffset.add(vehiclePosition);
+        
+        const lookAtPoint = vehiclePosition.clone();
+        lookAtPoint.y += 0.5;
 
-      state.camera.position.copy(smoothedCameraPosition.current);
-      state.camera.lookAt(smoothedLookAtPosition.current);
+        const lerpFactor = delta * 2.0;
+        smoothedCameraPosition.current.lerp(cameraOffset, lerpFactor);
+        smoothedLookAtPosition.current.lerp(lookAtPoint, lerpFactor);
+
+        state.camera.position.copy(smoothedCameraPosition.current);
+        state.camera.lookAt(smoothedLookAtPosition.current);
+        
+        if (state.controls) {
+            state.controls.target.copy(lookAtPoint);
+        }
+      } else {
+        // Allow orbit controls to take over when car is not moving
+         if (state.controls) {
+            smoothedCameraPosition.current.copy(state.camera.position);
+            smoothedLookAtPosition.current.copy(state.controls.target);
+        }
+      }
     }
   });
 
