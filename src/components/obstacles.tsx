@@ -4,6 +4,7 @@ import type { BoxProps, Triplet } from '@react-three/cannon';
 import { useBox, useCylinder, useHingeConstraint } from '@react-three/cannon';
 import { useFrame } from '@react-three/fiber';
 import { useRef } from 'react';
+import { Euler } from 'three';
 import type { Mesh, Object3D } from 'three';
 
 type PhysicalBoxProps = BoxProps & {
