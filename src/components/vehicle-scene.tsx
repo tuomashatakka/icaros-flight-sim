@@ -9,7 +9,7 @@ import { useControls } from '@/hooks/use-mobile';
 import { useStore } from '@/hooks/use-store';
 import { vehicleConfig, wheelInfos } from '@/lib/utils';
 import type { Object3D } from 'three';
-import { Quaternion, Vector3, Group } from 'three';
+import { Quaternion, Vector3, Group, Euler } from 'three';
 
 export function Vehicle() {
   const { controls } = useControls();
@@ -21,6 +21,7 @@ export function Vehicle() {
   const { radius } = vehicleConfig;
 
   const chassisRef = useRef<Object3D>(null);
+  const visualRef = useRef<Object3D>(null);
   
   const [chassisBody, chassisApi] = useBox(
     () => ({
@@ -71,6 +72,9 @@ export function Vehicle() {
   const smoothedCameraPosition = useRef(new Vector3(0, 5, 15));
   const smoothedLookAtPosition = useRef(new Vector3());
 
+  const smoothedVisualPosition = useRef(new Vector3(0, 0, 0))
+  const smoothedVisualRotation = useRef(new Euler(0, 0, 0))
+
   useFrame((state, delta) => {
     if (!vehicle.current || !vehicleApi || !chassisRef.current) return;
 
@@ -107,7 +111,7 @@ export function Vehicle() {
     chassisRef.current.getWorldPosition(vehiclePosition);
     chassisRef.current.getWorldQuaternion(vehicleQuaternion);
     
-    const cameraOffset = new Vector3(0, 3.5, 8); // Position camera behind and slightly above
+    const cameraOffset = new Vector3(0, 3.5, -8); // Position camera behind and slightly above
     cameraOffset.applyQuaternion(vehicleQuaternion);
     cameraOffset.add(vehiclePosition);
     
@@ -120,13 +124,26 @@ export function Vehicle() {
 
     state.camera.position.copy(smoothedCameraPosition.current);
     state.camera.lookAt(smoothedLookAtPosition.current);
+
+    const visualOffset = new Vector3(0, 0.5, 0);
+    visualOffset.applyQuaternion(vehicleQuaternion);
+    visualOffset.add(vehiclePosition);
+    smoothedVisualPosition.current.lerp(visualOffset, lerpFactor * 3);
+    smoothedVisualRotation.current.setFromQuaternion(vehicleQuaternion)
+    // smoothedVisualRotation.current.set(smoothedVisualRotation.current.x, smoothedVisualRotation.current.y + Math.PI / 2, smoothedVisualRotation.current.z)
+
+    visualRef.current?.position.copy(smoothedVisualPosition.current)
+    visualRef.current?.rotation.copy(smoothedVisualRotation.current)
   });
 
-  return (
+  return <>
     <group ref={vehicle as React.Ref<Group>}>
       <group ref={chassisRef}>
-        <primitive object={carGltf.scene} position={[0, -0.2, 0.35]} rotation={[0, -Math.PI / 2, 0]} scale={0.1}/>
+        <primitive object={chassisBody} position={[0, 0.5, 2.35]} rotation={[0, -Math.PI / 2, 0]}/>
       </group>
     </group>
-  );
+    <group ref={visualRef} scale={0.07}>
+      <primitive object={carGltf.scene} position={[0, 0, 15]} rotation={[0, -Math.PI / 2, 0]} />
+    </group>
+  </>
 }

@@ -6,7 +6,7 @@ export function cn(...inputs: ClassValue[]) {
 }
 
 export const vehicleConfig = {
-  width: 1.7,
+  width: 1.0,
   height: 0.3,
   front: 1.35,
   back: -1.3,

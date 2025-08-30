@@ -40,10 +40,9 @@ export default function Home() {
             gravity={[0, -9.81, 0]}
             step={1 / 60}
           >
-            <Debug color="white" scale={1.0001}>
               <Track />
               <Vehicle />
-            </Debug>
+            
           </Physics>
            <EffectComposer>
             <Bloom luminanceThreshold={0.7} luminanceSmoothing={0.9} height={300} />
