@@ -2,32 +2,28 @@
 
 import { useTrimesh } from '@react-three/cannon';
 import { MeshReflectorMaterial } from '@react-three/drei';
-import { useMemo } from 'react';
 import * as THREE from 'three';
 import { COLLISION_GROUPS } from '@/lib/utils';
 
-function TorusTrack() {
-  const radius = 50;
-  const tube = 10;
-  const radialSegments = 80;
-  const tubularSegments = 100;
+const radius = 2;
+const tube = -1;
+const radialSegments = 80;
+const tubularSegments = 100;
 
-  const geometry = useMemo(
-    () => new THREE.TorusGeometry(radius, tube, radialSegments, tubularSegments),
-    [radius, tube, radialSegments, tubularSegments]
-  );
+function TorusTrack() {
+
+  const geometry = new THREE.TorusGeometry(radius, tube, radialSegments, tubularSegments)
   
   const vertices = (geometry.attributes.position as THREE.BufferAttribute).array as Float32Array;
   const indices = geometry.index!.array as Uint16Array | Uint32Array;
 
   const [ref] = useTrimesh(() => ({
-    mass: 0,
-    type: 'Static',
+    type: 'Kinematic',
     args: [vertices, indices],
     rotation: [-Math.PI / 2, 0, 0],
-    position: [radius, 0, 0],
-    collisionFilterGroup: COLLISION_GROUPS.GROUND,
-    collisionFilterMask: COLLISION_GROUPS.VEHICLE,
+    position: [radius, -1, 0],
+    collisionFilterGroup: COLLISION_GROUPS.VEHICLE,
+    collisionFilterMask: COLLISION_GROUPS.GROUND,
   }));
 
   return (
