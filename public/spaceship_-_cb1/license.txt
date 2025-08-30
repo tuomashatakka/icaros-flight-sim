@@ -1,0 +1,11 @@
+Model Information:
+* title:	SPACESHIP - CB1
+* source:	https://sketchfab.com/3d-models/spaceship-cb1-4a8fddf9fadf4d2998925ca4b6d4b93b
+* author:	Lezalit (https://sketchfab.com/Lezalit)
+
+Model License:
+* license type:	CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
+* requirements:	Author must be credited. Commercial use is allowed.
+
+If you use this 3D model in your project be sure to copy paste this credit wherever you share it:
+This work is based on "SPACESHIP - CB1" (https://sketchfab.com/3d-models/spaceship-cb1-4a8fddf9fadf4d2998925ca4b6d4b93b) by Lezalit (https://sketchfab.com/Lezalit) licensed under CC-BY-4.0 (http://creativecommons.org/licenses/by/4.0/)
