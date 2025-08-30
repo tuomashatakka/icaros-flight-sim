@@ -38,6 +38,7 @@ export default function Home() {
             }}
             allowSleep={false}
             gravity={[0, -9.81, 0]}
+            step={1 / 60}
           >
             <Debug color="white" scale={1.0001}>
               <Track />
