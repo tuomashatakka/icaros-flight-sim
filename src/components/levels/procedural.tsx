@@ -54,14 +54,20 @@ export default function ProceduralTrack() {
         addSegment(length, 0, -height);
     };
 
-    // Build the track
-    addSegment(200, 0, 0); // Initial straight
-    addSegment(300, Math.PI / 4, 0); // Gentle right curve
-    addJump(100, 20); // First jump
-    addSegment(400, 0, 0); // Straight
-    addSegment(500, -Math.PI / 2, 0); // Long left curve
-    addJump(150, 30); // Bigger jump
-    addSegment(600, 0, 0); // Final straight
+    // Build the looped track
+    addSegment(500, 0, 0); // Start straight
+    addSegment(400, Math.PI / 2, 0); // 90 degree right turn
+    addJump(100, 20); // Jump on the next straight
+    addSegment(500, 0, 0); // Straight
+    addSegment(400, Math.PI / 2, 10); // 90 degree right turn with a ramp up
+    addSegment(500, 0, 0); // Next straight
+    addSegment(200, -Math.PI / 4, 0); // Chicane left
+    addSegment(200, Math.PI / 4, 0); // Chicane right
+    addSegment(200, 0, -10); // Straight with ramp down
+    addSegment(400, Math.PI / 2, 0); // 90 degree right turn
+    addJump(150, 30); // Big jump on the home straight
+    addSegment(800, 0, 0); // Home straight
+    addSegment(400, Math.PI / 2, 0); // Final 90 degree turn to close the loop
 
     const vertices = new Float32Array(verts);
     const indices = new Uint32Array(idxs);
@@ -81,7 +87,7 @@ export default function ProceduralTrack() {
   const [ref] = useTrimesh(() => ({
     type: 'Static',
     args: [vertices, indices],
-    position: [0, -0.05, 0], // Start at origin
+    position: [0, -0.05, 0], // Start track just below the car
     rotation: [0, 0, 0],
     collisionFilterGroup: COLLISION_GROUPS.GROUND,
     collisionFilterMask: COLLISION_GROUPS.VEHICLE,
