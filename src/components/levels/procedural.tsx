@@ -11,36 +11,53 @@ export default function ProceduralTrack() {
   const { geometry, vertices, indices } = useMemo(() => {
     const outerRadius = 50;
     const innerRadius = 30;
+    const segments = 64; // Number of segments for the circle
 
-    const shape = new THREE.Shape();
-    shape.moveTo(0, innerRadius);
-    shape.absarc(0, 0, innerRadius, 0, Math.PI * 2, false);
-    
-    const hole = new THREE.Path();
-    hole.moveTo(0, outerRadius);
-    hole.absarc(0, 0, outerRadius, 0, Math.PI * 2, true);
-    shape.holes.push(hole);
+    const verts = [];
+    const idxs = [];
 
-    const extrudeSettings = {
-      steps: 2,
-      depth: 0.1,
-      bevelEnabled: false
-    };
+    for (let i = 0; i <= segments; i++) {
+      const angle = (i / segments) * Math.PI * 2;
+      const cos = Math.cos(angle);
+      const sin = Math.sin(angle);
 
-    const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
-    geo.rotateX(-Math.PI / 2);
+      // Outer vertex
+      verts.push(cos * outerRadius, 0, sin * outerRadius);
+      // Inner vertex
+      verts.push(cos * innerRadius, 0, sin * innerRadius);
+
+      if (i > 0) {
+        const i0 = (i - 1) * 2;
+        const i1 = i0 + 1;
+        const i2 = i * 2;
+        const i3 = i2 + 1;
+
+        // Triangle 1
+        idxs.push(i0, i1, i2);
+        // Triangle 2
+        idxs.push(i1, i3, i2);
+      }
+    }
+
+    const vertices = new Float32Array(verts);
+    const indices = new Uint32Array(idxs);
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(vertices, 3));
+    geo.setIndex(new THREE.BufferAttribute(indices, 1));
+    geo.computeVertexNormals();
     
     return { 
         geometry: geo, 
-        vertices: geo.attributes.position.array as Float32Array,
-        indices: geo.index!.array as Uint16Array | Uint32Array
+        vertices: vertices,
+        indices: indices
     };
   }, []);
 
   const [ref] = useTrimesh(() => ({
     type: 'Static',
     args: [vertices, indices],
-    position: [0, -0.05, 0], // Slightly below to avoid z-fighting with car at start
+    position: [0, -0.05, 0],
     rotation: [0, 0, 0],
     collisionFilterGroup: COLLISION_GROUPS.GROUND,
     collisionFilterMask: COLLISION_GROUPS.VEHICLE,
