@@ -27,12 +27,8 @@ export default function ProceduralTrack() {
       bevelEnabled: false
     };
 
-    let geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+    const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
     geo.rotateX(-Math.PI / 2);
-
-    if (!geo.index) {
-        geo = geo.toIndexed();
-    }
     
     return { 
         geometry: geo, 
