@@ -56,7 +56,6 @@ export function Vehicle() {
           child.castShadow = true;
         }
       });
-      carGltf.scene.rotation.y = Math.PI;
     }
   }, [carGltf]);
   
@@ -126,7 +125,7 @@ export function Vehicle() {
   return (
     <group ref={vehicle as React.Ref<Group>}>
       <group ref={chassisRef}>
-        <primitive object={carGltf.scene} position={[0, -0.8, 0]}/>
+        <primitive object={carGltf.scene} position={[0, -0.8, 0]} rotation={[0, -Math.PI / 2, 0]} scale={0.2}/>
       </group>
     </group>
   );
