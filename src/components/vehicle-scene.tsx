@@ -15,7 +15,7 @@ export function Vehicle() {
   const { controls } = useControls();
   const setSpeed = useStore((state) => state.setSpeed);
   
-  const carGltf = useLoader(GLTFLoader, '/public/spaceship_-_cb1/scene.gltf');
+  const carGltf = useLoader(GLTFLoader, '/spaceship_-_cb1/scene.gltf');
   
   const position: [number, number, number] = [0, 2, 0];
   const { radius } = vehicleConfig;
