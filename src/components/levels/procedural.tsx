@@ -24,6 +24,7 @@ function TorusTrack() {
     type: 'Static',
     args: [vertices, indices],
     rotation: [-Math.PI / 2, 0, 0],
+    position: [radius, 0, 0]
   }));
 
   return (
