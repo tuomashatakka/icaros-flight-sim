@@ -28,7 +28,7 @@ function TorusTrack() {
   }));
 
   return (
-    <mesh ref={ref} geometry={geometry}>
+    <mesh ref={ref} geometry={geometry} receiveShadow>
       <MeshReflectorMaterial
         color="#333"
         blur={[400, 400]}
