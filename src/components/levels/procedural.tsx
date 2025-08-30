@@ -57,7 +57,7 @@ export default function ProceduralTrack() {
   const [ref] = useTrimesh(() => ({
     type: 'Static',
     args: [vertices, indices],
-    position: [0, -0.05, 0],
+    position: [-50, -0.05, 0],
     rotation: [0, 0, 0],
     collisionFilterGroup: COLLISION_GROUPS.GROUND,
     collisionFilterMask: COLLISION_GROUPS.VEHICLE,
