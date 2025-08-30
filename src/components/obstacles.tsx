@@ -4,7 +4,6 @@ import type { BoxProps, Triplet } from '@react-three/cannon';
 import { useBox, useCylinder, useHingeConstraint } from '@react-three/cannon';
 import { useFrame } from '@react-three/fiber';
 import { useRef } from 'react';
-import { Euler } from 'three';
 import type { Mesh, Object3D } from 'three';
 
 type PhysicalBoxProps = BoxProps & {
@@ -38,7 +37,7 @@ export function RotatingBox({ args = [2, 2, 2], ...props }: PhysicalBoxProps) {
 
   useFrame((state) => {
     const t = state.clock.getElapsedTime();
-    api.setRotation(new Euler(0, t, 0));
+    api.setRotation([0, t, 0]);
   });
 
   return (
