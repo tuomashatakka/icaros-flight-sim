@@ -10,8 +10,8 @@ import { EffectComposer, Bloom } from '@react-three/postprocessing';
 
 export function Level({ children }: PropsWithChildren) {
   return (
-    <Canvas shadows camera={{ position: [0, 5, 15], fov: 50 }}>
-      <fog attach="fog" args={['#171720', 20, 200]} />
+    <Canvas shadows camera={{ position: [0, 5, 15], fov: 40 }}>
+      <fog attach="fog" args={['#171720', 20, 80]} />
       <Suspense fallback={null}>
         <ambientLight intensity={0.5} />
         <directionalLight

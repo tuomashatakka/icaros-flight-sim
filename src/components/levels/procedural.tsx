@@ -57,7 +57,7 @@ export default function ProceduralTrack() {
   const [ref] = useTrimesh(() => ({
     type: 'Static',
     args: [vertices, indices],
-    position: [-50, -0.05, 0],
+    position: [-49, -0.05, 0],
     rotation: [0, 0, 0],
     collisionFilterGroup: COLLISION_GROUPS.GROUND,
     collisionFilterMask: COLLISION_GROUPS.VEHICLE,
@@ -70,12 +70,12 @@ export default function ProceduralTrack() {
           color="#333"
           blur={[400, 400]}
           resolution={1024}
-          mixBlur={1}
-          mixStrength={2}
-          depthScale={1}
-          minDepthThreshold={0.85}
-          metalness={0.6}
-          roughness={0.6}
+          mixBlur={2}
+          mixStrength={20}
+          depthScale={10}
+          minDepthThreshold={0.085}
+          metalness={0.1}
+          roughness={0.9}
       />
     </mesh>
   );

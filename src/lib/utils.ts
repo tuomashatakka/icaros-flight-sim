@@ -13,13 +13,13 @@ export const COLLISION_GROUPS = {
 
 export const vehicleConfig = {
   width: 1.0,
-  height: 0.3,
+  height: 0.225,
   front: 1.35,
   back: -1.3,
-  steer: 0.35,
+  steer: 0.45,
   force: 625,
-  brake: 50,
-  maxBrake: 100,
+  brake: 15,
+  maxBrake: 50,
   radius: 0.35,
 };
 
@@ -29,14 +29,14 @@ export const wheelInfo = {
   suspensionStiffness: 15,
   suspensionRestLength: 0.3,
   maxSuspensionForce: 100000,
-  maxSuspensionTravel: 0.3,
-  dampingRelaxation: 1.8,
+  maxSuspensionTravel: 0.45,
+  dampingRelaxation: 12.8,
   dampingCompression: 2.5,
   axleLocal: [-1, 0, 0] as [number, number, number],
   chassisConnectionPointLocal: [1, 0, 1] as [number, number, number],
   useCustomSlidingRotationalSpeed: true,
-  customSlidingRotationalSpeed: -30,
-  frictionSlip: 1.5,
+  customSlidingRotationalSpeed: -10,
+  frictionSlip: 1.25,
   isFrontWheel: false,
 };
 
