@@ -37,7 +37,7 @@ export function RotatingBox({ args = [2, 2, 2], ...props }: PhysicalBoxProps) {
 
   useFrame((state) => {
     const t = state.clock.getElapsedTime();
-    api.setRotation(0, t, 0);
+    api.setRotation(new Euler(0, t, 0));
   });
 
   return (
