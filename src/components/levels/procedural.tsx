@@ -9,35 +9,42 @@ import { COLLISION_GROUPS } from '@/lib/utils';
 
 export default function ProceduralTrack() {
   const { geometry, vertices, indices } = useMemo(() => {
-    const width = 40;
-    const length = 400;
-    const widthSegments = 20;
-    const lengthSegments = 100;
+    const outerRadius = 50;
+    const innerRadius = 30;
+    const numSegments = 64;
+    const trackWidth = outerRadius - innerRadius;
 
-    const geo = new THREE.PlaneGeometry(width, length, widthSegments, lengthSegments);
+    const shape = new THREE.Shape();
+    shape.moveTo(0, innerRadius);
+    shape.absarc(0, 0, innerRadius, 0, Math.PI * 2, false);
+    
+    const hole = new THREE.Path();
+    hole.moveTo(0, outerRadius);
+    hole.absarc(0, 0, outerRadius, 0, Math.PI * 2, true);
+    shape.holes.push(hole);
+
+    const extrudeSettings = {
+      steps: 2,
+      depth: 0.1,
+      bevelEnabled: false
+    };
+
+    const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
     geo.rotateX(-Math.PI / 2);
-
-    const vertices = geo.attributes.position.array as Float32Array;
-    for (let i = 0; i < vertices.length; i += 3) {
-      const x = vertices[i];
-      // Create raised edges and a raised middle part
-      const normalizedX = Math.abs(x) / (width / 2); // 0 at center, 1 at edge
-      const edgeHeight = Math.pow(normalizedX, 4) * 3; // Sharply rising edges
-      const middleHump = (1 - Math.pow(normalizedX * 1.5, 2)) * 0.75; // A gentle hump in the middle
-      vertices[i + 1] = edgeHeight + Math.max(0, middleHump); // y-coordinate
-    }
-    geo.attributes.position.needsUpdate = true;
-    geo.computeVertexNormals();
-
-    const indices = geo.index!.array as Uint16Array | Uint32Array;
-
-    return { geometry: geo, vertices: vertices.slice(), indices: indices.slice() };
+    
+    const tempGeo = new THREE.BufferGeometry().fromGeometry(geo);
+    
+    return { 
+        geometry: geo, 
+        vertices: tempGeo.attributes.position.array as Float32Array,
+        indices: tempGeo.index!.array as Uint16Array | Uint32Array
+    };
   }, []);
 
   const [ref] = useTrimesh(() => ({
     type: 'Static',
     args: [vertices, indices],
-    position: [0, 0, 0],
+    position: [0, -0.05, 0], // Slightly below to avoid z-fighting with car at start
     rotation: [0, 0, 0],
     collisionFilterGroup: COLLISION_GROUPS.GROUND,
     collisionFilterMask: COLLISION_GROUPS.VEHICLE,
