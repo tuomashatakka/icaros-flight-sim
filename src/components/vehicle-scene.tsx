@@ -13,7 +13,7 @@ import { Quaternion, Vector3, Group, Euler } from 'three';
 
 export function Vehicle() {
   const { controls } = useControls();
-  const setSpeed = useStore((state) => state.setSpeed);
+  const { setSpeed, increaseZone, zone, speedLevels } = useStore();
   
   const carGltf = useLoader(GLTFLoader, '/spaceship_-_cb1/scene.gltf');
   
@@ -72,6 +72,14 @@ export function Vehicle() {
     }
   }, [chassisApi]);
 
+  useEffect(() => {
+      const interval = setInterval(() => {
+        increaseZone();
+      }, 5000);
+      return () => clearInterval(interval);
+  }, [increaseZone])
+
+
   const smoothedCameraPosition = useRef(new Vector3(0, 5, 15));
   const smoothedLookAtPosition = useRef(new Vector3());
 
@@ -82,20 +90,45 @@ export function Vehicle() {
     if (!vehicle.current || !vehicleApi || !chassisRef.current) return;
 
     const { force, steer, maxBrake } = vehicleConfig;
+    
+    // Automatic forward force based on current zone
+    const currentZone = speedLevels.find(l => l.zone === zone) || speedLevels[speedLevels.length - 1];
+    const targetSpeed = currentZone.speedTarget;
+    const currentSpeed = velocity.current.length();
+    
+    let engineForce = 0;
+    if (currentSpeed < targetSpeed) {
+      engineForce = -force;
+    }
 
-    const engineForce = controls.forward ? -force : controls.backward ? force / 2 : 0;
     vehicleApi.applyEngineForce(engineForce, 2);
     vehicleApi.applyEngineForce(engineForce, 3);
     
-    const steerValue = controls.left ? steer : controls.right ? -steer : 0;
+    const steerMultiplier = controls.boost ? 2.5 : 1;
+    const steerValue = controls.steer * steer * steerMultiplier;
     vehicleApi.setSteeringValue(steerValue, 0);
     vehicleApi.setSteeringValue(steerValue, 1);
-
-    const brakeForce = controls.brake ? maxBrake : 0;
-    vehicleApi.setBrake(brakeForce, 0);
-    vehicleApi.setBrake(brakeForce, 1);
-    vehicleApi.setBrake(brakeForce, 2);
-    vehicleApi.setBrake(brakeForce, 3);
+    
+    // Braking based on steering
+    let brakeForce = 0;
+    if (steerValue > 0) { // Turning left
+      brakeForce = maxBrake * steerValue;
+      vehicleApi.setBrake(brakeForce, 0); // Front-left
+      vehicleApi.setBrake(brakeForce, 2); // Rear-left
+      vehicleApi.setBrake(0, 1);
+      vehicleApi.setBrake(0, 3);
+    } else if (steerValue < 0) { // Turning right
+      brakeForce = maxBrake * -steerValue;
+      vehicleApi.setBrake(brakeForce, 1); // Front-right
+      vehicleApi.setBrake(brakeForce, 3); // Rear-right
+      vehicleApi.setBrake(0, 0);
+      vehicleApi.setBrake(0, 2);
+    } else {
+        vehicleApi.setBrake(0, 0);
+        vehicleApi.setBrake(0, 1);
+        vehicleApi.setBrake(0, 2);
+        vehicleApi.setBrake(0, 3);
+    }
 
     if (controls.reset) {
       chassisApi.position.set(0, 2, 0);
@@ -104,8 +137,7 @@ export function Vehicle() {
       chassisApi.rotation.set(0, Math.PI, 0);
     }
     
-    const speed = velocity.current.length();
-    setSpeed(speed);
+    setSpeed(currentSpeed);
 
     // Chase camera logic
     const vehiclePosition = new Vector3();
@@ -133,7 +165,6 @@ export function Vehicle() {
     visualOffset.add(vehiclePosition);
     smoothedVisualPosition.current.lerp(visualOffset, lerpFactor * 3);
     smoothedVisualRotation.current.setFromQuaternion(vehicleQuaternion)
-    // smoothedVisualRotation.current.set(smoothedVisualRotation.current.x, smoothedVisualRotation.current.y + Math.PI / 2, smoothedVisualRotation.current.z)
 
     visualRef.current?.position.copy(smoothedVisualPosition.current)
     visualRef.current?.rotation.copy(smoothedVisualRotation.current)

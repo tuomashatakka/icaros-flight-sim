@@ -3,21 +3,56 @@
 import { Leva } from 'leva';
 import { useStore } from "@/hooks/use-store";
 import { useControls } from '@/hooks/use-mobile';
-import { Button } from './ui/button';
 import { ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useMemo } from 'react';
 
-function Speedometer() {
+function SpeedGauge() {
     const speed = useStore((state) => state.speed);
-    const speedKmh = (speed * 3.6).toFixed(0);
+    const zone = useStore((state) => state.zone);
+    const speedLevels = useStore((state) => state.speedLevels);
+    const maxSpeedForZone = 25 * (zone + 2);
+    const speedPercentage = Math.min((speed / maxSpeedForZone) * 100, 100);
+
+    const visibleLevels = useMemo(() => {
+        const currentLevelIndex = speedLevels.findIndex(level => level.zone === zone);
+        if (currentLevelIndex === -1) return [];
+        
+        const start = Math.max(0, currentLevelIndex - 2);
+        const end = Math.min(speedLevels.length, currentLevelIndex + 4);
+        return speedLevels.slice(start, end).map((level, index) => ({
+            ...level,
+            // position is from -2 (top) to 3 (bottom), 0 is the center
+            position: (start + index) - currentLevelIndex,
+        }));
+    }, [zone, speedLevels]);
 
     return (
-        <div className="absolute bottom-8 right-8 text-white text-4xl font-mono bg-black/50 p-4 rounded-lg">
-            <span>{speedKmh}</span>
-            <span className="text-xl ml-2">km/h</span>
+        <div className="absolute top-1/2 left-8 -translate-y-1/2 w-48 h-96 text-white font-mono bg-black/50 p-4 rounded-lg flex flex-col items-center justify-center overflow-hidden">
+            <div className="absolute inset-y-0 right-4 flex flex-col justify-center items-center">
+                <div className="w-2 h-full bg-primary/20 rounded-full">
+                    <div className="w-full bg-accent rounded-full transition-all duration-500" style={{ height: `${speedPercentage}%` }}></div>
+                </div>
+            </div>
+
+            <div className="relative w-full h-full flex items-center justify-start">
+                {/* Center marker */}
+                <div className="absolute left-0 w-full h-px bg-accent z-20"></div>
+                <div className="absolute left-0 -translate-x-4 w-4 h-4 border-y-2 border-l-2 border-accent rounded-l-sm"></div>
+                
+                <div className="relative w-full h-full transition-transform duration-500 ease-linear" style={{ transform: `translateY(-${(speed / maxSpeedForZone) * 25}%)`}}>
+                    {visibleLevels.map((level) => (
+                         <div key={level.zone} className="absolute w-full transition-all duration-500 ease-linear" style={{ top: `calc(50% + ${level.position * 25}% - 12px)` }}>
+                            <span className={`text-lg ${level.zone === zone ? 'text-accent font-bold' : 'text-white/50'}`}>
+                                ZONE {level.zone}
+                            </span>
+                        </div>
+                    ))}
+                </div>
+            </div>
         </div>
     );
 }
+
 
 function TakedownCounter() {
     const takedowns = useStore((state) => state.takedowns);
@@ -42,81 +77,27 @@ function Minimap() {
 function Controls() {
     return (
         <div className="absolute bottom-8 left-8 text-white text-sm font-mono bg-black/50 p-4 rounded-lg hidden md:block">
-            <p>W, S / Arrows: Accel/Brake</p>
-            <p>A, D / Arrows: Steer</p>
-            <p>Space: Brake</p>
+            <p>Arrows: Steer</p>
+            <p>Shift: Amplify Steer</p>
             <p>R: Reset</p>
         </div>
     );
 }
-
-function TouchControls() {
-    const { setControls } = useControls();
-    const [isMobile, setIsMobile] = useState(false);
-
-    useEffect(() => {
-        const checkMobile = () => setIsMobile(window.innerWidth < 768);
-        checkMobile();
-        window.addEventListener('resize', checkMobile);
-        return () => window.removeEventListener('resize', checkMobile);
-    }, []);
-    
-    if (!isMobile) return null;
-
-    return (
-        <div className="absolute bottom-8 inset-x-8 flex justify-between md:hidden">
-            <div className="flex flex-col gap-4">
-                 <Button 
-                    className="w-24 h-24 rounded-full bg-black/30 text-white text-4xl"
-                    onTouchStart={() => setControls({ forward: true })}
-                    onTouchEnd={() => setControls({ forward: false })}
-                >
-                    <ArrowUp size={48} />
-                </Button>
-                 <Button 
-                    className="w-24 h-24 rounded-full bg-black/30 text-white text-4xl"
-                    onTouchStart={() => setControls({ backward: true })}
-                    onTouchEnd={() => setControls({ backward: false })}
-                >
-                    <ArrowDown size={48} />
-                </Button>
-            </div>
-            <div className="flex items-center gap-4">
-                <Button 
-                    className="w-24 h-24 rounded-full bg-black/30 text-white text-4xl"
-                    onTouchStart={() => setControls({ left: true })}
-                    onTouchEnd={() => setControls({ left: false })}
-                >
-                    <ChevronLeft size={48} />
-                </Button>
-                <Button 
-                    className="w-24 h-24 rounded-full bg-black/30 text-white text-4xl"
-                    onTouchStart={() => setControls({ right: true })}
-                    onTouchEnd={() => setControls({ right: false })}
-                >
-                    <ChevronRight size={48} />
-                </Button>
-            </div>
-        </div>
-    )
-}
-
 
 function Editor() {
     return <Leva collapsed />;
 }
 
 export function GameUI() {
-    useControls(); // Initialize keyboard controls
+    useControls(); // Initialize controls
 
     return (
         <>
             <Editor />
             <TakedownCounter />
-            <Speedometer />
+            <SpeedGauge />
             <Minimap />
             <Controls />
-            <TouchControls />
         </>
     )
 }
