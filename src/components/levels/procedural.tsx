@@ -39,21 +39,19 @@ function LoadedTrack() {
     return null;
   }
 
-  return (
-    <mesh ref={ref} geometry={geometry} receiveShadow>
-       <MeshReflectorMaterial
-        color="#333"
-        blur={[400, 400]}
-        resolution={1024}
-        mixBlur={1}
-        mixStrength={2}
-        depthScale={1}
-        minDepthThreshold={0.85}
-        metalness={0.6}
-        roughness={0.6}
-       />
-    </mesh>
-  );
+  return <mesh ref={ref} geometry={geometry} receiveShadow>
+      <MeshReflectorMaterial
+      color="#333"
+      blur={[400, 400]}
+      resolution={1024}
+      mixBlur={1}
+      mixStrength={2}
+      depthScale={1}
+      minDepthThreshold={0.85}
+      metalness={0.6}
+      roughness={0.6}
+      />
+  </mesh>
 }
 
 

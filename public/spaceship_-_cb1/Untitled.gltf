@@ -15,7 +15,17 @@
 	"nodes":[
 		{
 			"mesh":0,
-			"name":"Cube"
+			"name":"Cube",
+			"scale":[
+				2,
+				1,
+				2
+			],
+			"translation":[
+				-3.8117122650146484,
+				-1,
+				0.026554346084594727
+			]
 		}
 	],
 	"materials":[
