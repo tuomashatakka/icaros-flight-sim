@@ -1,3 +1,4 @@
+
 import { clsx, type ClassValue } from "clsx"
 import { twMerge } from "tailwind-merge"
 
@@ -26,17 +27,17 @@ export const vehicleConfig = {
 export const wheelInfo = {
   radius: vehicleConfig.radius,
   directionLocal: [0, -1, 0] as [number, number, number],
-  suspensionStiffness: 15,
-  suspensionRestLength: 0.3,
+  suspensionStiffness: 10,
+  suspensionRestLength: 0.4,
   maxSuspensionForce: 100000,
-  maxSuspensionTravel: 0.45,
-  dampingRelaxation: 12.8,
-  dampingCompression: 2.5,
+  maxSuspensionTravel: 0.6,
+  dampingRelaxation: 10,
+  dampingCompression: 2,
   axleLocal: [-1, 0, 0] as [number, number, number],
   chassisConnectionPointLocal: [1, 0, 1] as [number, number, number],
   useCustomSlidingRotationalSpeed: true,
   customSlidingRotationalSpeed: -10,
-  frictionSlip: 1.25,
+  frictionSlip: 1.0,
   isFrontWheel: false,
 };
 

@@ -1,3 +1,4 @@
+
 "use client"
 
 import { Leva } from 'leva';
@@ -12,6 +13,7 @@ function SpeedGauge() {
     const speedLevels = useStore((state) => state.speedLevels);
     const maxSpeedForZone = 25 * (zone + 2);
     const speedPercentage = Math.min((speed / maxSpeedForZone) * 100, 100);
+    const speedKmph = (speed * 3.6).toFixed(0);
 
     const visibleLevels = useMemo(() => {
         const currentLevelIndex = speedLevels.findIndex(level => level.zone === zone);
@@ -38,6 +40,7 @@ function SpeedGauge() {
                 {/* Center marker */}
                 <div className="absolute left-0 w-full h-px bg-accent z-20"></div>
                 <div className="absolute left-0 -translate-x-4 w-4 h-4 border-y-2 border-l-2 border-accent rounded-l-sm"></div>
+                <span className="absolute left-12 text-accent font-bold text-lg">{speedKmph} km/h</span>
                 
                 <div className="relative w-full h-full transition-transform duration-500 ease-linear" style={{ transform: `translateY(-${(speed / maxSpeedForZone) * 25}%)`}}>
                     {visibleLevels.map((level) => (

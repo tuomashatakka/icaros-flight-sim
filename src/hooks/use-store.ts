@@ -1,3 +1,4 @@
+
 "use client"
 import { create } from 'zustand';
 import { subscribeWithSelector } from 'zustand/middleware';
@@ -17,19 +18,36 @@ type State = {
   speedLevels: SpeedLevel[];
 };
 
-const levels: SpeedLevel[] = Array.from({ length: 20 }, (_, i) => ({
+const initialLevels: SpeedLevel[] = Array.from({ length: 10 }, (_, i) => ({
     zone: i + 1,
     speedTarget: 25 * (i + 2)
 }));
 
 export const useStore = create<State>()(
-  subscribeWithSelector((set) => ({
+  subscribeWithSelector((set, get) => ({
     speed: 0,
     setSpeed: (speed) => set({ speed }),
     takedowns: 0,
     addTakedown: () => set((state) => ({ takedowns: state.takedowns + 1 })),
     zone: 1,
-    increaseZone: () => set((state) => ({ zone: state.zone + 1 })),
-    speedLevels: levels,
+    increaseZone: () => {
+      const currentZone = get().zone + 1;
+      const currentSpeedLevels = get().speedLevels;
+      // If the next zone doesn't exist yet, create it and the next few.
+      if (!currentSpeedLevels.find(level => level.zone === currentZone)) {
+        const newLevels = Array.from({ length: 5 }, (_, i) => {
+          const newZone = currentSpeedLevels.length + i + 1;
+          return {
+            zone: newZone,
+            speedTarget: 25 * (newZone + 1),
+          };
+        });
+        set(state => ({
+          speedLevels: [...state.speedLevels, ...newLevels],
+        }));
+      }
+      set({ zone: currentZone });
+    },
+    speedLevels: initialLevels,
   }))
 );
