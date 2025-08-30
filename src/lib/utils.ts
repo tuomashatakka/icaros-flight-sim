@@ -5,6 +5,12 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs))
 }
 
+export const COLLISION_GROUPS = {
+  GROUND: 1,
+  VEHICLE: 2,
+};
+
+
 export const vehicleConfig = {
   width: 1.0,
   height: 0.3,

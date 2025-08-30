@@ -7,7 +7,7 @@ import { useEffect, useRef } from 'react';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { useControls } from '@/hooks/use-mobile';
 import { useStore } from '@/hooks/use-store';
-import { vehicleConfig, wheelInfos } from '@/lib/utils';
+import { COLLISION_GROUPS, vehicleConfig, wheelInfos } from '@/lib/utils';
 import type { Object3D } from 'three';
 import { Quaternion, Vector3, Group, Euler } from 'three';
 
@@ -30,16 +30,19 @@ export function Vehicle() {
       angularDamping: 0.95,
       args: [vehicleConfig.width, vehicleConfig.height, vehicleConfig.front * 2],
       rotation: [0, Math.PI, 0],
+      collisionFilterGroup: COLLISION_GROUPS.VEHICLE,
+      collisionFilterMask: COLLISION_GROUPS.GROUND
     }),
     chassisRef
   );
 
   const wheelBodies = [useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null)];
   
-  useSphere(() => ({ mass: 1, type: 'Kinematic', collisionFilterGroup: 0, args: [radius] }), wheelBodies[0]);
-  useSphere(() => ({ mass: 1, type: 'Kinematic', collisionFilterGroup: 0, args: [radius] }), wheelBodies[1]);
-  useSphere(() => ({ mass: 1, type: 'Kinematic', collisionFilterGroup: 0, args: [radius] }), wheelBodies[2]);
-  useSphere(() => ({ mass: 1, type: 'Kinematic', collisionFilterGroup: 0, args: [radius] }), wheelBodies[3]);
+  const sphereArgs: [number] = [radius];
+  useSphere(() => ({ mass: 1, type: 'Kinematic', collisionFilterGroup: 0, args: sphereArgs }), wheelBodies[0]);
+  useSphere(() => ({ mass: 1, type: 'Kinematic', collisionFilterGroup: 0, args: sphereArgs }), wheelBodies[1]);
+  useSphere(() => ({ mass: 1, type: 'Kinematic', collisionFilterGroup: 0, args: sphereArgs }), wheelBodies[2]);
+  useSphere(() => ({ mass: 1, type: 'Kinematic', collisionFilterGroup: 0, args: sphereArgs }), wheelBodies[3]);
 
   const [vehicle, vehicleApi] = useRaycastVehicle(() => ({
     chassisBody: chassisRef,

@@ -4,6 +4,7 @@ import { useTrimesh } from '@react-three/cannon';
 import { MeshReflectorMaterial } from '@react-three/drei';
 import { useMemo } from 'react';
 import * as THREE from 'three';
+import { COLLISION_GROUPS } from '@/lib/utils';
 
 function TorusTrack() {
   const radius = 50;
@@ -24,7 +25,9 @@ function TorusTrack() {
     type: 'Static',
     args: [vertices, indices],
     rotation: [-Math.PI / 2, 0, 0],
-    position: [radius, 0, 0]
+    position: [radius, 0, 0],
+    collisionFilterGroup: COLLISION_GROUPS.GROUND,
+    collisionFilterMask: COLLISION_GROUPS.VEHICLE,
   }));
 
   return (
