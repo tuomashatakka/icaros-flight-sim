@@ -13,7 +13,7 @@ export default function ProceduralTrack() {
     const verts: number[] = [];
     const idxs: number[] = [];
     let lastVertexIndex = -1;
-    let currentPosition = new THREE.Vector3(0, 0, 0);
+    let currentPosition = new THREE.Vector3(-1, 1, 1);
     let currentDirection = new THREE.Vector3(0, 0, -1);
     
     const addSegment = (length: number, curve: number, ramp: number, width: number) => {

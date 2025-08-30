@@ -17,7 +17,7 @@ export function Vehicle() {
   
   const carGltf = useLoader(GLTFLoader, '/spaceship_-_cb1/scene.gltf');
   
-  const position: [number, number, number] = [0, 2, 0];
+  const position: [number, number, number] = [1, 2, 4];
   const { radius } = vehicleConfig;
 
   const chassisRef = useRef<Object3D>(null);
@@ -131,7 +131,7 @@ export function Vehicle() {
     }
 
     if (controls.reset) {
-      chassisApi.position.set(0, 2, 0);
+      chassisApi.position.set(-10, 2, -20);
       chassisApi.velocity.set(0, 0, 0);
       chassisApi.angularVelocity.set(0, 0, 0);
       chassisApi.rotation.set(0, Math.PI, 0);
