@@ -9,20 +9,19 @@ import { COLLISION_GROUPS } from '@/lib/utils';
 
 export default function ProceduralTrack() {
   const { geometry, vertices, indices } = useMemo(() => {
-    const trackWidth = 20;
     const segmentLength = 20;
-    const verts = [];
-    const idxs = [];
+    const verts: number[] = [];
+    const idxs: number[] = [];
     let lastVertexIndex = -1;
     let currentPosition = new THREE.Vector3(0, 0, 0);
     let currentDirection = new THREE.Vector3(0, 0, -1);
-
-    const addSegment = (length: number, curve: number, ramp: number) => {
-        const segments = Math.floor(length / segmentLength);
+    
+    const addSegment = (length: number, curve: number, ramp: number, width: number) => {
+        const segments = Math.max(1, Math.floor(length / segmentLength));
         for (let i = 0; i < segments; i++) {
             const sideVector = new THREE.Vector3().crossVectors(currentDirection, new THREE.Vector3(0, 1, 0)).normalize();
-            const leftVertex = currentPosition.clone().add(sideVector.clone().multiplyScalar(trackWidth / 2));
-            const rightVertex = currentPosition.clone().add(sideVector.clone().multiplyScalar(-trackWidth / 2));
+            const leftVertex = currentPosition.clone().add(sideVector.clone().multiplyScalar(width / 2));
+            const rightVertex = currentPosition.clone().add(sideVector.clone().multiplyScalar(-width / 2));
 
             verts.push(leftVertex.x, leftVertex.y, leftVertex.z);
             verts.push(rightVertex.x, rightVertex.y, rightVertex.z);
@@ -44,30 +43,82 @@ export default function ProceduralTrack() {
         }
     };
     
-    const addJump = (length: number, height: number) => {
-        // Ramp up
-        addSegment(length, 0, height);
-        // Gap
+    const addJump = (length: number, height: number, width: number) => {
+        addSegment(length, 0, height, width);
         currentPosition.add(currentDirection.clone().multiplyScalar(length * 1.5));
-        lastVertexIndex = -1; // Reset indices to create a gap
-        // Ramp down
-        addSegment(length, 0, -height);
+        lastVertexIndex = -1; // Create a gap
+        addSegment(length, 0, -height, width);
     };
 
-    // Build the looped track
-    addSegment(500, 0, 0); // Start straight
-    addSegment(400, Math.PI / 2, 0); // 90 degree right turn
-    addJump(100, 20); // Jump on the next straight
-    addSegment(500, 0, 0); // Straight
-    addSegment(400, Math.PI / 2, 10); // 90 degree right turn with a ramp up
-    addSegment(500, 0, 0); // Next straight
-    addSegment(200, -Math.PI / 4, 0); // Chicane left
-    addSegment(200, Math.PI / 4, 0); // Chicane right
-    addSegment(200, 0, -10); // Straight with ramp down
-    addSegment(400, Math.PI / 2, 0); // 90 degree right turn
-    addJump(150, 30); // Big jump on the home straight
-    addSegment(800, 0, 0); // Home straight
-    addSegment(400, Math.PI / 2, 0); // Final 90 degree turn to close the loop
+    // --- Track Generation ---
+
+    // Start straight
+    addSegment(200, 0, 0, 20);
+
+    // --- PATH SPLIT ---
+    const splitPosition = currentPosition.clone();
+    const splitDirection = currentDirection.clone();
+    const splitLastIndex = lastVertexIndex;
+
+    // --- Route 1: Longer, safer curve ---
+    addSegment(400, Math.PI / 2, 5, 20);
+    addSegment(200, 0, 0, 20);
+    const mergePosition1 = currentPosition.clone();
+    const mergeDirection1 = currentDirection.clone();
+    const mergeIndex1 = lastVertexIndex;
+
+    // --- Reset for Route 2 ---
+    currentPosition = splitPosition.clone();
+    currentDirection = splitDirection.clone();
+    lastVertexIndex = splitLastIndex;
+
+    // --- Route 2: Shorter, riskier shortcut with a jump ---
+    addSegment(50, -Math.PI / 8, 0, 10);
+    addJump(100, 15, 10); // Narrow jump
+    addSegment(50, Math.PI / 8, -5, 10);
+    
+    // Manual merge connection
+    const mergePosition2 = currentPosition.clone();
+    
+    // Find closest vertices to merge
+    const lastLeftVert = new THREE.Vector3(verts[verts.length-6], verts[verts.length-5], verts[verts.length-4]);
+    const lastRightVert = new THREE.Vector3(verts[verts.length-3], verts[verts.length-2], verts[verts.length-1]);
+    const merge1LeftVert = new THREE.Vector3(verts[mergeIndex1*3 - 3], verts[mergeIndex1*3 - 2], verts[mergeIndex1*3 - 1]);
+    const merge1RightVert = new THREE.Vector3(verts[mergeIndex1*3], verts[mergeIndex1*3 + 1], verts[mergeIndex1*3 + 2]);
+    
+    // Add verts for the merge point
+    currentPosition = mergePosition1.clone();
+    currentDirection = mergeDirection1.clone();
+    lastVertexIndex = mergeIndex1;
+    
+    const sideVector = new THREE.Vector3().crossVectors(currentDirection, new THREE.Vector3(0, 1, 0)).normalize();
+    const leftVertex = currentPosition.clone().add(sideVector.clone().multiplyScalar(20 / 2));
+    const rightVertex = currentPosition.clone().add(sideVector.clone().multiplyScalar(-20 / 2));
+    
+    verts.push(leftVertex.x, leftVertex.y, leftVertex.z);
+    verts.push(rightVertex.x, rightVertex.y, rightVertex.z);
+    
+    const mergePointIndex = lastVertexIndex + 2;
+
+    // Connect shortcut to merge point
+    idxs.push(lastVertexIndex - 1, mergePointIndex + 1, lastVertexIndex);
+    idxs.push(lastVertexIndex - 1, mergePointIndex, mergePointIndex + 1);
+
+
+    // Connect main route to merge point
+    idxs.push(mergeIndex1, mergeIndex1 + 1, mergePointIndex);
+    idxs.push(mergeIndex1 + 1, mergePointIndex + 1, mergePointIndex);
+    
+    lastVertexIndex = mergePointIndex;
+
+    // --- Continue after merge ---
+    addSegment(500, 0, 0, 20);
+    addSegment(400, Math.PI / 2, 0, 20);
+    addSegment(500, 0, -5, 20);
+    addSegment(400, Math.PI / 2, 0, 20);
+    addSegment(700, 0, 0, 20);
+    addSegment(400, Math.PI / 2, 0, 20);
+
 
     const vertices = new Float32Array(verts);
     const indices = new Uint32Array(idxs);
@@ -87,7 +138,7 @@ export default function ProceduralTrack() {
   const [ref] = useTrimesh(() => ({
     type: 'Static',
     args: [vertices, indices],
-    position: [0, -0.05, 0], // Start track just below the car
+    position: [0, -0.05, 0],
     rotation: [0, 0, 0],
     collisionFilterGroup: COLLISION_GROUPS.GROUND,
     collisionFilterMask: COLLISION_GROUPS.VEHICLE,
