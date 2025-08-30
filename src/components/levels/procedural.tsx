@@ -1,34 +1,47 @@
 "use client";
 
 import { useTrimesh } from '@react-three/cannon';
+import { useLoader } from '@react-three/fiber';
 import { MeshReflectorMaterial } from '@react-three/drei';
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
+import { useMemo } from 'react';
 import { COLLISION_GROUPS } from '@/lib/utils';
 
-const radius = 2;
-const tube = -1;
-const radialSegments = 80;
-const tubularSegments = 100;
+function LoadedTrack() {
+  const gltf = useLoader(GLTFLoader, '/spaceship_-_cb1/Untitled.gltf');
 
-function TorusTrack() {
+  const { vertices, indices, geometry } = useMemo(() => {
+    let vertices: Float32Array | undefined;
+    let indices: Uint16Array | Uint32Array | undefined;
+    let geometry: THREE.BufferGeometry | undefined;
 
-  const geometry = new THREE.TorusGeometry(radius, tube, radialSegments, tubularSegments)
-  
-  const vertices = (geometry.attributes.position as THREE.BufferAttribute).array as Float32Array;
-  const indices = geometry.index!.array as Uint16Array | Uint32Array;
+    gltf.scene.traverse((child) => {
+      if (child instanceof THREE.Mesh && !geometry) {
+        geometry = child.geometry;
+        vertices = (child.geometry.attributes.position as THREE.BufferAttribute).array as Float32Array;
+        indices = child.geometry.index!.array as Uint16Array | Uint32Array;
+      }
+    });
+    return { vertices, indices, geometry };
+  }, [gltf]);
+
 
   const [ref] = useTrimesh(() => ({
-    type: 'Kinematic',
-    args: [vertices, indices],
-    rotation: [-Math.PI / 2, 0, 0],
-    position: [radius, -1, 0],
-    collisionFilterGroup: COLLISION_GROUPS.VEHICLE,
-    collisionFilterMask: COLLISION_GROUPS.GROUND,
-  }));
+    type: 'Static',
+    args: [vertices!, indices!],
+    collisionFilterGroup: COLLISION_GROUPS.GROUND,
+    collisionFilterMask: COLLISION_GROUPS.VEHICLE,
+  }), undefined, [vertices, indices]);
+
+
+  if (!geometry) {
+    return null;
+  }
 
   return (
     <mesh ref={ref} geometry={geometry} receiveShadow>
-      <MeshReflectorMaterial
+       <MeshReflectorMaterial
         color="#333"
         blur={[400, 400]}
         resolution={1024}
@@ -38,16 +51,16 @@ function TorusTrack() {
         minDepthThreshold={0.85}
         metalness={0.6}
         roughness={0.6}
-        side={THREE.BackSide} // Render on the inside
-      />
+       />
     </mesh>
   );
 }
 
+
 export default function ProceduralTrack() {
   return (
     <>
-      <TorusTrack />
+      <LoadedTrack />
     </>
   );
 }
