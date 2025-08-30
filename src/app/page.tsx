@@ -34,7 +34,7 @@ export default function Home() {
             broadphase="SAP"
             defaultContactMaterial={{
               contactEquationRelaxation: 4,
-              friction: 1e-3,
+              friction: 0,
             }}
             allowSleep={false}
             gravity={[0, -9.81, 0]}

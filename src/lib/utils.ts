@@ -20,17 +20,17 @@ export const vehicleConfig = {
 export const wheelInfo = {
   radius: vehicleConfig.radius,
   directionLocal: [0, -1, 0] as [number, number, number],
-  suspensionStiffness: 30,
+  suspensionStiffness: 15,
   suspensionRestLength: 0.3,
   maxSuspensionForce: 100000,
   maxSuspensionTravel: 0.3,
-  dampingRelaxation: 2.3,
-  dampingCompression: 4.4,
+  dampingRelaxation: 1.8,
+  dampingCompression: 2.5,
   axleLocal: [-1, 0, 0] as [number, number, number],
   chassisConnectionPointLocal: [1, 0, 1] as [number, number, number],
   useCustomSlidingRotationalSpeed: true,
   customSlidingRotationalSpeed: -30,
-  frictionSlip: 2,
+  frictionSlip: 1.5,
   isFrontWheel: false,
 };
 

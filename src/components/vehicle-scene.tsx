@@ -26,7 +26,7 @@ export function Vehicle() {
     () => ({
       mass: 150,
       position,
-      angularDamping: 0.5,
+      angularDamping: 0.95,
       args: [vehicleConfig.width, vehicleConfig.height, vehicleConfig.front * 2],
       rotation: [0, Math.PI, 0],
     }),
