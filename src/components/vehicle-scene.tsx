@@ -45,11 +45,6 @@ export function Vehicle() {
 
   const chassisRef = useRef<Object3D>(null);
   
-  const onCollide = useCallback((e: { contact: { impactVelocity: number } }) => {
-    if (e.contact.impactVelocity < 5) return;
-    // Potentially add crash effects here later
-  }, []);
-
   const [chassisBody, chassisApi] = useBox(
     () => ({
       mass: 150,
@@ -57,7 +52,6 @@ export function Vehicle() {
       angularDamping: 0.5,
       args: [vehicleConfig.width, vehicleConfig.height, vehicleConfig.front * 2],
       rotation: [0, Math.PI, 0],
-      onCollide
     }),
     chassisRef
   );
@@ -100,10 +94,10 @@ export function Vehicle() {
   }, [chassisApi]);
 
   const smoothedCameraPosition = useRef(new Vector3(0, 5, 15));
-  const smoothedLookAtPosition = useRef(new Vector3(0, 0, 0));
+  const smoothedLookAtPosition = useRef(new Vector3());
 
   useFrame((state, delta) => {
-    if (!vehicle.current || !vehicleApi) return;
+    if (!vehicle.current || !vehicleApi || !chassisRef.current) return;
 
     const { force, steer, maxBrake } = vehicleConfig;
 
@@ -135,38 +129,22 @@ export function Vehicle() {
     const vehiclePosition = new Vector3();
     const vehicleQuaternion = new Quaternion();
 
-    if (chassisRef.current) {
-      chassisRef.current.getWorldPosition(vehiclePosition);
-      chassisRef.current.getWorldQuaternion(vehicleQuaternion);
-      
-      const isMoving = speed > 1;
+    chassisRef.current.getWorldPosition(vehiclePosition);
+    chassisRef.current.getWorldQuaternion(vehicleQuaternion);
+    
+    const cameraOffset = new Vector3(0, 3.5, 8); // Position camera behind and slightly above
+    cameraOffset.applyQuaternion(vehicleQuaternion);
+    cameraOffset.add(vehiclePosition);
+    
+    const lookAtPoint = vehiclePosition.clone();
+    lookAtPoint.y += 0.5;
 
-      if (isMoving) {
-        const cameraOffset = new Vector3(0, 3.5, 8); // Position camera behind and slightly above
-        cameraOffset.applyQuaternion(vehicleQuaternion);
-        cameraOffset.add(vehiclePosition);
-        
-        const lookAtPoint = vehiclePosition.clone();
-        lookAtPoint.y += 0.5;
+    const lerpFactor = delta * 5.0; // Increase for faster following
+    smoothedCameraPosition.current.lerp(cameraOffset, lerpFactor);
+    smoothedLookAtPosition.current.lerp(lookAtPoint, lerpFactor);
 
-        const lerpFactor = delta * 2.0;
-        smoothedCameraPosition.current.lerp(cameraOffset, lerpFactor);
-        smoothedLookAtPosition.current.lerp(lookAtPoint, lerpFactor);
-
-        state.camera.position.copy(smoothedCameraPosition.current);
-        state.camera.lookAt(smoothedLookAtPosition.current);
-        
-        if (state.controls) {
-            state.controls.target.copy(lookAtPoint);
-        }
-      } else {
-        // Allow orbit controls to take over when car is not moving
-         if (state.controls) {
-            smoothedCameraPosition.current.copy(state.camera.position);
-            smoothedLookAtPosition.current.copy(state.controls.target);
-        }
-      }
-    }
+    state.camera.position.copy(smoothedCameraPosition.current);
+    state.camera.lookAt(smoothedLookAtPosition.current);
   });
 
   return (

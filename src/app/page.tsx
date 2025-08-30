@@ -3,36 +3,11 @@
 import { Suspense } from 'react';
 import { Canvas } from '@react-three/fiber';
 import { Physics, Debug } from '@react-three/cannon';
-import { Sky, Environment, OrbitControls } from '@react-three/drei';
+import { Sky, Environment } from '@react-three/drei';
 import { Vehicle } from '@/components/vehicle-scene';
 import { Track } from '@/components/game-hud';
 import { GameUI } from '@/components/aftertouch-control-panel';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
-import { DestructibleBuilding } from '@/components/destructible';
-
-function CityBlocks() {
-  const buildingSize = { width: 10, height: 40, depth: 10 };
-  const spacing = 20;
-  const grid = 5;
-
-  return (
-    <group>
-      {Array.from({ length: grid }).map((_, i) =>
-        Array.from({ length: grid }).map((_, j) => {
-          if (i === Math.floor(grid / 2) && j === Math.floor(grid / 2)) return null; // Skip center for open space
-          return (
-            <DestructibleBuilding
-              key={`${i}-${j}`}
-              position={[(i - grid / 2) * spacing, buildingSize.height / 2, (j - grid / 2) * spacing]}
-              size={buildingSize}
-            />
-          );
-        })
-      )}
-    </group>
-  );
-}
-
 
 export default function Home() {
   return (
@@ -67,13 +42,11 @@ export default function Home() {
             <Debug color="white" scale={1.0001}>
               <Track />
               <Vehicle />
-              <CityBlocks />
             </Debug>
           </Physics>
            <EffectComposer>
             <Bloom luminanceThreshold={0.7} luminanceSmoothing={0.9} height={300} />
           </EffectComposer>
-          <OrbitControls />
         </Suspense>
       </Canvas>
       <GameUI />
