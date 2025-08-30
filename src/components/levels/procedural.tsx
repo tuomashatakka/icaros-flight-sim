@@ -11,8 +11,6 @@ export default function ProceduralTrack() {
   const { geometry, vertices, indices } = useMemo(() => {
     const outerRadius = 50;
     const innerRadius = 30;
-    const numSegments = 64;
-    const trackWidth = outerRadius - innerRadius;
 
     const shape = new THREE.Shape();
     shape.moveTo(0, innerRadius);
@@ -32,12 +30,10 @@ export default function ProceduralTrack() {
     const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
     geo.rotateX(-Math.PI / 2);
     
-    const tempGeo = new THREE.BufferGeometry().fromGeometry(geo);
-    
     return { 
         geometry: geo, 
-        vertices: tempGeo.attributes.position.array as Float32Array,
-        indices: tempGeo.index!.array as Uint16Array | Uint32Array
+        vertices: geo.attributes.position.array as Float32Array,
+        indices: geo.index!.array as Uint16Array | Uint32Array
     };
   }, []);
 
