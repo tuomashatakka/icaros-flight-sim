@@ -125,7 +125,7 @@ export function Vehicle() {
   return (
     <group ref={vehicle as React.Ref<Group>}>
       <group ref={chassisRef}>
-        <primitive object={carGltf.scene} position={[0, -0.5, 0]} rotation={[0, -Math.PI / 2, 0]} scale={0.1}/>
+        <primitive object={carGltf.scene} position={[0, -0.2, 0.35]} rotation={[0, -Math.PI / 2, 0]} scale={0.1}/>
       </group>
     </group>
   );
