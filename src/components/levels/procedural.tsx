@@ -9,35 +9,59 @@ import { COLLISION_GROUPS } from '@/lib/utils';
 
 export default function ProceduralTrack() {
   const { geometry, vertices, indices } = useMemo(() => {
-    const outerRadius = 50;
-    const innerRadius = 30;
-    const segments = 64; // Number of segments for the circle
-
+    const trackWidth = 20;
+    const segmentLength = 20;
     const verts = [];
     const idxs = [];
+    let lastVertexIndex = -1;
+    let currentPosition = new THREE.Vector3(0, 0, 0);
+    let currentDirection = new THREE.Vector3(0, 0, -1);
 
-    for (let i = 0; i <= segments; i++) {
-      const angle = (i / segments) * Math.PI * 2;
-      const cos = Math.cos(angle);
-      const sin = Math.sin(angle);
+    const addSegment = (length: number, curve: number, ramp: number) => {
+        const segments = Math.floor(length / segmentLength);
+        for (let i = 0; i < segments; i++) {
+            const sideVector = new THREE.Vector3().crossVectors(currentDirection, new THREE.Vector3(0, 1, 0)).normalize();
+            const leftVertex = currentPosition.clone().add(sideVector.clone().multiplyScalar(trackWidth / 2));
+            const rightVertex = currentPosition.clone().add(sideVector.clone().multiplyScalar(-trackWidth / 2));
 
-      // Outer vertex
-      verts.push(cos * outerRadius, 0, sin * outerRadius);
-      // Inner vertex
-      verts.push(cos * innerRadius, 0, sin * innerRadius);
+            verts.push(leftVertex.x, leftVertex.y, leftVertex.z);
+            verts.push(rightVertex.x, rightVertex.y, rightVertex.z);
+            
+            if (lastVertexIndex >= 0) {
+                const i0 = lastVertexIndex;
+                const i1 = i0 + 1;
+                const i2 = i0 + 2;
+                const i3 = i2 + 1;
 
-      if (i > 0) {
-        const i0 = (i - 1) * 2;
-        const i1 = i0 + 1;
-        const i2 = i * 2;
-        const i3 = i2 + 1;
+                idxs.push(i0, i1, i2);
+                idxs.push(i1, i3, i2);
+            }
+            lastVertexIndex += 2;
 
-        // Triangle 1
-        idxs.push(i0, i1, i2);
-        // Triangle 2
-        idxs.push(i1, i3, i2);
-      }
-    }
+            currentDirection.applyAxisAngle(new THREE.Vector3(0, 1, 0), curve / segments);
+            currentPosition.add(currentDirection.clone().multiplyScalar(segmentLength));
+            currentPosition.y += ramp / segments;
+        }
+    };
+    
+    const addJump = (length: number, height: number) => {
+        // Ramp up
+        addSegment(length, 0, height);
+        // Gap
+        currentPosition.add(currentDirection.clone().multiplyScalar(length * 1.5));
+        lastVertexIndex = -1; // Reset indices to create a gap
+        // Ramp down
+        addSegment(length, 0, -height);
+    };
+
+    // Build the track
+    addSegment(200, 0, 0); // Initial straight
+    addSegment(300, Math.PI / 4, 0); // Gentle right curve
+    addJump(100, 20); // First jump
+    addSegment(400, 0, 0); // Straight
+    addSegment(500, -Math.PI / 2, 0); // Long left curve
+    addJump(150, 30); // Bigger jump
+    addSegment(600, 0, 0); // Final straight
 
     const vertices = new Float32Array(verts);
     const indices = new Uint32Array(idxs);
@@ -57,7 +81,7 @@ export default function ProceduralTrack() {
   const [ref] = useTrimesh(() => ({
     type: 'Static',
     args: [vertices, indices],
-    position: [-49, -0.05, 0],
+    position: [0, -0.05, 0], // Start at origin
     rotation: [0, 0, 0],
     collisionFilterGroup: COLLISION_GROUPS.GROUND,
     collisionFilterMask: COLLISION_GROUPS.VEHICLE,
