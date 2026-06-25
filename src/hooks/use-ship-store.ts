@@ -30,6 +30,8 @@ interface ShipState {
   resetToDefault: () => void;
 }
 
+type PersistedShipState = Pick<ShipState, 'shipConfigs' | 'currentConfig'>;
+
 const defaultCb1Config: ShipConfig = {
   bodyColor: '#ffffff',
   emissiveColor: '#000000',
@@ -60,6 +62,21 @@ const DEFAULT_CONFIGS: Record<ShipId, ShipConfig> = {
   icaras: defaultIcarasConfig,
 };
 
+function mergeSavedConfig(shipId: ShipId, config: Partial<ShipConfig> | undefined): ShipConfig {
+  return {
+    ...DEFAULT_CONFIGS[shipId],
+    ...config,
+    shipId,
+  };
+}
+
+function mergeSavedConfigs(configs?: Partial<Record<ShipId, Partial<ShipConfig>>>): Record<ShipId, ShipConfig> {
+  return {
+    cb1: mergeSavedConfig('cb1', configs?.cb1),
+    icaras: mergeSavedConfig('icaras', configs?.icaras),
+  };
+}
+
 export const useShipStore = create<ShipState>()(
   subscribeWithSelector(
     persist(
@@ -68,7 +85,7 @@ export const useShipStore = create<ShipState>()(
           cb1: defaultCb1Config,
           icaras: defaultIcarasConfig,
         },
-        currentConfig: defaultCb1Config,
+        currentConfig: defaultIcarasConfig,
 
         selectShip: (shipId) => {
           set({ currentConfig: get().shipConfigs[shipId] });
@@ -102,11 +119,31 @@ export const useShipStore = create<ShipState>()(
       }),
       {
         name: 'ship-config',
+        version: 1,
         storage: createJSONStorage(() => localStorage),
         partialize: (state) => ({
           shipConfigs: state.shipConfigs,
           currentConfig: state.currentConfig,
         }),
+        migrate: (persistedState, version) => {
+          const persisted = persistedState as Partial<PersistedShipState> | undefined;
+          const shipConfigs = mergeSavedConfigs(persisted?.shipConfigs);
+
+          if (version < 1) {
+            return {
+              ...persisted,
+              shipConfigs,
+              currentConfig: shipConfigs.icaras,
+            };
+          }
+
+          const activeShip = persisted?.currentConfig?.shipId ?? 'icaras';
+          return {
+            ...persisted,
+            shipConfigs,
+            currentConfig: shipConfigs[activeShip],
+          };
+        },
       }
     )
   )

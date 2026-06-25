@@ -7,30 +7,28 @@ import {
   useBeforePhysicsStep,
   type RapierRigidBody,
 } from '@react-three/rapier';
-import { useFrame, useLoader } from '@react-three/fiber';
+import { useFrame, useThree } from '@react-three/fiber';
 import { useEffect, useMemo, useRef } from 'react';
-import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { useControls } from '@/hooks/use-mobile';
 import { useStore } from '@/hooks/use-store';
 import { vehicleConfig } from '@/lib/utils';
-import { Quaternion, Vector3, Group } from 'three';
+import { Group, MathUtils, Quaternion, Vector3 } from 'three';
 import { useShipStore } from '@/hooks/use-ship-store';
-import { SHIP_PRESETS, applyShipConfig } from '@/lib/ship/materials';
+import { ShipVisual } from '@/components/ship-visual';
 
 const SUSPENSION_REST = 0.4;
 
 export function Vehicle() {
-  const { controls } = useControls();
+  const { gl } = useThree();
+  const { controls } = useControls(gl.domElement);
   const { setSpeed, increaseZone, zone, speedLevels } = useStore();
   const { world } = useRapier();
-  const { currentConfig, selectShip } = useShipStore();
-
-  const carGltf = useLoader(GLTFLoader, SHIP_PRESETS[currentConfig.shipId].path);
+  const { currentConfig } = useShipStore();
 
   const chassisRef = useRef<RapierRigidBody>(null);
   const visualRef = useRef<Group>(null);
   const controllerRef = useRef<ReturnType<typeof world.createVehicleController> | null>(null);
-  const prevConfigRef = useRef(currentConfig);
+  const smoothedSteerRef = useRef(0);
 
   const { width, height, front, back, radius } = vehicleConfig;
 
@@ -45,59 +43,24 @@ export function Vehicle() {
     [width, height, front, back]
   );
 
-  // Set the ship ID based on the current config
-  useEffect(() => {
-    selectShip(currentConfig.shipId);
-  }, [currentConfig.shipId, selectShip]);
-
-  // Apply initial config and handle config changes efficiently
-  useEffect(() => {
-    if (!carGltf.scene) return;
-    
-    // Store current config for comparison
-    const current = currentConfig;
-    const prev = prevConfigRef.current;
-    
-    // Check if config actually changed
-    const configChanged = 
-      current.shipId !== prev.shipId ||
-      current.bodyColor !== prev.bodyColor ||
-      current.emissiveColor !== prev.emissiveColor ||
-      current.metalness !== prev.metalness ||
-      current.roughness !== prev.roughness ||
-      current.emissiveIntensity !== prev.emissiveIntensity ||
-      current.texturePreset !== prev.texturePreset ||
-      current.textureRepeat !== prev.textureRepeat ||
-      current.paletteName !== prev.paletteName;
-    
-    if (configChanged) {
-      // Apply the ship configuration
-      applyShipConfig(carGltf.scene, currentConfig);
-      
-      carGltf.scene.traverse((child) => {
-        if ('isMesh' in child && (child as { isMesh?: boolean }).isMesh) {
-          (child as { castShadow: boolean }).castShadow = true;
-        }
-      });
-      
-      prevConfigRef.current = currentConfig;
-    }
-  }, [carGltf, currentConfig]);
-
   // Build the rapier raycast-vehicle controller once the chassis rigid body exists.
   useEffect(() => {
     const chassis = chassisRef.current;
     if (!chassis) return;
     const controller = world.createVehicleController(chassis);
+    controller.indexUpAxis = 1;
+    controller.setIndexForwardAxis = 2;
     const down = { x: 0, y: -1, z: 0 };
     const axle = { x: -1, y: 0, z: 0 };
     wheels.forEach((pos) => controller.addWheel(pos, down, axle, SUSPENSION_REST, radius));
     wheels.forEach((_, i) => {
-      controller.setWheelSuspensionStiffness(i, 24);
-      controller.setWheelMaxSuspensionTravel(i, 0.6);
-      controller.setWheelSuspensionCompression(i, 2);
-      controller.setWheelSuspensionRelaxation(i, 10);
-      controller.setWheelFrictionSlip(i, 1.5);
+      controller.setWheelSuspensionStiffness(i, 34);
+      controller.setWheelMaxSuspensionTravel(i, 0.55);
+      controller.setWheelSuspensionCompression(i, 4.5);
+      controller.setWheelSuspensionRelaxation(i, 8);
+      controller.setWheelMaxSuspensionForce(i, 100000);
+      controller.setWheelFrictionSlip(i, 2.35);
+      controller.setWheelSideFrictionStiffness(i, i < 2 ? 1.35 : 1.8);
     });
     controllerRef.current = controller;
     return () => {
@@ -116,35 +79,52 @@ export function Vehicle() {
     const chassis = chassisRef.current;
     if (!controller || !chassis) return;
 
-    const { force, steer, maxBrake } = vehicleConfig;
+    const {
+      force,
+      steer,
+      maxBrake,
+      boostSteerMultiplier,
+      steeringResponse,
+      highSpeedSteerScale,
+      yawAssist,
+    } = vehicleConfig;
 
     const currentZone = speedLevels.find((l) => l.zone === zone) || speedLevels[speedLevels.length - 1];
     const targetSpeed = currentZone.speedTarget;
     const lv = chassis.linvel();
     const currentSpeed = Math.hypot(lv.x, lv.y, lv.z);
+    const speedRatio = Math.min(currentSpeed / Math.max(targetSpeed, 1), 1);
 
     const engineForce = currentSpeed < targetSpeed ? force : 0;
+    controller.setWheelEngineForce(0, 0);
+    controller.setWheelEngineForce(1, 0);
     // Rear wheels drive (indices 2, 3).
     controller.setWheelEngineForce(2, engineForce);
     controller.setWheelEngineForce(3, engineForce);
 
-    const steerMultiplier = controls.boost ? 2.5 : 1;
-    const steerValue = controls.steer * steer * steerMultiplier;
+    const speedSteerScale = MathUtils.lerp(1, highSpeedSteerScale, speedRatio);
+    const steerMultiplier = controls.boost ? boostSteerMultiplier : 1;
+    const targetSteer = controls.steer * steer * steerMultiplier * speedSteerScale;
+    const steerLerp = 1 - Math.exp(-steeringResponse * world.timestep);
+    smoothedSteerRef.current = MathUtils.lerp(smoothedSteerRef.current, targetSteer, steerLerp);
+    const steerValue = smoothedSteerRef.current;
     controller.setWheelSteering(0, steerValue);
     controller.setWheelSteering(1, steerValue);
 
-    // Differential braking helps the turn bite.
-    const brake = Math.abs(steerValue) * maxBrake;
-    controller.setWheelBrake(0, steerValue > 0 ? brake : 0);
+    // Light rear inside-wheel braking and yaw assist keep turns responsive without snapping.
+    const brake = Math.abs(steerValue) * maxBrake * MathUtils.lerp(0.35, 1, speedRatio);
+    controller.setWheelBrake(0, 0);
+    controller.setWheelBrake(1, 0);
     controller.setWheelBrake(2, steerValue > 0 ? brake : 0);
-    controller.setWheelBrake(1, steerValue < 0 ? brake : 0);
     controller.setWheelBrake(3, steerValue < 0 ? brake : 0);
+    chassis.addTorque({ x: 0, y: steerValue * yawAssist * MathUtils.lerp(0.4, 1, speedRatio), z: 0 }, true);
 
     if (controls.reset) {
       chassis.setTranslation({ x: -10, y: 2, z: -20 }, true);
       chassis.setLinvel({ x: 0, y: 0, z: 0 }, true);
       chassis.setAngvel({ x: 0, y: 0, z: 0 }, true);
       chassis.setRotation({ x: 0, y: 1, z: 0, w: 0 }, true);
+      smoothedSteerRef.current = 0;
     }
 
     controller.updateVehicle(world.timestep);
@@ -195,14 +175,15 @@ export function Vehicle() {
         colliders={false}
         position={[1, 2, 4]}
         rotation={[0, Math.PI, 0]}
-        angularDamping={0.95}
+        linearDamping={0.12}
+        angularDamping={1.65}
         canSleep={false}
         type="dynamic"
       >
         <CuboidCollider args={[width / 2, height / 2, front]} mass={150} />
       </RigidBody>
-      <group ref={visualRef} scale={0.07}>
-        <primitive object={carGltf.scene} position={[0, 0, 15]} rotation={[0, -Math.PI / 2, 0]} />
+      <group ref={visualRef}>
+        <ShipVisual config={currentConfig} targetSize={3.1} position={[0, 0.1, 0]} />
       </group>
     </>
   );

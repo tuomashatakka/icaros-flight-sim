@@ -4,9 +4,7 @@
 import Link from 'next/link';
 import { Leva } from 'leva';
 import { useStore } from "@/hooks/use-store";
-import { useControls } from '@/hooks/use-mobile';
-import { ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from 'lucide-react';
-import { useEffect, useState, useMemo } from 'react';
+import { useMemo } from 'react';
 
 function BackToMenu() {
     return (
@@ -104,8 +102,6 @@ function Editor() {
 }
 
 export function GameUI() {
-    useControls(); // Initialize controls
-
     return (
         <>
             <Editor />

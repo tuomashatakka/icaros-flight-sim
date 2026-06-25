@@ -17,11 +17,15 @@ export const vehicleConfig = {
   height: 0.225,
   front: 1.35,
   back: -1.3,
-  steer: 0.45,
-  force: 625,
+  steer: 0.58,
+  force: 760,
   brake: 15,
-  maxBrake: 50,
+  maxBrake: 10,
   radius: 0.35,
+  boostSteerMultiplier: 1.35,
+  steeringResponse: 9,
+  highSpeedSteerScale: 0.42,
+  yawAssist: 105,
 };
 
 export const wheelInfo = {

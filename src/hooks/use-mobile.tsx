@@ -1,14 +1,6 @@
 import { useEffect, useRef } from 'react';
 import { create } from 'zustand';
 
-// Keyboard controls mapping
-const keys = [
-  { name: 'steerLeft', keys: ['ArrowLeft', 'a', 'A'] },
-  { name: 'steerRight', keys: ['ArrowRight', 'd', 'D'] },
-  { name: 'boost', keys: ['Shift'] },
-  { name: 'reset', keys: ['r', 'R'] },
-];
-
 export type Controls = {
   steer: number; // -1 for left, 1 for right, 0 for center
   boost: boolean;
@@ -33,80 +25,118 @@ const useControlsStore = create<ControlsState>((set) => ({
     set((state) => ({ controls: { ...state.controls, steer } })),
 }));
 
-export const useControls = () => {
+const clampSteer = (value: number) => Math.max(-1, Math.min(1, value));
+
+export const useControls = (target?: HTMLElement | null) => {
   const { controls, setControls, setSteer } = useControlsStore();
-  const steerDirection = useRef(0); // For keyboard, -1 left, 1 right
+  const pressedDirections = useRef(new Set<'left' | 'right'>());
+  const keyboardSteer = useRef(0);
+  const pointerSteer = useRef(0);
+
+  const syncSteer = () => {
+    setSteer(keyboardSteer.current || pointerSteer.current);
+  };
 
   // Keyboard controls
   useEffect(() => {
+    const refreshKeyboardSteer = () => {
+      const left = pressedDirections.current.has('left');
+      const right = pressedDirections.current.has('right');
+      keyboardSteer.current = left === right ? 0 : right ? 1 : -1;
+      syncSteer();
+    };
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') {
-        steerDirection.current = -1;
+        pressedDirections.current.add('left');
+        refreshKeyboardSteer();
       } else if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') {
-        steerDirection.current = 1;
+        pressedDirections.current.add('right');
+        refreshKeyboardSteer();
       } else if (e.key === 'Shift') {
         setControls({ boost: true });
       } else if (e.key.toLowerCase() === 'r') {
         setControls({ reset: true });
       }
-      setSteer(steerDirection.current);
     };
 
     const handleKeyUp = (e: KeyboardEvent) => {
-      if ((e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') && steerDirection.current === -1) {
-        steerDirection.current = 0;
-      } else if ((e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') && steerDirection.current === 1) {
-        steerDirection.current = 0;
+      if (e.key === 'ArrowLeft' || e.key.toLowerCase() === 'a') {
+        pressedDirections.current.delete('left');
+        refreshKeyboardSteer();
+      } else if (e.key === 'ArrowRight' || e.key.toLowerCase() === 'd') {
+        pressedDirections.current.delete('right');
+        refreshKeyboardSteer();
       } else if (e.key === 'Shift') {
         setControls({ boost: false });
       } else if (e.key.toLowerCase() === 'r') {
-          setControls({ reset: false });
+        setControls({ reset: false });
       }
-      setSteer(steerDirection.current);
+    };
+
+    const handleBlur = () => {
+      pressedDirections.current.clear();
+      keyboardSteer.current = 0;
+      pointerSteer.current = 0;
+      setControls({ boost: false, reset: false });
+      setSteer(0);
     };
 
     window.addEventListener('keydown', handleKeyDown);
     window.addEventListener('keyup', handleKeyUp);
+    window.addEventListener('blur', handleBlur);
 
     return () => {
       window.removeEventListener('keydown', handleKeyDown);
       window.removeEventListener('keyup', handleKeyUp);
+      window.removeEventListener('blur', handleBlur);
     };
   }, [setControls, setSteer]);
   
-  // Touch controls
   useEffect(() => {
-    let touchStart_X = 0;
-    
-    const handleTouchStart = (e: TouchEvent) => {
-        touchStart_X = e.touches[0].clientX;
-    };
-    
-    const handleTouchMove = (e: TouchEvent) => {
-        const touch_X = e.touches[0].clientX;
-        const deltaX = touch_X - touchStart_X;
-        const screenWidth = window.innerWidth;
-        // Normalize delta to a -1 to 1 range based on half screen width
-        let steerValue = (deltaX / (screenWidth / 2)) * 2; 
-        steerValue = Math.max(-1, Math.min(1, steerValue)); // Clamp between -1 and 1
-        setSteer(steerValue);
+    if (!target) return;
+
+    let pointerId: number | null = null;
+    let pointerStartX = 0;
+
+    const handlePointerDown = (e: PointerEvent) => {
+      if (pointerId !== null) return;
+      pointerId = e.pointerId;
+      pointerStartX = e.clientX;
+      pointerSteer.current = 0;
+      target.setPointerCapture(e.pointerId);
+      syncSteer();
     };
 
-    const handleTouchEnd = (e: TouchEvent) => {
-        setSteer(0);
-        touchStart_X = 0;
+    const handlePointerMove = (e: PointerEvent) => {
+      if (e.pointerId !== pointerId) return;
+      const steeringWidth = Math.max(target.clientWidth * 0.32, 120);
+      pointerSteer.current = clampSteer((e.clientX - pointerStartX) / steeringWidth);
+      syncSteer();
     };
 
-    window.addEventListener('touchstart', handleTouchStart);
-    window.addEventListener('touchmove', handleTouchMove);
-    window.addEventListener('touchend', handleTouchEnd);
+    const endPointer = (e: PointerEvent) => {
+      if (e.pointerId !== pointerId) return;
+      if (target.hasPointerCapture(e.pointerId)) {
+        target.releasePointerCapture(e.pointerId);
+      }
+      pointerId = null;
+      pointerSteer.current = 0;
+      syncSteer();
+    };
+
+    target.addEventListener('pointerdown', handlePointerDown);
+    target.addEventListener('pointermove', handlePointerMove);
+    target.addEventListener('pointerup', endPointer);
+    target.addEventListener('pointercancel', endPointer);
 
     return () => {
-        window.removeEventListener('touchstart', handleTouchStart);
-        window.removeEventListener('touchmove', handleTouchMove);
-        window.removeEventListener('touchend', handleTouchEnd);
-    }
-  }, [setSteer]);
+      target.removeEventListener('pointerdown', handlePointerDown);
+      target.removeEventListener('pointermove', handlePointerMove);
+      target.removeEventListener('pointerup', endPointer);
+      target.removeEventListener('pointercancel', endPointer);
+    };
+  }, [setSteer, target]);
 
   return { controls, setControls };
 };

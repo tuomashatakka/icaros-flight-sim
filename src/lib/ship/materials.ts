@@ -2,7 +2,6 @@
 
 import * as THREE from 'three';
 import { TextureLoader } from 'three';
-import { RectAreaLight } from 'three';
 
 export interface ShipConfig {
   bodyColor: string;
@@ -25,16 +24,32 @@ export interface Palette {
   emissiveIntensity: number;
 }
 
+export type ShipPreset =
+  | {
+      kind: 'gltf';
+      path: string;
+      name: string;
+      modelRotation: [number, number, number];
+    }
+  | {
+      kind: 'generated';
+      name: string;
+      modelRotation: [number, number, number];
+    };
+
 export const SHIP_PRESETS = {
   cb1: {
+    kind: 'gltf',
     path: '/spaceship_-_cb1/scene.gltf',
     name: 'CB1',
+    modelRotation: [0, -Math.PI / 2, 0],
   },
   icaras: {
-    path: '/icaras/scene.gltf',
+    kind: 'generated',
     name: 'Icaras',
+    modelRotation: [0, Math.PI, 0],
   },
-} as const;
+} satisfies Record<ShipConfig['shipId'], ShipPreset>;
 
 export const PALETTES: Record<string, Palette> = {
   default: {
@@ -106,8 +121,6 @@ export function getFitTransform(
   return { scale: targetSize / maxDim, center: [center.x, center.y, center.z] };
 }
 
-const textureLoader = new TextureLoader();
-
 export function drawBaseTexture(config: {
   bodyColor: string;
   texturePreset: ShipConfig['texturePreset'];
@@ -154,7 +167,7 @@ export function drawBaseTexture(config: {
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
   texture.repeat.set(config.textureRepeat, config.textureRepeat);
-  return texture;
+  return markManagedTexture(texture);
 }
 
 function drawPanelPattern(
@@ -225,15 +238,16 @@ function drawHazardPattern(ctx: CanvasRenderingContext2D, bodyColor: string): vo
 }
 
 function drawCityPattern(ctx: CanvasRenderingContext2D, bodyColor: string): void {
+  const rng = mulberry32(0x1ca405);
   ctx.fillStyle = bodyColor;
   ctx.fillRect(0, 0, 1024, 1024);
 
   ctx.fillStyle = '#444444';
   for (let i = 0; i < 20; i++) {
-    const x = Math.random() * 1024;
-    const y = Math.random() * 1024;
-    const width = Math.random() * 40 + 10;
-    const height = Math.random() * 40 + 10;
+    const x = rng() * 1024;
+    const y = rng() * 1024;
+    const width = rng() * 40 + 10;
+    const height = rng() * 40 + 10;
     ctx.fillRect(x, y, width, height);
   }
 }
@@ -306,7 +320,7 @@ export function drawEmissiveTexture(config: {
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
   texture.repeat.set(config.textureRepeat, config.textureRepeat);
-  return texture;
+  return markManagedTexture(texture);
 }
 
 function drawEmissivePanelPattern(ctx: CanvasRenderingContext2D, color: string): void {
@@ -357,13 +371,14 @@ function drawEmissiveHazardPattern(ctx: CanvasRenderingContext2D, color: string)
 }
 
 function drawEmissiveCityPattern(ctx: CanvasRenderingContext2D, color: string): void {
+  const rng = mulberry32(0x1ca406);
   ctx.fillStyle = color;
   ctx.globalAlpha = 0.3;
 
   for (let i = 0; i < 30; i++) {
-    const x = Math.random() * 1024;
-    const y = Math.random() * 1024;
-    const radius = Math.random() * 30 + 5;
+    const x = rng() * 1024;
+    const y = rng() * 1024;
+    const radius = rng() * 30 + 5;
     ctx.beginPath();
     ctx.arc(x, y, radius, 0, Math.PI * 2);
     ctx.fill();
@@ -408,10 +423,40 @@ export function loadHangarTexture(name: string): THREE.Texture {
   };
 
   const path = textureMap[name] || textureMap.details;
-  return loader.load(path);
+  return markManagedTexture(loader.load(path));
+}
+
+function markManagedTexture<T extends THREE.Texture>(texture: T): T {
+  texture.userData.shipManagedTexture = true;
+  return texture;
+}
+
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return function rng() {
+    a = (a + 0x6D2B79F5) >>> 0;
+    let t = a;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function replaceTexture(
+  material: THREE.MeshStandardMaterial,
+  slot: 'map' | 'emissiveMap' | 'normalMap',
+  texture: THREE.Texture | null
+): void {
+  const current = material[slot];
+  if (current && current !== texture && current.userData.shipManagedTexture) {
+    current.dispose();
+  }
+  material[slot] = texture;
 }
 
 export function applyShipConfig(gltfScene: THREE.Object3D, config: ShipConfig): void {
+  const configuredMaterials = new Set<THREE.MeshStandardMaterial>();
+
   gltfScene.traverse((child) => {
     if ('isMesh' in child && (child as { isMesh?: boolean }).isMesh) {
       const mesh = child as THREE.Mesh;
@@ -420,16 +465,31 @@ export function applyShipConfig(gltfScene: THREE.Object3D, config: ShipConfig): 
         return;
       }
 
-      const material = Array.isArray(mesh.material) ? mesh.material[0] : mesh.material;
+      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
 
-      if (material instanceof THREE.MeshStandardMaterial) {
-        material.color.set(config.bodyColor);
-        material.metalness = config.metalness;
-        material.roughness = config.roughness;
+      for (const material of materials) {
+        if (!(material instanceof THREE.MeshStandardMaterial)) {
+          continue;
+        }
+        if (configuredMaterials.has(material)) {
+          continue;
+        }
+        configuredMaterials.add(material);
+
+        const materialName = material.name.toLowerCase();
+        const isGlow = materialName.includes('glow');
+        const isGlass = materialName.includes('glass');
+        const receivesPattern = !isGlow && !isGlass;
+
+        material.color.set(isGlow ? '#05020a' : isGlass ? config.emissiveColor : config.bodyColor);
+        material.metalness = isGlass ? 0.4 : config.metalness;
+        material.roughness = isGlass ? 0.15 : config.roughness;
         material.emissive.set(config.emissiveColor);
-        material.emissiveIntensity = config.emissiveIntensity;
+        material.emissiveIntensity = isGlow
+          ? Math.max(1.2, config.emissiveIntensity * 3)
+          : config.emissiveIntensity;
 
-        if (config.texturePreset !== 'plain') {
+        if (config.texturePreset !== 'plain' && receivesPattern) {
           const patternTexture = drawBaseTexture({
             ...config,
             themeColors: {
@@ -438,22 +498,26 @@ export function applyShipConfig(gltfScene: THREE.Object3D, config: ShipConfig): 
               accent: config.emissiveColor,
             },
           });
-          material.map = patternTexture;
+          replaceTexture(material, 'map', patternTexture);
 
           if (config.emissiveIntensity > 0) {
             const emissivePatternTexture = drawEmissiveTexture(config);
-            material.emissiveMap = emissivePatternTexture;
+            replaceTexture(material, 'emissiveMap', emissivePatternTexture);
+          } else {
+            replaceTexture(material, 'emissiveMap', null);
           }
 
           if (config.texturePreset === 'city' || config.texturePreset === 'gallery') {
             const hangarTexture = loadHangarTexture(config.texturePreset === 'city' ? 'buildings_baseColor' : 'details');
-            material.normalMap = hangarTexture;
-            material.normalScale = new THREE.Vector2(config.textureRepeat, config.textureRepeat);
+            replaceTexture(material, 'normalMap', hangarTexture);
+            material.normalScale.set(config.textureRepeat, config.textureRepeat);
+          } else {
+            replaceTexture(material, 'normalMap', null);
           }
         } else {
-          material.map = null;
-          material.emissiveMap = null;
-          material.normalMap = null;
+          replaceTexture(material, 'map', null);
+          replaceTexture(material, 'emissiveMap', null);
+          replaceTexture(material, 'normalMap', null);
         }
 
         material.needsUpdate = true;

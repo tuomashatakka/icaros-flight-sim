@@ -1,23 +1,14 @@
 "use client";
 
 import { useFrame } from '@react-three/fiber';
-import { useGLTF } from '@react-three/drei';
 import { useShipStore } from '@/hooks/use-ship-store';
-import { SHIP_PRESETS, applyShipConfig } from '@/lib/ship/materials';
-import { useEffect, useRef } from 'react';
+import { ShipVisual } from '@/components/ship-visual';
+import { useRef } from 'react';
 import * as THREE from 'three';
 
 export function HangarScene() {
-  const { currentConfig, selectShip } = useShipStore();
-
-  const gltf = useGLTF(SHIP_PRESETS[currentConfig.shipId].path);
+  const { currentConfig } = useShipStore();
   const modelRef = useRef<THREE.Group>(null);
-
-  useEffect(() => {
-    if (modelRef.current) {
-      applyShipConfig(modelRef.current, currentConfig);
-    }
-  }, [gltf, currentConfig]);
 
   useFrame(() => {
     if (modelRef.current) {
@@ -32,12 +23,9 @@ export function HangarScene() {
       <pointLight position={[-10, 5, -5]} intensity={0.5} color="#ff00ff" />
       <pointLight position={[0, -10, 0]} intensity={0.3} color="#00ffff" />
 
-      <primitive
-        ref={modelRef}
-        object={gltf.scene}
-        scale={1.2}
-        position={[0, -1.5, 0]}
-      />
+      <group ref={modelRef} position={[0, -1.5, 0]}>
+        <ShipVisual config={currentConfig} targetSize={4.8} />
+      </group>
 
       <mesh position={[0, -3.5, 0]} rotation={[-Math.PI / 2, 0, 0]} receiveShadow>
         <planeGeometry args={[20, 20]} />
@@ -46,6 +34,3 @@ export function HangarScene() {
     </group>
   );
 }
-
-useGLTF.preload('/icaras/scene.gltf');
-useGLTF.preload('/spaceship_-_cb1/scene.gltf');
