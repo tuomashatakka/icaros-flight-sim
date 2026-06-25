@@ -1,0 +1,42 @@
+# Blender 5.1.2 MTL File: 'Untitled.blend'
+# www.blender.org
+
+newmtl Body
+Ns 41.699261
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 3
+map_Kd /Users/mia/Downloads/Images/WipeOut/Icaras/Icaras.jpg
+
+newmtl Cockpit
+Ns 29.999998
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+d 1.000000
+illum 3
+map_Kd /Users/mia/Downloads/Images/WipeOut/Cockpit.jpg
+
+newmtl Glass
+Ns 50.000011
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ke 0.000000 0.000000 0.000000
+Ni 1.500000
+illum 3
+map_Kd /Users/mia/Downloads/Images/WipeOut/Icaras/icar glass.jpg
+map_d /Users/mia/Downloads/Images/WipeOut/Icaras/icar glass A.jpg
+
+newmtl Glow
+Ns 29.999998
+Ka 1.000000 1.000000 1.000000
+Ks 1.000000 1.000000 1.000000
+Ni 1.500000
+illum 3
+map_Kd /Users/mia/Downloads/Images/WipeOut/Lights_GLOW.jpg
+map_Ke /Users/mia/Downloads/Images/WipeOut/Lights_GLOW E.jpg
+map_d /Users/mia/Downloads/Images/WipeOut/Lights_GLOW A.jpg

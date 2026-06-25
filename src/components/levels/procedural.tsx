@@ -1,10 +1,11 @@
 
 "use client";
 
-import { RigidBody } from '@react-three/rapier';
+import { RigidBody, CuboidCollider } from '@react-three/rapier';
 import { useMemo } from 'react';
 import * as THREE from 'three';
 import { MeshReflectorMaterial } from '@react-three/drei';
+import { ribbonBoxColliders } from '@/lib/track/build-track';
 
 export default function ProceduralTrack() {
   const { geometry, vertices, indices } = useMemo(() => {
@@ -12,7 +13,7 @@ export default function ProceduralTrack() {
     const verts: number[] = [];
     const idxs: number[] = [];
     let lastVertexIndex = -1;
-    let currentPosition = new THREE.Vector3(-1, 1, 1);
+    let currentPosition = new THREE.Vector3(-1, 1, 14);
     let currentDirection = new THREE.Vector3(0, 0, -1);
     
     const addSegment = (length: number, curve: number, ramp: number, width: number) => {
@@ -127,17 +128,23 @@ export default function ProceduralTrack() {
     geo.setIndex(new THREE.BufferAttribute(indices, 1));
     geo.computeVertexNormals();
     
-    return { 
-        geometry: geo, 
+    return {
+        geometry: geo,
         vertices: vertices,
         indices: indices
     };
   }, []);
 
+  // rapier raycast-vehicle wheels hit cuboids, not trimeshes → collide via a box strip.
+  const boxColliders = useMemo(() => ribbonBoxColliders(vertices, { stride: 1 }), [vertices]);
+
 
 
   return (
-    <RigidBody type="fixed" colliders="trimesh" position={[0, -0.05, 0]}>
+    <RigidBody type="fixed" colliders={false} position={[0, -0.05, 0]}>
+      {boxColliders.map((b, i) => (
+        <CuboidCollider key={i} position={b.position} rotation={b.rotation} args={b.args} />
+      ))}
       <mesh geometry={geometry} receiveShadow>
         <MeshReflectorMaterial
           color="#333"

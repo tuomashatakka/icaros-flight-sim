@@ -1,11 +1,23 @@
 
 "use client"
 
+import Link from 'next/link';
 import { Leva } from 'leva';
 import { useStore } from "@/hooks/use-store";
 import { useControls } from '@/hooks/use-mobile';
 import { ChevronLeft, ChevronRight, ArrowUp, ArrowDown } from 'lucide-react';
 import { useEffect, useState, useMemo } from 'react';
+
+function BackToMenu() {
+    return (
+        <Link
+            href="/"
+            className="absolute top-8 left-1/2 -translate-x-1/2 z-50 rounded-lg bg-black/50 px-4 py-2 font-mono text-sm text-white/80 transition-colors hover:text-accent"
+        >
+            ‹ Menu
+        </Link>
+    );
+}
 
 function SpeedGauge() {
     const speed = useStore((state) => state.speed);
@@ -97,6 +109,7 @@ export function GameUI() {
     return (
         <>
             <Editor />
+            <BackToMenu />
             <TakedownCounter />
             <SpeedGauge />
             <Minimap />

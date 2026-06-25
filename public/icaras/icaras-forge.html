@@ -1,0 +1,819 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>Icaras Forge · parametric AG-ship</title>
+<style>
+  :root {
+    --ink-950: #0a0610;
+    --ink-900: #120a1c;
+    --ink-800: #1c1230;
+    --ink-700: #2a1c44;
+    --line: rgba(255, 120, 180, 0.16);
+    --line-strong: rgba(255, 120, 180, 0.34);
+    --pink: #ff5a96;
+    --pink-bright: #ff86b6;
+    --pink-dim: rgba(255, 134, 182, 0.55);
+    --cyan: #36d6ff;
+    --text: #f3dce8;
+    --text-dim: rgba(243, 220, 232, 0.5);
+    --mono: 'SFMono-Regular', ui-monospace, 'Roboto Mono', monospace;
+    --sans: 'Inter', system-ui, -apple-system, sans-serif;
+    --r: 9px;
+  }
+  * { box-sizing: border-box }
+  html, body { margin: 0; height: 100%; background: var(--ink-950); overflow: hidden; font-family: var(--sans); color: var(--text) }
+  #app { display: grid; grid-template-columns: 300px 1fr; height: 100% }
+
+  aside {
+    background: linear-gradient(180deg, var(--ink-900), var(--ink-950));
+    border-right: 1px solid var(--line);
+    overflow-y: auto; padding: 18px 16px 40px;
+  }
+  aside::-webkit-scrollbar { width: 8px }
+  aside::-webkit-scrollbar-thumb { background: var(--line-strong); border-radius: 8px }
+
+  header h1 { font-size: 15px; letter-spacing: 0.14em; margin: 0; font-weight: 600; text-transform: uppercase }
+  header h1 span { color: var(--pink) }
+  header p { font-size: 11px; color: var(--text-dim); margin: 4px 0 18px; font-family: var(--mono); line-height: 1.6 }
+
+  fieldset { border: 1px solid var(--line); border-radius: var(--r); margin: 0 0 14px; padding: 10px 12px 14px }
+  legend { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--pink-dim); padding: 0 6px; font-weight: 600 }
+
+  label.ctrl { display: block; margin: 11px 0 0 }
+  label.ctrl .row { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 5px }
+  label.ctrl .name { font-size: 12px; color: var(--text) }
+  label.ctrl .val { font-size: 11px; color: var(--cyan); font-family: var(--mono) }
+
+  input[type=range] { -webkit-appearance: none; appearance: none; width: 100%; height: 4px; border-radius: 4px;
+    background: var(--ink-700); outline: none; cursor: pointer }
+  input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 15px; height: 15px; border-radius: 50%;
+    background: var(--pink); border: 2px solid var(--ink-950); box-shadow: 0 0 8px var(--pink-dim); cursor: pointer }
+  input[type=range]::-moz-range-thumb { width: 13px; height: 13px; border-radius: 50%; background: var(--pink);
+    border: 2px solid var(--ink-950); cursor: pointer }
+
+  .toggles { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px }
+  button { font-family: var(--sans); font-size: 11px; color: var(--text); background: var(--ink-800);
+    border: 1px solid var(--line-strong); border-radius: var(--r); padding: 7px 11px; cursor: pointer; transition: .15s }
+  button:hover { border-color: var(--pink); color: var(--pink-bright) }
+  button.on { background: var(--pink); color: var(--ink-950); border-color: var(--pink); font-weight: 600 }
+
+  .legend-3 { font-size: 11px; line-height: 1.7; color: var(--text-dim); font-family: var(--mono) }
+  .legend-3 b { color: var(--text); font-weight: 500 }
+  .legend-3 .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; vertical-align: middle }
+
+  main { position: relative }
+  canvas { display: block; width: 100%; height: 100%; touch-action: none }
+  #labels { position: absolute; inset: 0; pointer-events: none }
+  .lbl { position: absolute; transform: translate(-50%, -120%); font-family: var(--mono); font-size: 10px;
+    letter-spacing: 0.12em; text-transform: uppercase; color: var(--pink-bright); white-space: nowrap;
+    text-shadow: 0 0 10px rgba(0,0,0,0.9); opacity: 0; transition: opacity .2s }
+  .lbl::after { content: ''; position: absolute; left: 50%; top: 100%; width: 1px; height: 14px;
+    background: linear-gradient(var(--pink-dim), transparent); transform: translateX(-50%) }
+  #hud { position: absolute; bottom: 12px; left: 16px; font-family: var(--mono); font-size: 10px;
+    color: var(--pink-dim); pointer-events: none; line-height: 1.6 }
+  #brand { position: absolute; bottom: 12px; right: 16px; font-family: var(--mono); font-size: 9px;
+    color: rgba(255,134,182,0.3); pointer-events: none; letter-spacing: 0.1em }
+</style>
+</head>
+<body>
+<div id="app">
+  <aside>
+    <header>
+      <h1><span>Icaras</span> Forge</h1>
+      <p>parametric AG-ship · drag to orbit · scroll to zoom</p>
+    </header>
+
+    <fieldset>
+      <legend>Geometry</legend>
+      <div id="geo-controls"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Afterburner</legend>
+      <div id="fx-controls"></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>View</legend>
+      <div class="toggles">
+        <button id="t-rotate" class="on">auto-orbit</button>
+        <button id="t-labels" class="on">labels</button>
+        <button id="t-wire">wire overlay</button>
+      </div>
+      <div class="toggles" style="margin-top:10px">
+        <button id="b-reset">reset</button>
+        <button id="b-random">randomize ✦</button>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Scene · 3 geometries</legend>
+      <div class="legend-3">
+        <div><span class="dot" style="background:#ff5a96"></span><b>Live ship</b> — slider-driven</div>
+        <div><span class="dot" style="background:#9a7cff"></span><b>Reference</b> — exact original</div>
+        <div><span class="dot" style="background:#36d6ff"></span><b>Boost gate</b> — distinct mesh</div>
+      </div>
+    </fieldset>
+  </aside>
+
+  <main>
+    <canvas id="scene"></canvas>
+    <div id="labels">
+      <div class="lbl" id="lbl-ship">Live ship</div>
+      <div class="lbl" id="lbl-ref">Reference · original</div>
+      <div class="lbl" id="lbl-gate">Boost gate</div>
+    </div>
+    <div id="hud"></div>
+    <div id="brand">HUMMINGBIRD DESIGN · WEBGL2</div>
+  </main>
+</div>
+
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/"
+  }
+}
+</script>
+
+<script type="module">
+import * as THREE from 'three'
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js'
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js'
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js'
+
+// ────────────────────────────────────────────────────────────── seeded rng
+function mulberry32 (a) {
+  return function () {
+    a |= 0; a = a + 0x6D2B79F5 | 0
+    let t = Math.imul(a ^ a >>> 15, 1 | a)
+    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t
+    return ((t ^ t >>> 14) >>> 0) / 4294967296
+  }
+}
+
+// ────────────────────────────────────────────────────────────── procedural textures
+function newCanvas (w, h) {
+  const c = document.createElement('canvas')
+  c.width = w; c.height = h
+  return c
+}
+
+function makeBaseColor () {
+  const c = newCanvas(1024, 512)
+  const x = c.getContext('2d')
+  // base pink gradient
+  const g = x.createLinearGradient(0, 0, 0, 512)
+  g.addColorStop(0, '#f0a9c3'); g.addColorStop(0.5, '#e06392'); g.addColorStop(1, '#c2406f')
+  x.fillStyle = g; x.fillRect(0, 0, 1024, 512)
+  const rng = mulberry32(7)
+  // lengthwise panel seams
+  x.strokeStyle = 'rgba(60,18,40,0.55)'; x.lineWidth = 2
+  for (let i = 0; i < 26; i++) {
+    const px = (i / 26) * 1024
+    x.beginPath(); x.moveTo(px, 0); x.lineTo(px + (rng() - 0.5) * 40, 512); x.stroke()
+  }
+  // horizontal deck lines
+  x.strokeStyle = 'rgba(60,18,40,0.30)'; x.lineWidth = 1
+  for (let i = 1; i < 8; i++) { const py = (i / 8) * 512; x.beginPath(); x.moveTo(0, py); x.lineTo(1024, py); x.stroke() }
+  // white decal blocks
+  x.fillStyle = 'rgba(248,236,242,0.92)'
+  for (let i = 0; i < 30; i++) {
+    const w = 12 + rng() * 60, h = 5 + rng() * 14
+    x.fillRect(rng() * 1000, rng() * 500, w, h)
+  }
+  // hazard stripes (two patches)
+  for (let p = 0; p < 2; p++) {
+    const ox = 120 + p * 520, oy = 70 + p * 300
+    for (let s = 0; s < 7; s++) {
+      x.fillStyle = s % 2 ? '#d9531f' : '#1a0c14'
+      x.save(); x.translate(ox + s * 13, oy); x.rotate(-0.6)
+      x.fillRect(0, 0, 8, 54); x.restore()
+    }
+  }
+  // abstract emblem (concentric arcs — colibri-spirit, not a logo)
+  x.strokeStyle = 'rgba(248,236,242,0.85)'
+  for (let r = 10; r < 46; r += 9) {
+    x.lineWidth = 3; x.beginPath()
+    x.arc(820, 360, r, rng() * 1.2, rng() * 1.2 + 4.2); x.stroke()
+  }
+  x.fillStyle = 'rgba(248,236,242,0.95)'; x.beginPath(); x.arc(820, 360, 6, 0, 7); x.fill()
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4
+  return t
+}
+
+function makeRoughness () {
+  const c = newCanvas(512, 256)
+  const x = c.getContext('2d')
+  x.fillStyle = '#7a7a7a'; x.fillRect(0, 0, 512, 256)
+  const rng = mulberry32(13)
+  for (let i = 0; i < 260; i++) {
+    const v = 70 + Math.floor(rng() * 130)
+    x.fillStyle = `rgb(${v},${v},${v})`
+    x.fillRect(rng() * 512, rng() * 256, 4 + rng() * 36, 4 + rng() * 22)
+  }
+  const t = new THREE.CanvasTexture(c)
+  return t
+}
+
+function makeEmissive () {
+  const c = newCanvas(1024, 512)
+  const x = c.getContext('2d')
+  x.fillStyle = '#000'; x.fillRect(0, 0, 1024, 512)
+  // cyan running strips
+  x.fillStyle = '#23d2ff'
+  for (let i = 0; i < 5; i++) { const py = 70 + i * 95; x.fillRect(40, py, 940, 4) }
+  // intake glow blocks near rear
+  const grd = x.createRadialGradient(880, 256, 8, 880, 256, 120)
+  grd.addColorStop(0, '#b06bff'); grd.addColorStop(1, 'rgba(0,0,0,0)')
+  x.fillStyle = grd; x.fillRect(760, 136, 240, 240)
+  const t = new THREE.CanvasTexture(c)
+  t.colorSpace = THREE.SRGBColorSpace
+  return t
+}
+
+function makeGlow () {
+  const c = newCanvas(128, 128)
+  const x = c.getContext('2d')
+  const g = x.createRadialGradient(64, 64, 0, 64, 64, 64)
+  g.addColorStop(0, 'rgba(255,255,255,1)')
+  g.addColorStop(0.25, 'rgba(255,210,235,0.9)')
+  g.addColorStop(0.6, 'rgba(255,90,150,0.35)')
+  g.addColorStop(1, 'rgba(255,90,150,0)')
+  x.fillStyle = g; x.fillRect(0, 0, 128, 128)
+  return new THREE.CanvasTexture(c)
+}
+
+// ────────────────────────────────────────────────────────────── shared materials (built once)
+const texBase = makeBaseColor()
+const texRough = makeRoughness()
+const texEmis = makeEmissive()
+const texGlow = makeGlow()
+
+const hullMat = new THREE.MeshStandardMaterial({
+  map: texBase, roughnessMap: texRough, emissiveMap: texEmis,
+  emissive: 0xffffff, emissiveIntensity: 1.6,
+  metalness: 0.55, roughness: 1.0, side: THREE.DoubleSide
+})
+const podMat = new THREE.MeshStandardMaterial({
+  color: 0x2b2630, roughnessMap: texRough, metalness: 0.85, roughness: 0.9, side: THREE.DoubleSide
+})
+const glassMat = new THREE.MeshStandardMaterial({
+  color: 0x6b1538, emissive: 0xff3d7a, emissiveIntensity: 0.5,
+  metalness: 0.4, roughness: 0.15, transparent: true, opacity: 0.55, side: THREE.DoubleSide
+})
+const nozzleMat = new THREE.MeshStandardMaterial({
+  color: 0x000000, emissive: 0x9b6bff, emissiveIntensity: 3.0
+})
+const intakeMat = new THREE.MeshStandardMaterial({
+  color: 0x000000, emissive: 0x23d2ff, emissiveIntensity: 2.4
+})
+const gateMat = new THREE.MeshStandardMaterial({
+  color: 0x06222e, emissive: 0x36d6ff, emissiveIntensity: 2.2, metalness: 0.6, roughness: 0.4
+})
+const wireMat = new THREE.LineBasicMaterial({ color: 0xff86b6, transparent: true, opacity: 0.4 })
+
+// ────────────────────────────────────────────────────────────── geometry builders
+function makeGeo (pos, uv, idx) {
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.Float32BufferAttribute(pos, 3))
+  g.setAttribute('uv', new THREE.Float32BufferAttribute(uv, 2))
+  g.setIndex(idx)
+  g.computeVertexNormals()
+  return g
+}
+
+const HULL_W = [0.04, 0.16, 0.30, 0.42, 0.50, 0.53, 0.52, 0.49, 0.45, 0.42, 0.40]
+const HULL_H = [0.04, 0.10, 0.15, 0.18, 0.195, 0.20, 0.195, 0.185, 0.175, 0.165, 0.16]
+const HULL_CY = [0.00, 0.005, 0.01, 0.015, 0.02, 0.02, 0.02, 0.015, 0.01, 0.005, 0.0]
+const RING = 14
+
+function buildHull (p) {
+  const stn = HULL_W.length
+  const noseZ = -1.15 - p.nosePointiness * 0.95
+  const tailZ = 1.05
+  const pos = [], uv = [], idx = []
+  const cols = RING + 1
+  for (let s = 0; s < stn; s++) {
+    const f = s / (stn - 1)
+    const z = noseZ + (tailZ - noseZ) * f
+    const taper = 1 - p.hullTaper * f
+    const hw = HULL_W[s] * p.bodyWidth * taper
+    const hh = HULL_H[s] * p.verticalHeight
+    const cy = HULL_CY[s]
+    for (let r = 0; r <= RING; r++) {
+      const th = (r / RING) * Math.PI * 2
+      const ux = Math.cos(th), uy = Math.sin(th)
+      const ex = Math.sign(ux) * Math.pow(Math.abs(ux), 0.7)
+      const ey = Math.sign(uy) * Math.pow(Math.abs(uy), 0.7)
+      const yScale = uy < 0 ? 0.68 : 1.0
+      pos.push(ex * hw, cy + ey * hh * yScale, z)
+      uv.push(r / RING, f)
+    }
+  }
+  for (let s = 0; s < stn - 1; s++) {
+    for (let r = 0; r < RING; r++) {
+      const a = s * cols + r, b = a + 1, c2 = a + cols, d = c2 + 1
+      idx.push(a, c2, b, b, c2, d)
+    }
+  }
+  // pointed nose cap
+  const tip = pos.length / 3
+  pos.push(0, HULL_CY[0], noseZ - 0.06 - p.nosePointiness * 0.12)
+  uv.push(0.5, 0.0)
+  for (let r = 0; r < RING; r++) idx.push(tip, r + 1, r)
+  // tail cap
+  const tailStart = (stn - 1) * cols
+  const tc = pos.length / 3
+  pos.push(0, HULL_CY[stn - 1], tailZ); uv.push(0.5, 1.0)
+  for (let r = 0; r < RING; r++) idx.push(tc, tailStart + r, tailStart + r + 1)
+  return makeGeo(pos, uv, idx)
+}
+
+function buildWing (p, sign) {
+  const span = p.wingSpan * sign
+  const aspan = Math.abs(span)
+  const sweep = Math.tan(p.wingSkew * Math.PI / 180)
+  const dih = Math.sin(p.wingSkew * Math.PI / 180) * 0.20
+  const rfz = -0.30, rbz = 0.58
+  const rootX = 0.28 * p.bodyWidth * sign
+  const tipX = span
+  const tfz = rfz + sweep * aspan * 0.9
+  const tbz = tfz + 0.28
+  const tY = dih * aspan
+  const t = 0.022
+  // 8 verts: [rootFrontTop, rootBackTop, tipFrontTop, tipBackTop, then bottoms]
+  const P = [
+    [rootX, t, rfz], [rootX, t, rbz], [tipX, t + tY, tfz], [tipX, t + tY, tbz],
+    [rootX, -t, rfz], [rootX, -t, rbz], [tipX, -t + tY, tfz], [tipX, -t + tY, tbz]
+  ]
+  const pos = [], uv = [], idx = []
+  for (const v of P) pos.push(v[0], v[1], v[2])
+  for (let i = 0; i < 4; i++) uv.push(0.1 + 0.2 * (i % 2), 0.2 + 0.6 * (i < 2 ? 0 : 1))
+  for (let i = 0; i < 4; i++) uv.push(0.1 + 0.2 * (i % 2), 0.2 + 0.6 * (i < 2 ? 0 : 1))
+  const top = sign > 0 ? [0, 1, 3, 0, 3, 2] : [0, 3, 1, 0, 2, 3]
+  const bot = sign > 0 ? [4, 7, 5, 4, 6, 7] : [4, 5, 7, 4, 7, 6]
+  idx.push(...top, ...bot)
+  // edges (leading, trailing, tip)
+  idx.push(0, 2, 6, 0, 6, 4)   // leading
+  idx.push(1, 5, 7, 1, 7, 3)   // trailing
+  idx.push(2, 3, 7, 2, 7, 6)   // tip
+  return makeGeo(pos, uv, idx)
+}
+
+function buildShip (p) {
+  const group = new THREE.Group()
+
+  const hull = new THREE.Mesh(buildHull(p), hullMat)
+  group.add(hull)
+
+  const wl = new THREE.Mesh(buildWing(p, -1), hullMat)
+  const wr = new THREE.Mesh(buildWing(p, 1), hullMat)
+  group.add(wl, wr)
+
+  // engine pods
+  const podX = 0.40 * p.bodyWidth
+  const podCz = 0.45
+  const podR = p.enginePodRadius
+  const podL = p.enginePodLength
+  const podGeo = new THREE.CylinderGeometry(podR, podR * 0.86, podL, 18, 1, false)
+  podGeo.rotateX(Math.PI / 2)
+  for (const sx of [-1, 1]) {
+    const pod = new THREE.Mesh(podGeo, podMat)
+    pod.position.set(sx * podX, 0.02, podCz)
+    group.add(pod)
+    // nozzle ring (back)
+    const nz = new THREE.Mesh(new THREE.TorusGeometry(podR * 0.82, podR * 0.18, 8, 18), nozzleMat)
+    nz.position.set(sx * podX, 0.02, podCz + podL * 0.5)
+    group.add(nz)
+    // intake disc (front)
+    const intake = new THREE.Mesh(new THREE.CircleGeometry(podR * 0.7, 18), intakeMat)
+    intake.position.set(sx * podX, 0.02, podCz - podL * 0.5 - 0.001)
+    intake.rotation.y = Math.PI
+    group.add(intake)
+  }
+
+  // cockpit dome
+  const hullTopY = 0.20 * p.verticalHeight + 0.01
+  const dome = new THREE.Mesh(
+    new THREE.SphereGeometry(1, 24, 14, 0, Math.PI * 2, 0, Math.PI * 0.5), glassMat)
+  dome.scale.set(0.22 * p.bodyWidth + 0.14, p.domeHeight, 0.32)
+  dome.position.set(0, hullTopY - 0.02, -0.42)
+  group.add(dome)
+
+  const nozzleL = new THREE.Vector3(-podX, 0.02, podCz + podL * 0.5)
+  const nozzleR = new THREE.Vector3(podX, 0.02, podCz + podL * 0.5)
+  return { group, nozzleL, nozzleR, podR }
+}
+
+// ────────────────────────────────────────────────────────────── afterburner beam (crossed planes)
+const beamUniforms = () => ({
+  uTime: { value: 0 }, uLen: { value: 1 }, uIntensity: { value: 1 },
+  uColor: { value: new THREE.Color(0xff5a96) }
+})
+const BEAM_VERT = /* glsl */`
+  varying vec2 vUv;
+  void main () { vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }
+`
+const BEAM_FRAG = /* glsl */`
+  uniform float uTime; uniform float uIntensity; uniform vec3 uColor;
+  varying vec2 vUv;
+  void main () {
+    float across = abs(vUv.x - 0.5) * 2.0;
+    float along = vUv.y;                       // 0 nozzle -> 1 tip
+    float core = smoothstep(1.0, 0.0, across);
+    float tail = pow(1.0 - along, 1.7);        // phase out toward tip
+    float wave = 0.5 + 0.5 * sin((along * 5.0 - uTime * 6.0) * 6.2831);
+    float flick = 0.82 + 0.18 * sin(uTime * 41.0);
+    float a = core * tail * (0.55 + 0.45 * wave) * flick * uIntensity;
+    vec3 col = mix(uColor, vec3(1.0), core * (1.0 - along * 0.6));
+    gl_FragColor = vec4(col, a);
+  }
+`
+function buildBeam () {
+  const grp = new THREE.Group()
+  const u = beamUniforms()
+  const mat = new THREE.ShaderMaterial({
+    uniforms: u, vertexShader: BEAM_VERT, fragmentShader: BEAM_FRAG,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide
+  })
+  const geo = new THREE.PlaneGeometry(1, 1)
+  geo.translate(0, 0.5, 0)            // base at y=0, extends +y
+  const a = new THREE.Mesh(geo, mat)
+  const b = new THREE.Mesh(geo, mat)
+  b.rotation.y = Math.PI / 2
+  grp.add(a, b)
+  grp.rotation.x = Math.PI / 2        // local +y -> world +z (rear)
+  // flare core sprite
+  const flare = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: texGlow, color: 0xffffff, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+  }))
+  return { grp, mat, u, meshes: [a, b], geo, flare }
+}
+
+// ────────────────────────────────────────────────────────────── spark particles (GC-safe)
+const SPARKS = 640
+function buildSparks () {
+  const pos = new Float32Array(SPARKS * 3)
+  const vel = new Float32Array(SPARKS * 3)
+  const age = new Float32Array(SPARKS)
+  const life = new Float32Array(SPARKS)
+  const orig = new Float32Array(SPARKS)       // 0 = left nozzle, 1 = right
+  const rng = mulberry32(99)
+  for (let i = 0; i < SPARKS; i++) {
+    life[i] = 0.4 + rng() * 0.7
+    age[i] = rng() * life[i]
+    orig[i] = i % 2
+  }
+  const geo = new THREE.BufferGeometry()
+  geo.setAttribute('position', new THREE.BufferAttribute(pos, 3))
+  geo.setAttribute('aAge', new THREE.BufferAttribute(age, 1))
+  geo.setAttribute('aLife', new THREE.BufferAttribute(life, 1))
+  const mat = new THREE.ShaderMaterial({
+    uniforms: { uSize: { value: 90 } },
+    vertexShader: /* glsl */`
+      attribute float aAge; attribute float aLife; uniform float uSize;
+      varying float vT;
+      void main () {
+        vT = clamp(aAge / aLife, 0.0, 1.0);
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        gl_PointSize = uSize * (1.0 - vT * 0.8) / max(0.1, -mv.z);
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: /* glsl */`
+      varying float vT;
+      void main () {
+        float d = length(gl_PointCoord - 0.5);
+        float a = smoothstep(0.5, 0.0, d) * (1.0 - vT);
+        vec3 col = mix(vec3(1.0), vec3(1.0, 0.4, 0.65), vT);
+        gl_FragColor = vec4(col, a);
+      }`,
+    transparent: true, depthWrite: false, blending: THREE.AdditiveBlending
+  })
+  const points = new THREE.Points(geo, mat)
+  points.frustumCulled = false
+  const oL = new THREE.Vector3(), oR = new THREE.Vector3()
+  let activeFrac = 1, burnLen = 1, rng2 = mulberry32(42)
+
+  function setNozzles (l, r) { oL.copy(l); oR.copy(r) }
+  function setParams (frac, len) { activeFrac = frac; burnLen = len }
+
+  function respawn (i) {
+    const o = orig[i] > 0.5 ? oR : oL
+    const ix = i * 3
+    pos[ix] = o.x + (rng2() - 0.5) * 0.04
+    pos[ix + 1] = o.y + (rng2() - 0.5) * 0.04
+    pos[ix + 2] = o.z + 0.02
+    vel[ix] = (rng2() - 0.5) * 0.25
+    vel[ix + 1] = (rng2() - 0.5) * 0.25
+    vel[ix + 2] = 1.4 + rng2() * 1.8 * burnLen
+    age[i] = 0
+  }
+
+  function tick (dt) {
+    const cap = Math.floor(SPARKS * activeFrac)
+    for (let i = 0; i < SPARKS; i++) {
+      if (i >= cap) { age[i] = life[i] + 1; continue }
+      const ix = i * 3
+      pos[ix] += vel[ix] * dt
+      pos[ix + 1] += vel[ix + 1] * dt
+      pos[ix + 2] += vel[ix + 2] * dt
+      vel[ix] *= 0.94; vel[ix + 1] *= 0.94
+      age[i] += dt
+      if (age[i] >= life[i]) respawn(i)
+    }
+    geo.attributes.position.needsUpdate = true
+    geo.attributes.aAge.needsUpdate = true
+  }
+  return { points, tick, setNozzles, setParams, geo, mat }
+}
+
+// ────────────────────────────────────────────────────────────── scene setup
+const canvas = document.getElementById('scene')
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true, powerPreference: 'high-performance' })
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2))
+renderer.outputColorSpace = THREE.SRGBColorSpace
+renderer.toneMapping = THREE.ACESFilmicToneMapping
+renderer.toneMappingExposure = 1.05
+const main = canvas.parentElement
+renderer.setSize(main.clientWidth, main.clientHeight, false)
+
+const scene = new THREE.Scene()
+scene.background = new THREE.Color(0x07040f)
+scene.fog = new THREE.FogExp2(0x07040f, 0.02)
+
+const camera = new THREE.PerspectiveCamera(46, main.clientWidth / main.clientHeight, 0.05, 200)
+camera.position.set(4.6, 2.4, -4.4)
+
+const controls = new OrbitControls(camera, renderer.domElement)
+controls.enableDamping = true
+controls.dampingFactor = 0.06
+controls.autoRotate = true
+controls.autoRotateSpeed = 0.6
+controls.minDistance = 2
+controls.maxDistance = 24
+controls.target.set(0, 0.1, 0)
+
+// lighting
+scene.add(new THREE.HemisphereLight(0xff9ec4, 0x140a1e, 0.55))
+const key = new THREE.DirectionalLight(0xffffff, 2.2)
+key.position.set(3, 5, -2); scene.add(key)
+const rim = new THREE.DirectionalLight(0x6bb6ff, 1.4)
+rim.position.set(-4, 1, 4); scene.add(rim)
+const fill = new THREE.PointLight(0xff5a96, 8, 12); fill.position.set(0, -1, 2); scene.add(fill)
+
+// starfield
+;(function stars () {
+  const n = 900, arr = new Float32Array(n * 3), rng = mulberry32(5)
+  for (let i = 0; i < n; i++) {
+    const r = 30 + rng() * 40
+    const th = rng() * Math.PI * 2, ph = Math.acos(rng() * 2 - 1)
+    arr[i * 3] = r * Math.sin(ph) * Math.cos(th)
+    arr[i * 3 + 1] = r * Math.cos(ph)
+    arr[i * 3 + 2] = r * Math.sin(ph) * Math.sin(th)
+  }
+  const g = new THREE.BufferGeometry()
+  g.setAttribute('position', new THREE.BufferAttribute(arr, 3))
+  scene.add(new THREE.Points(g, new THREE.PointsMaterial({ color: 0xffd9ec, size: 0.12, sizeAttenuation: true, transparent: true, opacity: 0.6 })))
+})()
+
+// ────────────────────────────────────────────────────────────── parameters
+const DEFAULTS = {
+  verticalHeight: 1.0, wingSkew: 28, nosePointiness: 0.6, wingSpan: 1.25,
+  bodyWidth: 1.0, hullTaper: 0.25, enginePodRadius: 0.16, enginePodLength: 0.95, domeHeight: 0.22
+}
+const GEO_SPECS = [
+  ['verticalHeight', 'vertical height', 0.4, 1.8, 0.01, v => v.toFixed(2)],
+  ['wingSkew', 'wing skew angle', 0, 60, 1, v => v.toFixed(0) + '°'],
+  ['nosePointiness', 'nose pointiness', 0, 1, 0.01, v => v.toFixed(2)],
+  ['wingSpan', 'wing span', 0.7, 2.1, 0.01, v => v.toFixed(2)],
+  ['bodyWidth', 'body width', 0.6, 1.6, 0.01, v => v.toFixed(2)],
+  ['hullTaper', 'hull taper', 0, 0.6, 0.01, v => v.toFixed(2)],
+  ['enginePodRadius', 'engine pod radius', 0.08, 0.30, 0.005, v => v.toFixed(3)],
+  ['enginePodLength', 'engine pod length', 0.5, 1.6, 0.01, v => v.toFixed(2)],
+  ['domeHeight', 'cockpit dome height', 0.05, 0.45, 0.01, v => v.toFixed(2)]
+]
+const FX = { burnIntensity: 1.0, burnLength: 1.0, sparkAmount: 1.0 }
+const FX_SPECS = [
+  ['burnIntensity', 'beam intensity', 0, 2.2, 0.01, v => v.toFixed(2)],
+  ['burnLength', 'beam length', 0.4, 3.0, 0.01, v => v.toFixed(2)],
+  ['sparkAmount', 'spark density', 0, 1, 0.01, v => v.toFixed(2)]
+]
+const params = { ...DEFAULTS }
+
+// ────────────────────────────────────────────────────────────── build live ship + FX
+let live = buildShip(params)
+live.group.position.x = 0
+scene.add(live.group)
+
+const beamL = buildBeam(), beamR = buildBeam()
+live.group.add(beamL.grp, beamR.grp, beamL.flare, beamR.flare)
+const sparks = buildSparks()
+live.group.add(sparks.points)
+
+let wireOverlay = null
+
+function placeBeam (beam, nozzle) {
+  beam.grp.position.copy(nozzle)
+  const len = live.podR * 7 * FX.burnLength
+  const w = live.podR * 1.7
+  for (const m of beam.meshes) m.scale.set(w, len, 1)
+  beam.u.uLen.value = len
+  beam.u.uIntensity.value = FX.burnIntensity
+  beam.flare.position.copy(nozzle)
+  beam.flare.scale.setScalar(live.podR * 4.5 * (0.6 + FX.burnIntensity * 0.4))
+  beam.flare.material.opacity = Math.min(1, FX.burnIntensity)
+}
+
+function syncFX () {
+  placeBeam(beamL, live.nozzleL)
+  placeBeam(beamR, live.nozzleR)
+  sparks.setNozzles(live.nozzleL, live.nozzleR)
+  sparks.setParams(FX.sparkAmount, FX.burnLength)
+}
+
+function rebuildLive () {
+  // dispose old geometry only (materials shared/persistent)
+  live.group.remove(beamL.grp, beamR.grp, beamL.flare, beamR.flare, sparks.points)
+  if (wireOverlay) live.group.remove(wireOverlay)
+  live.group.traverse(o => { if (o.isMesh && o.geometry) o.geometry.dispose() })
+  scene.remove(live.group)
+
+  const next = buildShip(params)
+  next.group.add(beamL.grp, beamR.grp, beamL.flare, beamR.flare, sparks.points)
+  live = next
+  scene.add(live.group)
+  if (showWire) addWire()
+  syncFX()
+}
+
+function addWire () {
+  wireOverlay = new THREE.Group()
+  live.group.traverse(o => {
+    if (o.isMesh && o.geometry && o.material !== glassMat) {
+      wireOverlay.add(new THREE.LineSegments(new THREE.WireframeGeometry(o.geometry), wireMat))
+    }
+  })
+  live.group.add(wireOverlay)
+}
+
+// ────────────────────────────────────────────────────────────── reference (exact original) + gate
+const ref = buildShip({ ...DEFAULTS })
+ref.group.position.set(3.6, 0, 0)
+ref.group.traverse(o => { if (o.isMesh && o.material === hullMat) o.material = hullMat })
+scene.add(ref.group)
+// dim static beam on reference
+const refBeamL = buildBeam(), refBeamR = buildBeam()
+ref.group.add(refBeamL.grp, refBeamR.grp)
+for (const [bm, nz] of [[refBeamL, ref.nozzleL], [refBeamR, ref.nozzleR]]) {
+  bm.grp.position.copy(nz)
+  const len = ref.podR * 5
+  for (const m of bm.meshes) m.scale.set(ref.podR * 1.5, len, 1)
+  bm.u.uIntensity.value = 0.5
+  bm.u.uColor.value.set(0x9a7cff)
+}
+
+// boost gate — distinct geometry
+const gate = new THREE.Group()
+gate.position.set(-3.7, 0.1, 0)
+const torus = new THREE.Mesh(new THREE.TorusGeometry(0.9, 0.12, 16, 40), gateMat)
+gate.add(torus)
+for (let i = 0; i < 6; i++) {
+  const a = (i / 6) * Math.PI * 2
+  const spoke = new THREE.Mesh(new THREE.BoxGeometry(0.06, 0.06, 0.5), gateMat)
+  spoke.position.set(Math.cos(a) * 0.65, Math.sin(a) * 0.65, 0)
+  spoke.rotation.z = a
+  gate.add(spoke)
+}
+scene.add(gate)
+
+// ────────────────────────────────────────────────────────────── bloom composer
+const composer = new EffectComposer(renderer)
+composer.setSize(main.clientWidth, main.clientHeight)
+composer.addPass(new RenderPass(scene, camera))
+const bloom = new UnrealBloomPass(new THREE.Vector2(main.clientWidth, main.clientHeight), 0.95, 0.55, 0.62)
+composer.addPass(bloom)
+composer.addPass(new OutputPass())
+
+// ────────────────────────────────────────────────────────────── UI wiring
+function buildSliders (host, specs, store, onChange) {
+  for (const [key, name, min, max, step, fmt] of specs) {
+    const wrap = document.createElement('label')
+    wrap.className = 'ctrl'
+    wrap.innerHTML = `<div class="row"><span class="name">${name}</span><span class="val"></span></div>
+      <input type="range" min="${min}" max="${max}" step="${step}" value="${store[key]}">`
+    const val = wrap.querySelector('.val')
+    const input = wrap.querySelector('input')
+    val.textContent = fmt(store[key])
+    input.addEventListener('input', () => {
+      store[key] = parseFloat(input.value)
+      val.textContent = fmt(store[key])
+      onChange(key)
+    })
+    wrap._input = input; wrap._val = val; wrap._fmt = fmt; wrap._key = key
+    host.appendChild(wrap)
+  }
+  return host
+}
+
+const geoHost = buildSliders(document.getElementById('geo-controls'), GEO_SPECS, params, () => rebuildLive())
+const fxHost = buildSliders(document.getElementById('fx-controls'), FX_SPECS, FX, () => syncFX())
+
+function refreshSliderUI (host, store) {
+  for (const w of host.querySelectorAll('.ctrl')) {
+    w._input.value = store[w._key]; w._val.textContent = w._fmt(store[w._key])
+  }
+}
+
+let showWire = false
+const tRotate = document.getElementById('t-rotate')
+const tLabels = document.getElementById('t-labels')
+const tWire = document.getElementById('t-wire')
+tRotate.onclick = () => { controls.autoRotate = !controls.autoRotate; tRotate.classList.toggle('on', controls.autoRotate) }
+let labelsOn = true
+tLabels.onclick = () => { labelsOn = !labelsOn; tLabels.classList.toggle('on', labelsOn) }
+tWire.onclick = () => {
+  showWire = !showWire; tWire.classList.toggle('on', showWire)
+  if (showWire) addWire()
+  else if (wireOverlay) { live.group.remove(wireOverlay); wireOverlay.traverse(o => o.geometry && o.geometry.dispose()); wireOverlay = null }
+}
+document.getElementById('b-reset').onclick = () => {
+  Object.assign(params, DEFAULTS); Object.assign(FX, { burnIntensity: 1, burnLength: 1, sparkAmount: 1 })
+  refreshSliderUI(geoHost, params); refreshSliderUI(fxHost, FX); rebuildLive()
+}
+document.getElementById('b-random').onclick = () => {
+  const rng = mulberry32((Math.random() * 1e9) | 0)
+  for (const [key, , min, max] of GEO_SPECS) params[key] = min + rng() * (max - min)
+  refreshSliderUI(geoHost, params); rebuildLive()
+}
+
+syncFX()
+
+// ────────────────────────────────────────────────────────────── 3D labels
+const lblShip = document.getElementById('lbl-ship')
+const lblRef = document.getElementById('lbl-ref')
+const lblGate = document.getElementById('lbl-gate')
+const projV = new THREE.Vector3()
+function projectLabel (el, x, y, z) {
+  if (!labelsOn) { el.style.opacity = 0; return }
+  projV.set(x, y, z).project(camera)
+  if (projV.z > 1) { el.style.opacity = 0; return }
+  el.style.left = (projV.x * 0.5 + 0.5) * main.clientWidth + 'px'
+  el.style.top = (-projV.y * 0.5 + 0.5) * main.clientHeight + 'px'
+  el.style.opacity = 0.9
+}
+
+// ────────────────────────────────────────────────────────────── frame loop
+const clock = new THREE.Clock()
+const hud = document.getElementById('hud')
+const tmp = new THREE.Vector3()
+let acc = 0
+
+function frame () {
+  requestAnimationFrame(frame)
+  let dt = clock.getDelta()
+  if (dt > 0.05) dt = 0.05
+  const t = clock.elapsedTime
+
+  controls.update()
+  beamL.u.uTime.value = t; beamR.u.uTime.value = t
+  refBeamL.u.uTime.value = t; refBeamR.u.uTime.value = t
+  sparks.tick(dt)
+
+  gate.rotation.z += dt * 0.5
+  ref.group.rotation.y = Math.sin(t * 0.3) * 0.15
+
+  acc += dt
+  if (acc > 0.1) {
+    acc = 0
+    const az = Math.round(((controls.getAzimuthalAngle() * 180 / Math.PI) + 360) % 360)
+    const dist = camera.position.distanceTo(tmp.copy(controls.target)).toFixed(1)
+    hud.textContent = `AZ ${az}°  ·  DIST ${dist}  ·  ${SPARKS} sparks  ·  bloom on`
+  }
+
+  projectLabel(lblShip, live.group.position.x, 0.55, -0.2)
+  projectLabel(lblRef, ref.group.position.x, 0.55, -0.2)
+  projectLabel(lblGate, gate.position.x, 1.3, 0)
+
+  composer.render()
+}
+frame()
+
+// resize
+new ResizeObserver(() => {
+  const w = main.clientWidth, h = main.clientHeight
+  renderer.setSize(w, h, false)
+  composer.setSize(w, h)
+  bloom.setSize(w, h)
+  camera.aspect = w / h
+  camera.updateProjectionMatrix()
+}).observe(main)
+</script>
+</body>
+</html>

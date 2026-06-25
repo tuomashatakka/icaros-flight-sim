@@ -14,6 +14,8 @@ import { useControls } from '@/hooks/use-mobile';
 import { useStore } from '@/hooks/use-store';
 import { vehicleConfig } from '@/lib/utils';
 import { Quaternion, Vector3, Group } from 'three';
+import { useShipStore } from '@/hooks/use-ship-store';
+import { SHIP_PRESETS, applyShipConfig } from '@/lib/ship/materials';
 
 const SUSPENSION_REST = 0.4;
 
@@ -21,12 +23,14 @@ export function Vehicle() {
   const { controls } = useControls();
   const { setSpeed, increaseZone, zone, speedLevels } = useStore();
   const { world } = useRapier();
+  const { currentConfig, selectShip } = useShipStore();
 
-  const carGltf = useLoader(GLTFLoader, '/spaceship_-_cb1/scene.gltf');
+  const carGltf = useLoader(GLTFLoader, SHIP_PRESETS[currentConfig.shipId].path);
 
   const chassisRef = useRef<RapierRigidBody>(null);
   const visualRef = useRef<Group>(null);
   const controllerRef = useRef<ReturnType<typeof world.createVehicleController> | null>(null);
+  const prevConfigRef = useRef(currentConfig);
 
   const { width, height, front, back, radius } = vehicleConfig;
 
@@ -41,15 +45,44 @@ export function Vehicle() {
     [width, height, front, back]
   );
 
+  // Set the ship ID based on the current config
   useEffect(() => {
-    if (carGltf.scene) {
+    selectShip(currentConfig.shipId);
+  }, [currentConfig.shipId, selectShip]);
+
+  // Apply initial config and handle config changes efficiently
+  useEffect(() => {
+    if (!carGltf.scene) return;
+    
+    // Store current config for comparison
+    const current = currentConfig;
+    const prev = prevConfigRef.current;
+    
+    // Check if config actually changed
+    const configChanged = 
+      current.shipId !== prev.shipId ||
+      current.bodyColor !== prev.bodyColor ||
+      current.emissiveColor !== prev.emissiveColor ||
+      current.metalness !== prev.metalness ||
+      current.roughness !== prev.roughness ||
+      current.emissiveIntensity !== prev.emissiveIntensity ||
+      current.texturePreset !== prev.texturePreset ||
+      current.textureRepeat !== prev.textureRepeat ||
+      current.paletteName !== prev.paletteName;
+    
+    if (configChanged) {
+      // Apply the ship configuration
+      applyShipConfig(carGltf.scene, currentConfig);
+      
       carGltf.scene.traverse((child) => {
         if ('isMesh' in child && (child as { isMesh?: boolean }).isMesh) {
           (child as { castShadow: boolean }).castShadow = true;
         }
       });
+      
+      prevConfigRef.current = currentConfig;
     }
-  }, [carGltf]);
+  }, [carGltf, currentConfig]);
 
   // Build the rapier raycast-vehicle controller once the chassis rigid body exists.
   useEffect(() => {
