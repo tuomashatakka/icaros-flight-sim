@@ -3,7 +3,7 @@
 import type { PropsWithChildren } from 'react';
 import { Suspense } from 'react';
 import { Canvas } from '@react-three/fiber';
-import { Physics } from '@react-three/cannon';
+import { Physics } from '@react-three/rapier';
 import { Sky, Environment } from '@react-three/drei';
 import { Vehicle } from '@/components/vehicle-scene';
 import { EffectComposer, Bloom } from '@react-three/postprocessing';
@@ -28,20 +28,11 @@ export function Level({ children }: PropsWithChildren) {
         />
         <Sky sunPosition={[100, 10, 100]} />
         <Environment preset="night" />
-        <Physics
-          broadphase="SAP"
-          defaultContactMaterial={{
-            contactEquationRelaxation: 4,
-            friction: 0.01,
-          }}
-          allowSleep={false}
-          gravity={[0, -9.81, 0]}
-          step={1 / 60}
-        >
+        <Physics gravity={[0, -9.81, 0]} timeStep={1 / 60}>
           {children}
           <Vehicle />
         </Physics>
-         <EffectComposer>
+        <EffectComposer>
           <Bloom luminanceThreshold={0.7} luminanceSmoothing={0.9} height={300} />
         </EffectComposer>
       </Suspense>

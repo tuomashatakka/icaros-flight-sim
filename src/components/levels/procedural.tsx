@@ -1,11 +1,10 @@
 
 "use client";
 
-import { useTrimesh } from '@react-three/cannon';
+import { RigidBody } from '@react-three/rapier';
 import { useMemo } from 'react';
 import * as THREE from 'three';
 import { MeshReflectorMaterial } from '@react-three/drei';
-import { COLLISION_GROUPS } from '@/lib/utils';
 
 export default function ProceduralTrack() {
   const { geometry, vertices, indices } = useMemo(() => {
@@ -135,19 +134,12 @@ export default function ProceduralTrack() {
     };
   }, []);
 
-  const [ref] = useTrimesh(() => ({
-    type: 'Static',
-    args: [vertices, indices],
-    position: [0, -0.05, 0],
-    rotation: [0, 0, 0],
-    collisionFilterGroup: COLLISION_GROUPS.GROUND,
-    collisionFilterMask: COLLISION_GROUPS.VEHICLE,
-  }), undefined, [vertices, indices]);
 
 
   return (
-    <mesh ref={ref} geometry={geometry} receiveShadow>
-      <MeshReflectorMaterial
+    <RigidBody type="fixed" colliders="trimesh" position={[0, -0.05, 0]}>
+      <mesh geometry={geometry} receiveShadow>
+        <MeshReflectorMaterial
           color="#333"
           blur={[400, 400]}
           resolution={1024}
@@ -157,7 +149,8 @@ export default function ProceduralTrack() {
           minDepthThreshold={0.085}
           metalness={0.1}
           roughness={0.9}
-      />
-    </mesh>
+        />
+      </mesh>
+    </RigidBody>
   );
 }

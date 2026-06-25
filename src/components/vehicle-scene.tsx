@@ -1,183 +1,176 @@
-
 "use client"
 
-import { useBox, useRaycastVehicle, useSphere } from '@react-three/cannon';
+import {
+  RigidBody,
+  CuboidCollider,
+  useRapier,
+  useBeforePhysicsStep,
+  type RapierRigidBody,
+} from '@react-three/rapier';
 import { useFrame, useLoader } from '@react-three/fiber';
-import { useEffect, useRef } from 'react';
+import { useEffect, useMemo, useRef } from 'react';
 import { GLTFLoader } from 'three/examples/jsm/loaders/GLTFLoader.js';
 import { useControls } from '@/hooks/use-mobile';
 import { useStore } from '@/hooks/use-store';
-import { COLLISION_GROUPS, vehicleConfig, wheelInfos } from '@/lib/utils';
-import type { Object3D } from 'three';
-import { Quaternion, Vector3, Group, Euler } from 'three';
+import { vehicleConfig } from '@/lib/utils';
+import { Quaternion, Vector3, Group } from 'three';
+
+const SUSPENSION_REST = 0.4;
 
 export function Vehicle() {
   const { controls } = useControls();
   const { setSpeed, increaseZone, zone, speedLevels } = useStore();
-  
-  const carGltf = useLoader(GLTFLoader, '/spaceship_-_cb1/scene.gltf');
-  
-  const position: [number, number, number] = [1, 2, 4];
-  const { radius } = vehicleConfig;
+  const { world } = useRapier();
 
-  const chassisRef = useRef<Object3D>(null);
-  const visualRef = useRef<Object3D>(null);
-  
-  const [chassisBody, chassisApi] = useBox(
-    () => ({
-      mass: 150,
-      position,
-      angularDamping: 0.95,
-      args: [vehicleConfig.width, vehicleConfig.height, vehicleConfig.front * 2],
-      rotation: [0, Math.PI, 0],
-      collisionFilterGroup: COLLISION_GROUPS.VEHICLE,
-      collisionFilterMask: COLLISION_GROUPS.GROUND
-    }),
-    chassisRef
+  const carGltf = useLoader(GLTFLoader, '/spaceship_-_cb1/scene.gltf');
+
+  const chassisRef = useRef<RapierRigidBody>(null);
+  const visualRef = useRef<Group>(null);
+  const controllerRef = useRef<ReturnType<typeof world.createVehicleController> | null>(null);
+
+  const { width, height, front, back, radius } = vehicleConfig;
+
+  // Wheel chassis-connection points, local space: [front-left, front-right, back-left, back-right]
+  const wheels = useMemo(
+    () => [
+      { x: -width / 2, y: -height / 2, z: front },
+      { x: width / 2, y: -height / 2, z: front },
+      { x: -width / 2, y: -height / 2, z: back },
+      { x: width / 2, y: -height / 2, z: back },
+    ],
+    [width, height, front, back]
   );
 
-  const wheelBodies = [useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null), useRef<Object3D>(null)];
-  
-  const sphereArgs: [number] = [radius];
-  useSphere(() => ({ mass: 1, type: 'Kinematic', collisionFilterGroup: 0, args: sphereArgs }), wheelBodies[0]);
-  useSphere(() => ({ mass: 1, type: 'Kinematic', collisionFilterGroup: 0, args: sphereArgs }), wheelBodies[1]);
-  useSphere(() => ({ mass: 1, type: 'Kinematic', collisionFilterGroup: 0, args: sphereArgs }), wheelBodies[2]);
-  useSphere(() => ({ mass: 1, type: 'Kinematic', collisionFilterGroup: 0, args: sphereArgs }), wheelBodies[3]);
-
-  const [vehicle, vehicleApi] = useRaycastVehicle(() => ({
-    chassisBody: chassisRef,
-    wheels: wheelBodies,
-    wheelInfos,
-    indexForwardAxis: 2,
-    indexRightAxis: 0,
-    indexUpAxis: 1,
-  }));
-  
   useEffect(() => {
     if (carGltf.scene) {
       carGltf.scene.traverse((child) => {
-        if ('isMesh' in child && child.isMesh) {
-          child.castShadow = true;
+        if ('isMesh' in child && (child as { isMesh?: boolean }).isMesh) {
+          (child as { castShadow: boolean }).castShadow = true;
         }
       });
     }
   }, [carGltf]);
-  
-  const velocity = useRef(new Vector3());
-  
+
+  // Build the rapier raycast-vehicle controller once the chassis rigid body exists.
   useEffect(() => {
-    if (chassisApi) {
-        const unsubscribe = chassisApi.velocity.subscribe((v) => velocity.current.fromArray(v));
-        return unsubscribe;
+    const chassis = chassisRef.current;
+    if (!chassis) return;
+    const controller = world.createVehicleController(chassis);
+    const down = { x: 0, y: -1, z: 0 };
+    const axle = { x: -1, y: 0, z: 0 };
+    wheels.forEach((pos) => controller.addWheel(pos, down, axle, SUSPENSION_REST, radius));
+    wheels.forEach((_, i) => {
+      controller.setWheelSuspensionStiffness(i, 24);
+      controller.setWheelMaxSuspensionTravel(i, 0.6);
+      controller.setWheelSuspensionCompression(i, 2);
+      controller.setWheelSuspensionRelaxation(i, 10);
+      controller.setWheelFrictionSlip(i, 1.5);
+    });
+    controllerRef.current = controller;
+    return () => {
+      controllerRef.current = null;
+      world.removeVehicleController(controller);
+    };
+  }, [world, wheels, radius]);
+
+  useEffect(() => {
+    const id = setInterval(() => increaseZone(), 5000);
+    return () => clearInterval(id);
+  }, [increaseZone]);
+
+  useBeforePhysicsStep(() => {
+    const controller = controllerRef.current;
+    const chassis = chassisRef.current;
+    if (!controller || !chassis) return;
+
+    const { force, steer, maxBrake } = vehicleConfig;
+
+    const currentZone = speedLevels.find((l) => l.zone === zone) || speedLevels[speedLevels.length - 1];
+    const targetSpeed = currentZone.speedTarget;
+    const lv = chassis.linvel();
+    const currentSpeed = Math.hypot(lv.x, lv.y, lv.z);
+
+    const engineForce = currentSpeed < targetSpeed ? force : 0;
+    // Rear wheels drive (indices 2, 3).
+    controller.setWheelEngineForce(2, engineForce);
+    controller.setWheelEngineForce(3, engineForce);
+
+    const steerMultiplier = controls.boost ? 2.5 : 1;
+    const steerValue = controls.steer * steer * steerMultiplier;
+    controller.setWheelSteering(0, steerValue);
+    controller.setWheelSteering(1, steerValue);
+
+    // Differential braking helps the turn bite.
+    const brake = Math.abs(steerValue) * maxBrake;
+    controller.setWheelBrake(0, steerValue > 0 ? brake : 0);
+    controller.setWheelBrake(2, steerValue > 0 ? brake : 0);
+    controller.setWheelBrake(1, steerValue < 0 ? brake : 0);
+    controller.setWheelBrake(3, steerValue < 0 ? brake : 0);
+
+    if (controls.reset) {
+      chassis.setTranslation({ x: -10, y: 2, z: -20 }, true);
+      chassis.setLinvel({ x: 0, y: 0, z: 0 }, true);
+      chassis.setAngvel({ x: 0, y: 0, z: 0 }, true);
+      chassis.setRotation({ x: 0, y: 1, z: 0, w: 0 }, true);
     }
-  }, [chassisApi]);
 
-  useEffect(() => {
-      const interval = setInterval(() => {
-        increaseZone();
-      }, 5000);
-      return () => clearInterval(interval);
-  }, [increaseZone])
-
+    controller.updateVehicle(world.timestep);
+    setSpeed(currentSpeed);
+  });
 
   const smoothedCameraPosition = useRef(new Vector3(0, 5, 15));
   const smoothedLookAtPosition = useRef(new Vector3());
-
-  const smoothedVisualPosition = useRef(new Vector3(0, 0, 0))
-  const smoothedVisualRotation = useRef(new Euler(0, 0, 0))
+  const smoothedVisualPosition = useRef(new Vector3());
+  const vehiclePosition = useRef(new Vector3());
+  const vehicleQuaternion = useRef(new Quaternion());
+  const scratch = useRef(new Vector3());
 
   useFrame((state, delta) => {
-    if (!vehicle.current || !vehicleApi || !chassisRef.current) return;
+    const chassis = chassisRef.current;
+    if (!chassis) return;
 
-    const { force, steer, maxBrake } = vehicleConfig;
-    
-    // Automatic forward force based on current zone
-    const currentZone = speedLevels.find(l => l.zone === zone) || speedLevels[speedLevels.length - 1];
-    const targetSpeed = currentZone.speedTarget;
-    const currentSpeed = velocity.current.length();
-    
-    let engineForce = 0;
-    if (currentSpeed < targetSpeed) {
-      engineForce = -force;
-    }
+    const t = chassis.translation();
+    const r = chassis.rotation();
+    vehiclePosition.current.set(t.x, t.y, t.z);
+    vehicleQuaternion.current.set(r.x, r.y, r.z, r.w);
 
-    vehicleApi.applyEngineForce(engineForce, 2);
-    vehicleApi.applyEngineForce(engineForce, 3);
-    
-    const steerMultiplier = controls.boost ? 2.5 : 1;
-    const steerValue = controls.steer * steer * steerMultiplier;
-    vehicleApi.setSteeringValue(steerValue, 0);
-    vehicleApi.setSteeringValue(steerValue, 1);
-    
-    // Braking based on steering
-    let brakeForce = 0;
-    if (steerValue > 0) { // Turning left
-      brakeForce = maxBrake * steerValue;
-      vehicleApi.setBrake(brakeForce, 0); // Front-left
-      vehicleApi.setBrake(brakeForce, 2); // Rear-left
-      vehicleApi.setBrake(0, 1);
-      vehicleApi.setBrake(0, 3);
-    } else if (steerValue < 0) { // Turning right
-      brakeForce = maxBrake * -steerValue;
-      vehicleApi.setBrake(brakeForce, 1); // Front-right
-      vehicleApi.setBrake(brakeForce, 3); // Rear-right
-      vehicleApi.setBrake(0, 0);
-      vehicleApi.setBrake(0, 2);
-    } else {
-        vehicleApi.setBrake(0, 0);
-        vehicleApi.setBrake(0, 1);
-        vehicleApi.setBrake(0, 2);
-        vehicleApi.setBrake(0, 3);
-    }
+    const lerpFactor = delta * 5.0;
 
-    if (controls.reset) {
-      chassisApi.position.set(-10, 2, -20);
-      chassisApi.velocity.set(0, 0, 0);
-      chassisApi.angularVelocity.set(0, 0, 0);
-      chassisApi.rotation.set(0, Math.PI, 0);
-    }
-    
-    setSpeed(currentSpeed);
-
-    // Chase camera logic
-    const vehiclePosition = new Vector3();
-    const vehicleQuaternion = new Quaternion();
-
-    chassisRef.current.getWorldPosition(vehiclePosition);
-    chassisRef.current.getWorldQuaternion(vehicleQuaternion);
-    
-    const cameraOffset = new Vector3(0, 3.5, -8); // Position camera behind and slightly above
-    cameraOffset.applyQuaternion(vehicleQuaternion);
-    cameraOffset.add(vehiclePosition);
-    
-    const lookAtPoint = vehiclePosition.clone();
-    lookAtPoint.y += 0.5;
-
-    const lerpFactor = delta * 5.0; // Increase for faster following
+    // Chase camera: behind and above, in vehicle space.
+    const cameraOffset = scratch.current.set(0, 3.5, -8).applyQuaternion(vehicleQuaternion.current).add(vehiclePosition.current);
     smoothedCameraPosition.current.lerp(cameraOffset, lerpFactor);
-    smoothedLookAtPosition.current.lerp(lookAtPoint, lerpFactor);
-
+    smoothedLookAtPosition.current.lerp(
+      scratch.current.copy(vehiclePosition.current).setY(vehiclePosition.current.y + 0.5),
+      lerpFactor
+    );
     state.camera.position.copy(smoothedCameraPosition.current);
     state.camera.lookAt(smoothedLookAtPosition.current);
 
-    const visualOffset = new Vector3(0, 0.5, 0);
-    visualOffset.applyQuaternion(vehicleQuaternion);
-    visualOffset.add(vehiclePosition);
-    smoothedVisualPosition.current.lerp(visualOffset, lerpFactor * 3);
-    smoothedVisualRotation.current.setFromQuaternion(vehicleQuaternion)
-
-    visualRef.current?.position.copy(smoothedVisualPosition.current)
-    visualRef.current?.rotation.copy(smoothedVisualRotation.current)
+    // Visual mesh follows the chassis with a small lift.
+    if (visualRef.current) {
+      const visualOffset = scratch.current.set(0, 0.5, 0).applyQuaternion(vehicleQuaternion.current).add(vehiclePosition.current);
+      smoothedVisualPosition.current.lerp(visualOffset, lerpFactor * 3);
+      visualRef.current.position.copy(smoothedVisualPosition.current);
+      visualRef.current.quaternion.copy(vehicleQuaternion.current);
+    }
   });
 
-  return <>
-    <group ref={vehicle as React.Ref<Group>}>
-      <group ref={chassisRef}>
-        <primitive object={chassisBody} position={[0, 0.5, 2.35]} rotation={[0, -Math.PI / 2, 0]}/>
+  return (
+    <>
+      <RigidBody
+        ref={chassisRef}
+        colliders={false}
+        position={[1, 2, 4]}
+        rotation={[0, Math.PI, 0]}
+        angularDamping={0.95}
+        canSleep={false}
+        type="dynamic"
+      >
+        <CuboidCollider args={[width / 2, height / 2, front]} mass={150} />
+      </RigidBody>
+      <group ref={visualRef} scale={0.07}>
+        <primitive object={carGltf.scene} position={[0, 0, 15]} rotation={[0, -Math.PI / 2, 0]} />
       </group>
-    </group>
-    <group ref={visualRef} scale={0.07}>
-      <primitive object={carGltf.scene} position={[0, 0, 15]} rotation={[0, -Math.PI / 2, 0]} />
-    </group>
-  </>
+    </>
+  );
 }
