@@ -8,6 +8,12 @@ export type LevelMeta = {
 
 export const LEVELS: LevelMeta[] = [
   {
+    id: 'flats',
+    name: 'The Flats',
+    tagline: 'A flat proving ground — learn the controls, tune the handling, stay on the deck.',
+    accent: 'from-sky-400/30 to-indigo-700/10',
+  },
+  {
     id: 'procedural',
     name: 'Origin Circuit',
     tagline: 'The proving ground — branching routes, a shortcut jump, reflective tarmac.',

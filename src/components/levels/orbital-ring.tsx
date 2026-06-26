@@ -5,6 +5,7 @@ import { useMemo } from 'react';
 import * as THREE from 'three';
 import { MeshReflectorMaterial, Line, Stars } from '@react-three/drei';
 import { buildTrack, ribbonBoxColliders } from '@/lib/track/build-track';
+import { RaceManager } from '@/components/race-manager';
 
 /**
  * Orbital Ring — a banked station loop suspended in the starfield. Opens with a
@@ -27,7 +28,11 @@ export default function OrbitalRing() {
   }, []);
 
   const rail = useMemo(() => curve.getSpacedPoints(460), [curve]);
-  const boxColliders = useMemo(() => ribbonBoxColliders(vertices), [vertices]);
+  const boxColliders = useMemo(() => ribbonBoxColliders(vertices, { stride: 1 }), [vertices]);
+  const waypoints = useMemo(
+    () => Array.from({ length: 10 }, (_, i) => curve.getPointAt(i / 10)),
+    [curve]
+  );
 
   return (
     <>
@@ -49,6 +54,8 @@ export default function OrbitalRing() {
           />
         </mesh>
       </RigidBody>
+
+      <RaceManager waypoints={waypoints} width={24} laps={3} loop />
 
       {/* Cyan guide rail along the deck centerline. */}
       <Line points={rail} color="#22d3ee" lineWidth={2.5} position={[0, 0.2, 0]} />

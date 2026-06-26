@@ -16,6 +16,10 @@ type State = {
   zone: number;
   increaseZone: () => void;
   speedLevels: SpeedLevel[];
+  boostMeter: number;
+  setBoostMeter: (value: number) => void;
+  crashFlash: number;
+  triggerCrash: () => void;
 };
 
 const initialLevels: SpeedLevel[] = Array.from({ length: 10 }, (_, i) => ({
@@ -29,6 +33,10 @@ export const useStore = create<State>()(
     setSpeed: (speed) => set({ speed }),
     takedowns: 0,
     addTakedown: () => set((state) => ({ takedowns: state.takedowns + 1 })),
+    boostMeter: 1,
+    setBoostMeter: (value) => set({ boostMeter: Math.max(0, Math.min(1, value)) }),
+    crashFlash: 0,
+    triggerCrash: () => set((state) => ({ crashFlash: state.crashFlash + 1 })),
     zone: 1,
     increaseZone: () => {
       const currentZone = get().zone + 1;

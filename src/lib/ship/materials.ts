@@ -38,6 +38,7 @@ export type ShipPreset =
     };
 
 export const SHIP_PRESETS = {
+  // cb1 keeps its own orientation; see modelRotation per-ship.
   cb1: {
     kind: 'gltf',
     path: '/spaceship_-_cb1/scene.gltf',
@@ -47,7 +48,8 @@ export const SHIP_PRESETS = {
   icaras: {
     kind: 'generated',
     name: 'Icaras',
-    modelRotation: [0, Math.PI, 0],
+    // Nose points along +z (travel direction); no 180° flip or it drives in reverse.
+    modelRotation: [0, 0, 0],
   },
 } satisfies Record<ShipConfig['shipId'], ShipPreset>;
 
@@ -477,6 +479,17 @@ export function applyShipConfig(gltfScene: THREE.Object3D, config: ShipConfig): 
         configuredMaterials.add(material);
 
         const materialName = material.name.toLowerCase();
+
+        // Materials carrying real PBR maps (generated Icaras) keep them untouched — we only
+        // let the emissive slider pulse the glow, never overwrite the baked textures/colours.
+        if (material.userData.pbrTextured) {
+          if (materialName.includes('glow')) {
+            material.emissiveIntensity = Math.max(1.2, config.emissiveIntensity * 3);
+          }
+          material.needsUpdate = true;
+          continue;
+        }
+
         const isGlow = materialName.includes('glow');
         const isGlass = materialName.includes('glass');
         const receivesPattern = !isGlow && !isGlass;

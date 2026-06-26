@@ -18,14 +18,23 @@ export const vehicleConfig = {
   front: 1.35,
   back: -1.3,
   steer: 0.58,
-  force: 760,
+  force: 620,
   brake: 15,
   maxBrake: 10,
   radius: 0.35,
+  // Hard cap on cruise speed (m/s) — keeps the car controllable; ~200 km/h.
+  maxSpeed: 55,
   boostSteerMultiplier: 1.35,
   steeringResponse: 9,
   highSpeedSteerScale: 0.42,
-  yawAssist: 105,
+  yawAssist: 70,
+  boostForceMultiplier: 2.1,
+  boostSpeedMultiplier: 1.55,
+  boostDrainRate: 0.45,
+  boostRechargeRate: 0.18,
+  aftertouchTorque: 950,
+  crashDecel: 42,
+  crashMinSpeed: 14,
 };
 
 export const wheelInfo = {

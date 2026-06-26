@@ -6,19 +6,24 @@ import { useMemo } from 'react';
 import * as THREE from 'three';
 import { MeshReflectorMaterial } from '@react-three/drei';
 import { ribbonBoxColliders } from '@/lib/track/build-track';
+import { RaceManager } from '@/components/race-manager';
 
 export default function ProceduralTrack() {
-  const { geometry, vertices, indices } = useMemo(() => {
+  const { geometry, vertices, indices, waypoints } = useMemo(() => {
     const segmentLength = 20;
     const verts: number[] = [];
     const idxs: number[] = [];
+    const centerline: THREE.Vector3[] = [];
     let lastVertexIndex = -1;
     let currentPosition = new THREE.Vector3(-1, 1, 14);
     let currentDirection = new THREE.Vector3(0, 0, -1);
-    
-    const addSegment = (length: number, curve: number, ramp: number, width: number) => {
+
+    // `record` collects centerline points for the main racing line only (skips the
+    // shortcut + jump), giving the RaceManager an ordered branch-free checkpoint path.
+    const addSegment = (length: number, curve: number, ramp: number, width: number, record = false) => {
         const segments = Math.max(1, Math.floor(length / segmentLength));
         for (let i = 0; i < segments; i++) {
+            if (record) centerline.push(currentPosition.clone());
             const sideVector = new THREE.Vector3().crossVectors(currentDirection, new THREE.Vector3(0, 1, 0)).normalize();
             const leftVertex = currentPosition.clone().add(sideVector.clone().multiplyScalar(width / 2));
             const rightVertex = currentPosition.clone().add(sideVector.clone().multiplyScalar(-width / 2));
@@ -53,7 +58,7 @@ export default function ProceduralTrack() {
     // --- Track Generation ---
 
     // Start straight
-    addSegment(200, 0, 0, 20);
+    addSegment(200, 0, 0, 20, true);
 
     // --- PATH SPLIT ---
     const splitPosition = currentPosition.clone();
@@ -61,8 +66,8 @@ export default function ProceduralTrack() {
     const splitLastIndex = lastVertexIndex;
 
     // --- Route 1: Longer, safer curve ---
-    addSegment(400, Math.PI / 2, 5, 20);
-    addSegment(200, 0, 0, 20);
+    addSegment(400, Math.PI / 2, 5, 20, true);
+    addSegment(200, 0, 0, 20, true);
     const mergePosition1 = currentPosition.clone();
     const mergeDirection1 = currentDirection.clone();
     const mergeIndex1 = lastVertexIndex;
@@ -112,12 +117,12 @@ export default function ProceduralTrack() {
     lastVertexIndex = mergePointIndex;
 
     // --- Continue after merge ---
-    addSegment(500, 0, 0, 20);
-    addSegment(400, Math.PI / 2, 0, 20);
-    addSegment(500, 0, -5, 20);
-    addSegment(400, Math.PI / 2, 0, 20);
-    addSegment(700, 0, 0, 20);
-    addSegment(400, Math.PI / 2, 0, 20);
+    addSegment(500, 0, 0, 20, true);
+    addSegment(400, Math.PI / 2, 0, 20, true);
+    addSegment(500, 0, -5, 20, true);
+    addSegment(400, Math.PI / 2, 0, 20, true);
+    addSegment(700, 0, 0, 20, true);
+    addSegment(400, Math.PI / 2, 0, 20, true);
 
 
     const vertices = new Float32Array(verts);
@@ -128,10 +133,15 @@ export default function ProceduralTrack() {
     geo.setIndex(new THREE.BufferAttribute(indices, 1));
     geo.computeVertexNormals();
     
+    // Decimate to ~12 evenly-spaced checkpoints along the main racing line.
+    const step = Math.max(1, Math.floor(centerline.length / 12));
+    const waypoints = centerline.filter((_, i) => i % step === 0);
+
     return {
         geometry: geo,
         vertices: vertices,
-        indices: indices
+        indices: indices,
+        waypoints,
     };
   }, []);
 
@@ -141,7 +151,9 @@ export default function ProceduralTrack() {
 
 
   return (
-    <RigidBody type="fixed" colliders={false} position={[0, -0.05, 0]}>
+    <>
+      <RaceManager waypoints={waypoints} width={20} laps={1} loop={false} />
+      <RigidBody type="fixed" colliders={false} position={[0, -0.05, 0]}>
       {boxColliders.map((b, i) => (
         <CuboidCollider key={i} position={b.position} rotation={b.rotation} args={b.args} />
       ))}
@@ -158,6 +170,7 @@ export default function ProceduralTrack() {
           roughness={0.9}
         />
       </mesh>
-    </RigidBody>
+      </RigidBody>
+    </>
   );
 }

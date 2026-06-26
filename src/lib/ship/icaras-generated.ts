@@ -51,40 +51,94 @@ function buildPartGeometry(part: IcarasPartData): THREE.BufferGeometry {
   return geometry;
 }
 
+const TEXTURE_BASE = '/icaras/textures/';
+
+type IcarasTextures = {
+  bodyColor?: THREE.Texture;
+  bodyNormal?: THREE.Texture;
+  bodyMetalRough?: THREE.Texture;
+  cockpitColor?: THREE.Texture;
+  glassColor?: THREE.Texture;
+  glowColor?: THREE.Texture;
+  glowEmissive?: THREE.Texture;
+};
+
+/**
+ * Loads the real PBR maps that ship with the Icaras glTF. The generated mesh shares the
+ * source model's baked UVs, so these maps line up directly. glTF authors textures with
+ * flipY=false, so we override three's default (true) to keep the UVs aligned. Returns empty
+ * (untextured) when there's no DOM, e.g. during SSR/prerender where the 3D scene never mounts.
+ */
+function loadIcarasTextures(): IcarasTextures {
+  if (typeof document === 'undefined') {
+    return {};
+  }
+  const loader = new THREE.TextureLoader();
+  const load = (file: string, srgb: boolean): THREE.Texture => {
+    const texture = loader.load(TEXTURE_BASE + file);
+    texture.flipY = false;
+    texture.anisotropy = 8;
+    if (srgb) {
+      texture.colorSpace = THREE.SRGBColorSpace;
+    }
+    return texture;
+  };
+  return {
+    bodyColor: load('Body_baseColor.jpeg', true),
+    bodyNormal: load('Body_normal.png', false),
+    bodyMetalRough: load('Body_metallicRoughness.png', false),
+    cockpitColor: load('Cockpit_baseColor.jpeg', true),
+    glassColor: load('Glass_baseColor.jpeg', true),
+    glowColor: load('Glow_baseColor.png', true),
+    glowEmissive: load('Glow_emissive.jpeg', true),
+  };
+}
+
 function createIcarasMaterials(): THREE.MeshStandardMaterial[] {
+  const tex = loadIcarasTextures();
+
+  // glTF packs metalness in B and roughness in G of one texture — three reads the same map.
   const body = new THREE.MeshStandardMaterial({
     name: 'Body',
-    color: '#4a90e2',
-    metalness: 0.62,
-    roughness: 0.7,
+    map: tex.bodyColor,
+    normalMap: tex.bodyNormal,
+    metalnessMap: tex.bodyMetalRough,
+    roughnessMap: tex.bodyMetalRough,
+    metalness: 1,
+    roughness: 1,
     side: THREE.DoubleSide,
   });
   const cockpit = new THREE.MeshStandardMaterial({
     name: 'Cockpit',
-    color: '#1f1b26',
+    map: tex.cockpitColor,
     metalness: 0.8,
     roughness: 0.45,
     side: THREE.DoubleSide,
-    flatShading: true,
   });
   const glass = new THREE.MeshStandardMaterial({
     name: 'Glass',
-    color: '#6b1538',
+    map: tex.glassColor,
     emissive: '#ff3d7a',
-    emissiveIntensity: 0.45,
+    emissiveIntensity: 0.3,
     metalness: 0.4,
     roughness: 0.15,
     transparent: true,
-    opacity: 0.55,
+    opacity: 0.7,
     side: THREE.DoubleSide,
   });
   const glow = new THREE.MeshStandardMaterial({
     name: 'Glow',
-    color: '#05020a',
-    emissive: '#ff00ff',
+    map: tex.glowColor,
+    emissiveMap: tex.glowEmissive,
+    emissive: '#ffffff',
     emissiveIntensity: 1.6,
     side: THREE.DoubleSide,
   });
+
+  // Tag so applyShipConfig() preserves these real maps instead of overwriting them.
+  for (const material of [body, cockpit, glass, glow]) {
+    material.userData.pbrTextured = true;
+  }
 
   return [body, cockpit, glass, glow];
 }

@@ -5,6 +5,7 @@ import { useMemo } from 'react';
 import * as THREE from 'three';
 import { MeshReflectorMaterial, Line } from '@react-three/drei';
 import { buildTrack, ribbonBoxColliders } from '@/lib/track/build-track';
+import { RaceManager } from '@/components/race-manager';
 
 /**
  * Neon Canyon — a winding, banked ravine. The spline opens with a FLAT,
@@ -29,7 +30,11 @@ export default function NeonCanyon() {
   }, []);
 
   const rail = useMemo(() => curve.getSpacedPoints(420), [curve]);
-  const boxColliders = useMemo(() => ribbonBoxColliders(vertices), [vertices]);
+  const boxColliders = useMemo(() => ribbonBoxColliders(vertices, { stride: 1 }), [vertices]);
+  const waypoints = useMemo(
+    () => Array.from({ length: 10 }, (_, i) => curve.getPointAt(i / 10)),
+    [curve]
+  );
 
   return (
     <>
@@ -51,6 +56,8 @@ export default function NeonCanyon() {
           />
         </mesh>
       </RigidBody>
+
+      <RaceManager waypoints={waypoints} width={26} laps={3} loop />
 
       {/* Glowing centerline — Bloom turns this into a neon stripe. */}
       <Line points={rail} color="#ff2d6f" lineWidth={3} position={[0, 0.2, 0]} />
