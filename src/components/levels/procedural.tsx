@@ -5,11 +5,11 @@ import { RigidBody, CuboidCollider } from '@react-three/rapier';
 import { useMemo } from 'react';
 import * as THREE from 'three';
 import { MeshReflectorMaterial } from '@react-three/drei';
-import { ribbonBoxColliders } from '@/lib/track/build-track';
+import { ribbonBoxColliders, boxColliderFromRing } from '@/lib/track/build-track';
 import { RaceManager } from '@/components/race-manager';
 
 export default function ProceduralTrack() {
-  const { geometry, vertices, indices, waypoints } = useMemo(() => {
+  const { geometry, vertices, indices, waypoints, mergeBridgeColliders } = useMemo(() => {
     const segmentLength = 20;
     const verts: number[] = [];
     const idxs: number[] = [];
@@ -116,6 +116,16 @@ export default function ProceduralTrack() {
     
     lastVertexIndex = mergePointIndex;
 
+    // `ribbonBoxColliders` below only bridges array-adjacent rings, but this
+    // junction stitches the merge-point ring to two rings that are NOT
+    // adjacent in `verts` (Route 1's end and Route 2's end, both captured
+    // above before being overwritten). Bridge them explicitly so the
+    // drivable surface has a collider everywhere the rendered mesh does.
+    const mergeBridgeColliders = [
+        boxColliderFromRing(merge1LeftVert, merge1RightVert, leftVertex, rightVertex),
+        boxColliderFromRing(lastLeftVert, lastRightVert, leftVertex, rightVertex),
+    ].filter((b): b is NonNullable<typeof b> => b !== null);
+
     // --- Continue after merge ---
     addSegment(500, 0, 0, 20, true);
     addSegment(400, Math.PI / 2, 0, 20, true);
@@ -142,11 +152,15 @@ export default function ProceduralTrack() {
         vertices: vertices,
         indices: indices,
         waypoints,
+        mergeBridgeColliders,
     };
   }, []);
 
   // rapier raycast-vehicle wheels hit cuboids, not trimeshes → collide via a box strip.
-  const boxColliders = useMemo(() => ribbonBoxColliders(vertices, { stride: 1 }), [vertices]);
+  const boxColliders = useMemo(
+    () => [...ribbonBoxColliders(vertices, { stride: 1 }), ...mergeBridgeColliders],
+    [vertices, mergeBridgeColliders]
+  );
 
 
 

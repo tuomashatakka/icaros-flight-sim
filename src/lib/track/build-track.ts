@@ -35,6 +35,44 @@ export interface BoxCollider {
 }
 
 /**
+ * Builds one thin oriented box collider spanning two ribbon rings (L0,R0 and
+ * L1,R1). Shared by `ribbonBoxColliders`'s sequential walk and by callers that
+ * need to bridge two rings that aren't array-adjacent (e.g. a hand-stitched
+ * branch/merge junction — see procedural.tsx).
+ */
+export function boxColliderFromRing(
+  L0: THREE.Vector3,
+  R0: THREE.Vector3,
+  L1: THREE.Vector3,
+  R1: THREE.Vector3,
+  thickness = 0.5,
+  maxLen = Infinity
+): BoxCollider | null {
+  const mid0 = L0.clone().add(R0).multiplyScalar(0.5);
+  const mid1 = L1.clone().add(R1).multiplyScalar(0.5);
+  const forwardVec = mid1.clone().sub(mid0);
+  const len = forwardVec.length();
+  if (len < 1e-3 || len > maxLen) return null;
+
+  const forward = forwardVec.normalize();
+  const sideVec = R0.clone().sub(L0);
+  const halfWidth = sideVec.length() * 0.5;
+  if (halfWidth < 1e-3) return null;
+  const right = sideVec.normalize();
+  const up = right.clone().cross(forward).normalize();
+
+  const basis = new THREE.Matrix4().makeBasis(right, up, forward);
+  const euler = new THREE.Euler().setFromRotationMatrix(basis);
+  const center = mid0.clone().add(mid1).multiplyScalar(0.5);
+
+  return {
+    position: [center.x, center.y, center.z],
+    rotation: [euler.x, euler.y, euler.z],
+    args: [halfWidth, thickness, len * 0.5],
+  };
+}
+
+/**
  * Walks a ribbon's [L0,R0,L1,R1,…] vertex strip and emits one thin oriented box
  * collider per segment. rapier's raycast-vehicle wheels collide with cuboids but
  * NOT trimeshes in this version, so the drivable surface is built from boxes.
@@ -57,29 +95,8 @@ export function ribbonBoxColliders(
   for (let i = 0; i + stride < rings; i += stride) {
     const L0 = at(i * 2), R0 = at(i * 2 + 1);
     const L1 = at((i + stride) * 2), R1 = at((i + stride) * 2 + 1);
-
-    const mid0 = L0.clone().add(R0).multiplyScalar(0.5);
-    const mid1 = L1.clone().add(R1).multiplyScalar(0.5);
-    const forwardVec = mid1.clone().sub(mid0);
-    const len = forwardVec.length();
-    if (len < 1e-3 || len > maxLen) continue;
-
-    const forward = forwardVec.normalize();
-    const sideVec = R0.clone().sub(L0);
-    const halfWidth = sideVec.length() * 0.5;
-    if (halfWidth < 1e-3) continue;
-    const right = sideVec.normalize();
-    const up = right.clone().cross(forward).normalize();
-
-    const basis = new THREE.Matrix4().makeBasis(right, up, forward);
-    const euler = new THREE.Euler().setFromRotationMatrix(basis);
-    const center = mid0.clone().add(mid1).multiplyScalar(0.5);
-
-    boxes.push({
-      position: [center.x, center.y, center.z],
-      rotation: [euler.x, euler.y, euler.z],
-      args: [halfWidth, thickness, len * 0.5],
-    });
+    const box = boxColliderFromRing(L0, R0, L1, R1, thickness, maxLen);
+    if (box) boxes.push(box);
   }
 
   return boxes;

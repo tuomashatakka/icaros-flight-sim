@@ -303,6 +303,7 @@ export function Vehicle() {
   const camYawRef = useRef<number | null>(null);
   const smoothedLookAtPosition = useRef(new Vector3());
   const smoothedVisualPosition = useRef(new Vector3());
+  const smoothedVehiclePosition = useRef<Vector3 | null>(null);
   const vehiclePosition = useRef(new Vector3());
   const vehicleQuaternion = useRef(new Quaternion());
   const scratch = useRef(new Vector3());
@@ -316,6 +317,12 @@ export function Vehicle() {
     vehiclePosition.current.set(t.x, t.y, t.z);
     vehicleQuaternion.current.set(r.x, r.y, r.z, r.w);
 
+    // Physics steps on a fixed timestep while this callback runs at the
+    // variable render rate, so the raw translation above is "steppy" across
+    // consecutive frames. Smooth it the same way lookAt/visual mesh already are.
+    if (!smoothedVehiclePosition.current) smoothedVehiclePosition.current = vehiclePosition.current.clone();
+    smoothedVehiclePosition.current.lerp(vehiclePosition.current, delta * 8);
+
     const lerpFactor = delta * 5.0;
 
     // Chase camera: trail the ship's HEADING at a fixed distance + height. The
@@ -328,7 +335,7 @@ export function Vehicle() {
     dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw)); // wrap to [-pi, pi]
     camYawRef.current += dYaw * (1 - Math.exp(-4 * delta));
 
-    _camOffset.set(0, 3.4, -9).applyAxisAngle(WORLD_UP_V, camYawRef.current).add(vehiclePosition.current);
+    _camOffset.set(0, 3.4, -9).applyAxisAngle(WORLD_UP_V, camYawRef.current).add(smoothedVehiclePosition.current);
     state.camera.position.copy(_camOffset);
 
     // Decaying impact shake.
@@ -375,6 +382,7 @@ export function Vehicle() {
         linearDamping={0.1}
         angularDamping={0.5}
         canSleep={false}
+        ccd
         type="dynamic"
         userData={{ isVehicle: true }}
       >
