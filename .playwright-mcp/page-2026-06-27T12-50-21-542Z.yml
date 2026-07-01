@@ -1,0 +1,106 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e48]:
+    - generic [ref=e49]:
+      - img [ref=e51] [cursor=pointer]
+      - img [ref=e54]
+      - img [ref=e62] [cursor=pointer]
+    - textbox "[Open filter with CMD+SHIFT+L]" [ref=e65]
+    - generic:
+      - generic:
+        - generic:
+          - generic:
+            - img
+            - generic: Ship physics
+          - generic:
+            - generic:
+              - generic:
+                - generic:
+                  - generic:
+                    - generic "hoverHeight"
+                    - generic "Click to copy hoverHeight value"
+                  - generic:
+                    - generic:
+                      - textbox "hoverHeight": "0.70"
+              - generic:
+                - generic:
+                  - generic:
+                    - generic "suspensionStiffness"
+                    - generic "Click to copy suspensionStiffness value"
+                  - generic:
+                    - generic:
+                      - textbox "suspensionStiffness": "26"
+              - generic:
+                - generic:
+                  - generic:
+                    - generic "thrust"
+                    - generic "Click to copy thrust value"
+                  - generic:
+                    - generic:
+                      - textbox "thrust": "950"
+              - generic:
+                - generic:
+                  - generic:
+                    - generic "sideGrip"
+                    - generic "Click to copy sideGrip value"
+                  - generic:
+                    - generic:
+                      - textbox "sideGrip": "3.0"
+              - generic:
+                - generic:
+                  - generic:
+                    - generic "maxYawRate"
+                    - generic "Click to copy maxYawRate value"
+                  - generic:
+                    - generic:
+                      - textbox "maxYawRate": "2.4"
+              - generic:
+                - generic:
+                  - generic:
+                    - generic "uprightStrength"
+                    - generic "Click to copy uprightStrength value"
+                  - generic:
+                    - generic:
+                      - textbox "uprightStrength": "8.0"
+              - generic:
+                - generic:
+                  - generic:
+                    - generic "maxBank"
+                    - generic "Click to copy maxBank value"
+                  - generic:
+                    - generic:
+                      - textbox "maxBank": "0.50"
+  - link "‹ Menu" [ref=e5] [cursor=pointer]:
+    - /url: /
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - generic [ref=e8]: LAP
+      - generic [ref=e9]: 1/3
+    - generic [ref=e10]:
+      - generic [ref=e11]: TIME
+      - generic [ref=e12]: 0:13.709
+    - generic [ref=e13]:
+      - generic [ref=e14]: LAP
+      - generic [ref=e15]: 0:13.709
+    - generic [ref=e16]:
+      - generic [ref=e17]: BEST
+      - generic [ref=e18]: "--:--"
+  - generic [ref=e20]: "Takedowns: 0"
+  - generic [ref=e24]:
+    - generic [ref=e27]: 12 km/h
+    - generic [ref=e28]:
+      - generic [ref=e30]: ZONE 1
+      - generic [ref=e32]: ZONE 2
+      - generic [ref=e34]: ZONE 3
+      - generic [ref=e36]: ZONE 4
+      - generic [ref=e68]: ZONE 5
+  - generic [ref=e37]:
+    - generic "Player" [ref=e38]
+    - paragraph [ref=e39]: Minimap
+  - paragraph [ref=e43]: BOOST · hold Shift
+  - generic [ref=e44]:
+    - paragraph [ref=e45]: "Arrows / A,D: Steer"
+    - paragraph [ref=e46]: "Shift: Boost"
+    - paragraph [ref=e47]: "R: Respawn"
+  - button "Open Next.js Dev Tools" [ref=e74] [cursor=pointer]:
+    - img [ref=e75]
+  - alert [ref=e78]

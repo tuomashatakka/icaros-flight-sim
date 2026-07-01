@@ -1,0 +1,32 @@
+- generic [active] [ref=e1]:
+  - link "‹ Menu" [ref=e5] [cursor=pointer]:
+    - /url: /
+  - generic [ref=e6]:
+    - generic [ref=e7]:
+      - generic [ref=e8]: LAP
+      - generic [ref=e9]: 1/3
+    - generic [ref=e10]:
+      - generic [ref=e11]: TIME
+      - generic [ref=e12]: 0:00.000
+    - generic [ref=e13]:
+      - generic [ref=e14]: LAP
+      - generic [ref=e15]: 0:00.000
+    - generic [ref=e16]:
+      - generic [ref=e17]: BEST
+      - generic [ref=e18]: "--:--"
+  - generic [ref=e20]: "Takedowns: 0"
+  - generic [ref=e24]:
+    - generic [ref=e27]: 0 km/h
+    - generic [ref=e28]:
+      - generic [ref=e30]: ZONE 1
+      - generic [ref=e32]: ZONE 2
+      - generic [ref=e34]: ZONE 3
+      - generic [ref=e36]: ZONE 4
+  - generic [ref=e37]:
+    - generic "Player" [ref=e38]
+    - paragraph [ref=e39]: Minimap
+  - paragraph [ref=e43]: BOOST · hold Shift
+  - generic [ref=e44]:
+    - paragraph [ref=e45]: "Arrows / A,D: Steer"
+    - paragraph [ref=e46]: "Shift: Boost"
+    - paragraph [ref=e47]: "R: Respawn"
