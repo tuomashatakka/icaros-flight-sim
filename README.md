@@ -1,7 +1,7 @@
 # Crash Velocity
 
 A Burnout-inspired 3D arcade racer built with **Next.js 16**, **React Three Fiber**, and
-**Rapier** physics. Pick a ship in the hangar, then race one of three tracks.
+**Rapier** physics. Pick from **9 ships** in the hangar, then race one of three tracks.
 
 ## Run locally
 
@@ -38,6 +38,24 @@ npm run dev      # http://localhost:9002
 - **Origin Circuit** — branching procedural sprint with a shortcut jump.
 - **Neon Canyon** — banked, winding ravine loop.
 - **Orbital Ring** — banked figure-eight station suspended in the starfield.
+
+## Ships
+
+Ships are registered in one place — `src/lib/ship/registry.ts` (`SHIP_PRESETS`). The store,
+hangar selection grid, and runtime loader all derive from it, so adding a ship is a single entry.
+
+- **CB1** — GLTF model (`public/spaceship_-_cb1/`), fully recolourable in the hangar.
+- **Icaras** — procedurally rebuilt mesh with baked PBR livery (`public/icaras/`).
+- **WipEout fleet** — AG-Systems, Assegai, Auricom, EG-X, Feisar, Harimau, Qirex — FBX hulls
+  (`public/ships/<id>/`) re-skinned from per-ship livery (CC-BY-4.0, Nobby76). Their baked livery
+  is preserved, so the colour/material sliders affect CB1 only.
+
+## Physics & camera
+
+The chase camera and ship visual ride as **rapier-managed children of the vehicle `RigidBody`**, so
+they render from Rapier's built-in fixed-step interpolation rather than the raw 60 Hz body transform —
+this is what keeps motion smooth above 60 FPS. All camera damping is framerate-independent
+(`1 - exp(-k·dt)`). See `src/components/vehicle-scene.tsx`.
 
 ## Deploying
 

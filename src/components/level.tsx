@@ -28,7 +28,9 @@ export function Level({ children }: PropsWithChildren) {
         />
         <Sky sunPosition={[100, 10, 100]} />
         <Environment preset="night" />
-        <Physics gravity={[0, -9.81, 0]} timeStep={1 / 60}>
+        {/* Fixed 60 Hz sim + native interpolation — the vehicle visual/anchor ride
+            along as rapier-managed children, so rendering stays smooth above 60 FPS. */}
+        <Physics gravity={[0, -9.81, 0]} timeStep={1 / 60} interpolate>
           {children}
           <Vehicle />
         </Physics>

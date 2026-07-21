@@ -14,7 +14,7 @@ import { useControls } from '@/hooks/use-mobile';
 import { useStore } from '@/hooks/use-store';
 import { useRaceStore } from '@/hooks/use-race-store';
 import { vehicleConfig } from '@/lib/utils';
-import { Group, MathUtils, Quaternion, Vector3, type MeshStandardMaterial } from 'three';
+import { Group, MathUtils, Object3D, Quaternion, Vector3, type MeshStandardMaterial } from 'three';
 import { useShipStore } from '@/hooks/use-ship-store';
 import { ShipVisual } from '@/components/ship-visual';
 
@@ -48,6 +48,14 @@ const _tmpQuat = new Quaternion();
 const _bankQuat = new Quaternion();
 const _camFwd = new Vector3();
 const _camOffset = new Vector3();
+const _anchorPos = new Vector3();
+const _anchorQuat = new Quaternion();
+const _lookTarget = new Vector3();
+
+// Camera feel — framerate-independent damping rates (higher = snappier, still smooth).
+const CAM_YAW_STIFFNESS = 4;
+const CAM_POS_STIFFNESS = 12;
+const CAM_LOOK_STIFFNESS = 10;
 
 export function Vehicle() {
   const { gl } = useThree();
@@ -301,44 +309,46 @@ export function Vehicle() {
   });
 
   const camYawRef = useRef<number | null>(null);
+  const camInitRef = useRef(false);
   const smoothedLookAtPosition = useRef(new Vector3());
-  const smoothedVisualPosition = useRef(new Vector3());
-  const smoothedVehiclePosition = useRef<Vector3 | null>(null);
-  const vehiclePosition = useRef(new Vector3());
-  const vehicleQuaternion = useRef(new Quaternion());
-  const scratch = useRef(new Vector3());
+  const anchorRef = useRef<Object3D>(null);
 
   useFrame((state, delta) => {
-    const chassis = chassisRef.current;
-    if (!chassis) return;
+    const anchor = anchorRef.current;
+    if (!anchor) return;
 
-    const t = chassis.translation();
-    const r = chassis.rotation();
-    vehiclePosition.current.set(t.x, t.y, t.z);
-    vehicleQuaternion.current.set(r.x, r.y, r.z, r.w);
+    // The anchor is a child of the RigidBody, so rapier has already lerp/slerp'd it
+    // to the correct *between-steps* pose for THIS render frame (native interpolation).
+    // Reading it — instead of the raw, 60 Hz-only chassis.translation() — is what kills
+    // the step-aliasing jitter at the source; everything below is just framerate-
+    // independent damping (1 - exp(-k·dt)) so the feel is identical at any FPS.
+    anchor.getWorldPosition(_anchorPos);
+    anchor.getWorldQuaternion(_anchorQuat);
 
-    // Physics steps on a fixed timestep while this callback runs at the
-    // variable render rate, so the raw translation above is "steppy" across
-    // consecutive frames. Smooth it the same way lookAt/visual mesh already are.
-    if (!smoothedVehiclePosition.current) smoothedVehiclePosition.current = vehiclePosition.current.clone();
-    smoothedVehiclePosition.current.lerp(vehiclePosition.current, delta * 8);
-
-    const lerpFactor = delta * 5.0;
-
-    // Chase camera: trail the ship's HEADING at a fixed distance + height. The
-    // camera stays world-level (banking the camera with the ship is nauseating);
-    // it only follows yaw, smoothed shortest-path so a hard turn never swings it.
-    _camFwd.set(0, 0, 1).applyQuaternion(vehicleQuaternion.current);
+    // Chase camera: trail the ship's HEADING at a fixed distance + height. The camera
+    // stays world-level (banking it with the ship is nauseating); it only follows yaw,
+    // smoothed shortest-path so a hard turn never swings it.
+    _camFwd.set(0, 0, 1).applyQuaternion(_anchorQuat);
     const shipYaw = Math.atan2(_camFwd.x, _camFwd.z);
     if (camYawRef.current === null) camYawRef.current = shipYaw;
     let dYaw = shipYaw - camYawRef.current;
     dYaw = Math.atan2(Math.sin(dYaw), Math.cos(dYaw)); // wrap to [-pi, pi]
-    camYawRef.current += dYaw * (1 - Math.exp(-4 * delta));
+    camYawRef.current += dYaw * (1 - Math.exp(-CAM_YAW_STIFFNESS * delta));
 
-    _camOffset.set(0, 3.4, -9).applyAxisAngle(WORLD_UP_V, camYawRef.current).add(smoothedVehiclePosition.current);
-    state.camera.position.copy(_camOffset);
+    _camOffset.set(0, 3.4, -9).applyAxisAngle(WORLD_UP_V, camYawRef.current).add(_anchorPos);
+    _lookTarget.copy(_anchorPos).setY(_anchorPos.y + 0.8);
 
-    // Decaying impact shake.
+    if (!camInitRef.current) {
+      // First frame: snap into place so the camera doesn't fly in from the Canvas default.
+      state.camera.position.copy(_camOffset);
+      smoothedLookAtPosition.current.copy(_lookTarget);
+      camInitRef.current = true;
+    } else {
+      state.camera.position.lerp(_camOffset, 1 - Math.exp(-CAM_POS_STIFFNESS * delta));
+      smoothedLookAtPosition.current.lerp(_lookTarget, 1 - Math.exp(-CAM_LOOK_STIFFNESS * delta));
+    }
+
+    // Decaying impact shake (applied on top of the settled base position).
     if (cameraShakeRef.current > 0.001) {
       const s = cameraShakeRef.current;
       state.camera.position.x += (Math.random() - 0.5) * s * 2;
@@ -347,29 +357,18 @@ export function Vehicle() {
       cameraShakeRef.current *= Math.exp(-delta * 6);
     }
 
-    smoothedLookAtPosition.current.lerp(
-      scratch.current.copy(vehiclePosition.current).setY(vehiclePosition.current.y + 0.8),
-      delta * 6
-    );
     state.camera.lookAt(smoothedLookAtPosition.current);
 
-    // Visual mesh follows the chassis (now including bank/tilt) with a small lift.
-    if (visualRef.current) {
-      const visualOffset = scratch.current.set(0, 0.5, 0).applyQuaternion(vehicleQuaternion.current).add(vehiclePosition.current);
-      smoothedVisualPosition.current.lerp(visualOffset, lerpFactor * 3);
-      visualRef.current.position.copy(smoothedVisualPosition.current);
-      visualRef.current.quaternion.copy(vehicleQuaternion.current);
-
-      // Pulse the ship's Glow material while boosting.
-      const glowIntensity = boostingRef.current ? 3.6 : 1.6;
-      visualRef.current.traverse((child) => {
-        const mesh = child as { material?: MeshStandardMaterial | MeshStandardMaterial[] };
-        const mats = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : [];
-        for (const mat of mats) {
-          if (mat?.name === 'Glow') mat.emissiveIntensity = glowIntensity;
-        }
-      });
-    }
+    // Pulse the ship's Glow material while boosting. The visual itself is now a
+    // rapier-managed child of the RigidBody, so it needs no manual positioning.
+    const glowIntensity = boostingRef.current ? 3.6 : 1.6;
+    visualRef.current?.traverse((child) => {
+      const mesh = child as { material?: MeshStandardMaterial | MeshStandardMaterial[] };
+      const mats = Array.isArray(mesh.material) ? mesh.material : mesh.material ? [mesh.material] : [];
+      for (const mat of mats) {
+        if (mat?.name === 'Glow') mat.emissiveIntensity = glowIntensity;
+      }
+    });
   });
 
   return (
@@ -387,10 +386,15 @@ export function Vehicle() {
         userData={{ isVehicle: true }}
       >
         <CuboidCollider args={[width / 2, height / 2, front]} mass={vehicleConfig.mass} />
+        {/* Camera sample point at the body origin — rapier interpolates this child
+            every render frame, giving the chase cam a jitter-free target to follow. */}
+        <object3D ref={anchorRef} />
+        {/* Visual is a rapier-managed child → native interpolation drives it smoothly;
+            the lift keeps the hull hovering above the collider centre. */}
+        <group ref={visualRef} position={[0, 0.5, 0]}>
+          <ShipVisual config={currentConfig} targetSize={3.1} position={[0, 0.1, 0]} />
+        </group>
       </RigidBody>
-      <group ref={visualRef}>
-        <ShipVisual config={currentConfig} targetSize={3.1} position={[0, 0.1, 0]} />
-      </group>
     </>
   );
 }

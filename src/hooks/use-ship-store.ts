@@ -2,22 +2,15 @@
 
 import { create } from 'zustand';
 import { subscribeWithSelector, persist, createJSONStorage } from 'zustand/middleware';
+import {
+  DEFAULT_CONFIGS,
+  SHIP_IDS,
+  type ShipConfig,
+  type ShipId,
+} from '@/lib/ship/registry';
 
-export type TexturePreset = 'plain' | 'panels' | 'carbon' | 'hazard' | 'city' | 'gallery';
-export type PaletteName = 'default' | 'colibri' | 'ion' | 'ember' | 'ink' | 'toxic';
-export type ShipId = 'cb1' | 'icaras';
-
-export interface ShipConfig {
-  bodyColor: string;
-  emissiveColor: string;
-  metalness: number;
-  roughness: number;
-  emissiveIntensity: number;
-  texturePreset: TexturePreset;
-  textureRepeat: number;
-  paletteName: PaletteName;
-  shipId: ShipId;
-}
+// Re-exported so consumers that used to pull these from the store keep working.
+export type { ShipConfig, ShipId, TexturePreset, PaletteName } from '@/lib/ship/registry';
 
 interface ShipState {
   // Per-ship saved configurations.
@@ -32,60 +25,35 @@ interface ShipState {
 
 type PersistedShipState = Pick<ShipState, 'shipConfigs' | 'currentConfig'>;
 
-const defaultCb1Config: ShipConfig = {
-  bodyColor: '#ffffff',
-  emissiveColor: '#000000',
-  metalness: 0.5,
-  roughness: 0.5,
-  shipId: 'cb1',
-  texturePreset: 'plain',
-  textureRepeat: 1,
-  emissiveIntensity: 0.0,
-  paletteName: 'default',
-};
+const DEFAULT_SHIP: ShipId = 'icaras';
 
-const defaultIcarasConfig: ShipConfig = {
-  bodyColor: '#4a90e2',
-  emissiveColor: '#ff00ff',
-  metalness: 0.3,
-  roughness: 0.4,
-  shipId: 'icaras',
-  texturePreset: 'panels',
-  textureRepeat: 2,
-  emissiveIntensity: 0.5,
-  paletteName: 'colibri',
-};
-
-/** Factory defaults, kept separate so "Reset" restores them even after edits. */
-const DEFAULT_CONFIGS: Record<ShipId, ShipConfig> = {
-  cb1: defaultCb1Config,
-  icaras: defaultIcarasConfig,
-};
-
-function mergeSavedConfig(shipId: ShipId, config: Partial<ShipConfig> | undefined): ShipConfig {
-  return {
-    ...DEFAULT_CONFIGS[shipId],
-    ...config,
-    shipId,
-  };
+/** Fresh factory map for every registered ship. */
+function initialShipConfigs(): Record<ShipId, ShipConfig> {
+  return Object.fromEntries(SHIP_IDS.map((id) => [id, DEFAULT_CONFIGS[id]])) as Record<
+    ShipId,
+    ShipConfig
+  >;
 }
 
-function mergeSavedConfigs(configs?: Partial<Record<ShipId, Partial<ShipConfig>>>): Record<ShipId, ShipConfig> {
-  return {
-    cb1: mergeSavedConfig('cb1', configs?.cb1),
-    icaras: mergeSavedConfig('icaras', configs?.icaras),
-  };
+function mergeSavedConfig(shipId: ShipId, config: Partial<ShipConfig> | undefined): ShipConfig {
+  return { ...DEFAULT_CONFIGS[shipId], ...config, shipId };
+}
+
+/** Layer any persisted edits over the factory defaults, backfilling ships added since. */
+function mergeSavedConfigs(
+  configs?: Partial<Record<ShipId, Partial<ShipConfig>>>
+): Record<ShipId, ShipConfig> {
+  return Object.fromEntries(
+    SHIP_IDS.map((id) => [id, mergeSavedConfig(id, configs?.[id])])
+  ) as Record<ShipId, ShipConfig>;
 }
 
 export const useShipStore = create<ShipState>()(
   subscribeWithSelector(
     persist(
       (set, get) => ({
-        shipConfigs: {
-          cb1: defaultCb1Config,
-          icaras: defaultIcarasConfig,
-        },
-        currentConfig: defaultIcarasConfig,
+        shipConfigs: initialShipConfigs(),
+        currentConfig: DEFAULT_CONFIGS[DEFAULT_SHIP],
 
         selectShip: (shipId) => {
           set({ currentConfig: get().shipConfigs[shipId] });
@@ -119,25 +87,18 @@ export const useShipStore = create<ShipState>()(
       }),
       {
         name: 'ship-config',
-        version: 1,
+        // v2: registry-driven — backfills the 7 WipEout ships onto v1 saves.
+        version: 2,
         storage: createJSONStorage(() => localStorage),
         partialize: (state) => ({
           shipConfigs: state.shipConfigs,
           currentConfig: state.currentConfig,
         }),
-        migrate: (persistedState, version) => {
+        migrate: (persistedState) => {
           const persisted = persistedState as Partial<PersistedShipState> | undefined;
           const shipConfigs = mergeSavedConfigs(persisted?.shipConfigs);
-
-          if (version < 1) {
-            return {
-              ...persisted,
-              shipConfigs,
-              currentConfig: shipConfigs.icaras,
-            };
-          }
-
-          const activeShip = persisted?.currentConfig?.shipId ?? 'icaras';
+          const savedShip = persisted?.currentConfig?.shipId as ShipId | undefined;
+          const activeShip = savedShip && SHIP_IDS.includes(savedShip) ? savedShip : DEFAULT_SHIP;
           return {
             ...persisted,
             shipConfigs,

@@ -2,8 +2,11 @@
 
 import { forwardRef, useEffect, useMemo } from 'react';
 import { useGLTF } from '@react-three/drei';
+import { useLoader } from '@react-three/fiber';
 import * as THREE from 'three';
+import { FBXLoader } from 'three-stdlib';
 import { createGeneratedIcarasShip, disposeShipObject } from '@/lib/ship/icaras-generated';
+import { buildImportedShipObject, blankTexManager } from '@/lib/ship/fbx-ship';
 import {
   SHIP_PRESETS,
   applyShipConfig,
@@ -120,6 +123,34 @@ const GeneratedIcarasVisual = forwardRef<THREE.Group, ShipVisualProps>(
   }
 );
 
+const FbxShipVisual = forwardRef<THREE.Group, ShipVisualProps>(function FbxShipVisual(
+  props,
+  ref
+) {
+  const preset = SHIP_PRESETS[props.config.shipId];
+  if (preset.kind !== 'fbx') {
+    throw new Error(`Ship ${props.config.shipId} is not fbx-backed`);
+  }
+
+  // Custom LoadingManager rewrites the FBX's baked (404-ing) texture URLs to a blank
+  // GIF; buildImportedShipObject re-skins the hull from our normalized livery instead.
+  const fbx = useLoader(FBXLoader, preset.path, (loader) => {
+    loader.manager = blankTexManager;
+  });
+  const object = useMemo(
+    () => buildImportedShipObject(fbx, preset.textureBase),
+    [fbx, preset.textureBase]
+  );
+
+  useEffect(() => () => disposeShipObject(object), [object]);
+
+  const modelRotation: [number, number, number] = preset.noseFlip
+    ? [preset.modelRotation[0], preset.modelRotation[1] + Math.PI, preset.modelRotation[2]]
+    : preset.modelRotation;
+
+  return <FittedShip ref={ref} {...props} object={object} modelRotation={modelRotation} />;
+});
+
 export const ShipVisual = forwardRef<THREE.Group, ShipVisualProps>(function ShipVisual(
   props,
   ref
@@ -127,6 +158,9 @@ export const ShipVisual = forwardRef<THREE.Group, ShipVisualProps>(function Ship
   const preset = SHIP_PRESETS[props.config.shipId];
   if (preset.kind === 'generated') {
     return <GeneratedIcarasVisual ref={ref} {...props} />;
+  }
+  if (preset.kind === 'fbx') {
+    return <FbxShipVisual ref={ref} {...props} />;
   }
 
   return <GltfShipVisual ref={ref} {...props} />;

@@ -3,17 +3,12 @@
 import * as THREE from 'three';
 import { TextureLoader } from 'three';
 
-export interface ShipConfig {
-  bodyColor: string;
-  emissiveColor: string;
-  metalness: number;
-  roughness: number;
-  emissiveIntensity: number;
-  texturePreset: 'plain' | 'panels' | 'carbon' | 'hazard' | 'city' | 'gallery';
-  textureRepeat: number;
-  paletteName: 'default' | 'colibri' | 'ion' | 'ember' | 'ink' | 'toxic';
-  shipId: 'cb1' | 'icaras';
-}
+// Ship identity + presets now live in the registry (single source of truth).
+// Re-exported here so existing importers of '@/lib/ship/materials' keep working.
+import { SHIP_PRESETS, type ShipConfig, type ShipPreset } from './registry';
+
+export { SHIP_PRESETS };
+export type { ShipConfig, ShipPreset };
 
 export interface Palette {
   name: string;
@@ -23,35 +18,6 @@ export interface Palette {
   roughness: number;
   emissiveIntensity: number;
 }
-
-export type ShipPreset =
-  | {
-      kind: 'gltf';
-      path: string;
-      name: string;
-      modelRotation: [number, number, number];
-    }
-  | {
-      kind: 'generated';
-      name: string;
-      modelRotation: [number, number, number];
-    };
-
-export const SHIP_PRESETS = {
-  // cb1 keeps its own orientation; see modelRotation per-ship.
-  cb1: {
-    kind: 'gltf',
-    path: '/spaceship_-_cb1/scene.gltf',
-    name: 'CB1',
-    modelRotation: [0, -Math.PI / 2, 0],
-  },
-  icaras: {
-    kind: 'generated',
-    name: 'Icaras',
-    // Nose points along +z (travel direction); no 180° flip or it drives in reverse.
-    modelRotation: [0, 0, 0],
-  },
-} satisfies Record<ShipConfig['shipId'], ShipPreset>;
 
 export const PALETTES: Record<string, Palette> = {
   default: {

@@ -3,20 +3,19 @@
 import Link from 'next/link';
 import { useShipStore } from '@/hooks/use-ship-store';
 import { PALETTES } from '@/lib/ship/materials';
+import { SHIP_IDS, SHIP_PRESETS, type ShipId } from '@/lib/ship/registry';
 import { cn } from '@/lib/utils';
 
 export function HangarControls() {
   const { currentConfig, updateConfig, selectShip, resetToDefault } = useShipStore();
-  
+
   const handleControlChange = (key: string, value: unknown) => {
     updateConfig({ [key]: value } as Partial<typeof currentConfig>);
   };
 
-  const handleShipSelect = (shipId: 'cb1' | 'icaras') => {
+  const handleShipSelect = (shipId: ShipId) => {
     selectShip(shipId);
   };
-
-  const isCb1 = currentConfig.shipId === 'cb1';
 
   return (
     <div className="w-80 bg-background/95 backdrop-blur-sm border-r border-border p-6 overflow-y-auto h-screen">
@@ -35,30 +34,25 @@ export function HangarControls() {
         <fieldset className="space-y-3">
           <legend className="text-sm font-semibold">Ship Selection</legend>
           <div className="grid grid-cols-2 gap-2">
-            <button
-              onClick={() => handleShipSelect('cb1')}
-              className={cn(
-                "p-3 rounded-lg border transition-all",
-                isCb1
-                  ? "border-primary bg-primary/20"
-                  : "border-border hover:border-primary/50"
-              )}
-            >
-              <div className="font-medium">CB1</div>
-              <div className="text-xs text-muted-foreground">Standard racer</div>
-            </button>
-            <button
-              onClick={() => handleShipSelect('icaras')}
-              className={cn(
-                "p-3 rounded-lg border transition-all",
-                !isCb1
-                  ? "border-primary bg-primary/20"
-                  : "border-border hover:border-primary/50"
-              )}
-            >
-              <div className="font-medium">Icaras</div>
-              <div className="text-xs text-muted-foreground">Aerodynamic design</div>
-            </button>
+            {SHIP_IDS.map((id) => {
+              const preset = SHIP_PRESETS[id];
+              const active = currentConfig.shipId === id;
+              return (
+                <button
+                  key={id}
+                  onClick={() => handleShipSelect(id)}
+                  className={cn(
+                    "p-3 rounded-lg border text-left transition-all",
+                    active
+                      ? "border-primary bg-primary/20"
+                      : "border-border hover:border-primary/50"
+                  )}
+                >
+                  <div className="font-medium">{preset.label}</div>
+                  <div className="text-xs text-muted-foreground">{preset.description}</div>
+                </button>
+              );
+            })}
           </div>
         </fieldset>
 
