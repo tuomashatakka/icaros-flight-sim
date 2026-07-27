@@ -1,0 +1,169 @@
+.page {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow-y: auto;
+  background: var(--background);
+  color: var(--foreground);
+}
+
+/* Ambient backdrop: radial neon glow, then a faint grid masked to the centre. */
+.glow,
+.grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.glow {
+  background:
+    radial-gradient(1200px 600px at 70% -10%, hsl(var(--accent-hsl) / 0.18), transparent 60%),
+    radial-gradient(900px 500px at 10% 110%, hsl(var(--primary-hsl) / 0.2), transparent 55%);
+}
+
+.grid {
+  opacity: 0.07;
+  background-image:
+    linear-gradient(#fff 1px, transparent 1px),
+    linear-gradient(90deg, #fff 1px, transparent 1px);
+  background-size: 64px 64px;
+  mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+}
+
+.inner {
+  position: relative;
+  z-index: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 100%;
+  max-width: 64rem;
+  margin: 0 auto;
+  padding: 4rem 1.5rem;
+}
+
+.header {
+  margin-bottom: 3.5rem;
+}
+
+.eyebrow {
+  margin: 0 0 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  text-transform: uppercase;
+  letter-spacing: 0.45em;
+  color: var(--accent);
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(3.25rem, 8vw, 4.5rem);
+  font-weight: 900;
+  line-height: 1;
+  letter-spacing: -0.025em;
+  background: linear-gradient(90deg, var(--primary), var(--accent), var(--primary));
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  width: fit-content;
+}
+
+.blurb {
+  margin: 1rem 0 0;
+  max-width: 36rem;
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+}
+
+.section {
+  margin-bottom: 3rem;
+}
+
+.sectionTitle {
+  margin: 0 0 1.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  font-weight: 400;
+  text-transform: uppercase;
+  letter-spacing: 0.35em;
+  color: var(--muted-foreground);
+}
+
+.cards {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: repeat(auto-fit, minmax(15rem, 1fr));
+}
+
+/*
+ * `--card-from` / `--card-to` are set inline per level, so one rule covers all
+ * four circuits and the palette stays data in `lib/levels.ts`.
+ */
+.card {
+  position: relative;
+  overflow: hidden;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 0.75rem;
+  background-image: linear-gradient(to bottom right, var(--card-from), var(--card-to));
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s;
+}
+
+.card:hover {
+  border-color: var(--accent);
+  box-shadow: 0 0 30px -8px hsl(var(--accent-hsl) / 0.6);
+}
+
+.cardKind {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: hsl(var(--accent-hsl) / 0.8);
+}
+
+.cardName {
+  margin: 0.25rem 0 0;
+  font-size: 1.25rem;
+  font-weight: 700;
+}
+
+.cardTagline {
+  margin: 0.5rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.6;
+  color: hsl(var(--foreground-hsl) / 0.7);
+}
+
+.cardCta {
+  display: inline-block;
+  margin-top: 1rem;
+  font-size: 0.875rem;
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.nav {
+  margin-top: auto;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.hangarLink {
+  padding: 0.75rem 1.5rem;
+  border: 1px solid hsl(var(--primary-hsl) / 0.6);
+  border-radius: var(--radius);
+  background: hsl(var(--primary-hsl) / 0.1);
+  font-size: 0.875rem;
+  font-weight: 600;
+  transition:
+    background 0.2s,
+    box-shadow 0.2s;
+}
+
+.hangarLink:hover {
+  background: hsl(var(--primary-hsl) / 0.2);
+  box-shadow: 0 0 24px -6px hsl(var(--primary-hsl) / 0.7);
+}

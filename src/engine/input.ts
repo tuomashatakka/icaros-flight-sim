@@ -13,6 +13,8 @@ export type Controls = {
 
   /** W / Up arrow. The ship does not accelerate on its own. */
   throttle: boolean;
+  /** S / Down arrow. Brakes the ship. */
+  brake:    boolean;
   boost:    boolean;
 
   /**
@@ -27,12 +29,13 @@ export type Controls = {
 }
 
 export function createControls (): Controls {
-  return { steer: 0, throttle: false, boost: false, resetSeq: 0 }
+  return { steer: 0, throttle: false, brake: false, boost: false, resetSeq: 0 }
 }
 
 const isLeft     = (key: string) => key === 'ArrowLeft' || key.toLowerCase() === 'a'
 const isRight    = (key: string) => key === 'ArrowRight' || key.toLowerCase() === 'd'
 const isThrottle = (key: string) => key === 'ArrowUp' || key.toLowerCase() === 'w'
+const isBrake    = (key: string) => key === 'ArrowDown' || key.toLowerCase() === 's'
 const clampSteer = (value: number) => Math.max(-1, Math.min(1, value))
 
 /**
@@ -68,8 +71,12 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
       refreshKeyboardSteer()
     }
     else if (isThrottle(event.key))
-      controls.throttle = true; else if (event.key === 'Shift')
-      controls.boost = true; else if (event.key.toLowerCase() === 'r' && !event.repeat)
+      controls.throttle = true
+    else if (isBrake(event.key))
+      controls.brake = true
+    else if (event.key === 'Shift')
+      controls.boost = true
+    else if (event.key.toLowerCase() === 'r' && !event.repeat)
       controls.resetSeq++
   }
 
@@ -83,7 +90,10 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
       refreshKeyboardSteer()
     }
     else if (isThrottle(event.key))
-      controls.throttle = false; else if (event.key === 'Shift')
+      controls.throttle = false
+    else if (isBrake(event.key))
+      controls.brake = false
+    else if (event.key === 'Shift')
       controls.boost = false
   }
 
@@ -93,6 +103,7 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
     keyboardSteer = 0
     pointerSteer = 0
     controls.throttle = false
+    controls.brake    = false
     controls.boost    = false
     controls.steer    = 0
   }

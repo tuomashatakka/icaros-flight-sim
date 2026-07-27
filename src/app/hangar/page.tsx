@@ -4,6 +4,7 @@ import { useCallback } from 'react'
 import { SceneCanvas } from '@/components/scene-canvas'
 import { HangarControls } from '@/components/hangar/hangar-controls'
 import { mountHangar } from '@/engine/scenes/hangar'
+import styles from './hangar.module.css'
 
 
 export default function HangarPage () {
@@ -11,15 +12,15 @@ export default function HangarPage () {
   // changes flow through zustand into app state instead of remounting.
   const mount = useCallback(async (canvas: HTMLCanvasElement) => mountHangar(canvas), [])
 
-  return <div className="relative min-h-screen w-full overflow-hidden bg-background">
-    <div className="absolute inset-0 bg-gradient-to-br from-purple-900/20 via-background to-cyan-900/20" />
+  return <div className={ styles.page }>
+    <div aria-hidden className={ styles.wash } />
 
-    <div className="relative z-10 flex h-screen flex-col lg:flex-row">
-      <div className="flex-1">
+    <div className={ styles.layout }>
+      <div className={ styles.viewport }>
         <SceneCanvas mount={ mount } />
       </div>
 
-      <div className="w-full lg:w-96">
+      <div className={ styles.panel }>
         <HangarControls />
       </div>
     </div>

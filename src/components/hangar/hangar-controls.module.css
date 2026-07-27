@@ -1,0 +1,223 @@
+.panel {
+  height: 100%;
+  overflow-y: auto;
+  padding: 1.25rem;
+  border-left: 1px solid var(--border);
+  background: hsl(var(--background-hsl) / 0.95);
+  backdrop-filter: blur(4px);
+}
+
+.header {
+  margin-bottom: 1.25rem;
+}
+
+.back {
+  display: inline-block;
+  margin-bottom: 0.75rem;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  transition: color 0.2s;
+}
+
+.back:hover {
+  color: var(--accent);
+}
+
+.title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.025em;
+}
+
+.subtitle {
+  margin: 0;
+  font-size: 0.875rem;
+  color: var(--muted-foreground);
+}
+
+.sections {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0;
+  padding: 0.75rem;
+  border: 1px solid hsl(var(--border-hsl) / 0.6);
+  border-radius: var(--radius);
+}
+
+.legend {
+  padding: 0 0.25rem;
+  font-family: var(--font-mono);
+  font-size: 0.6875rem;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--muted-foreground);
+}
+
+/* --- fleet grid ---------------------------------------------------------- */
+
+.ships {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.ship {
+  padding: 0.625rem;
+  text-align: left;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: none;
+  transition:
+    border-color 0.2s,
+    background 0.2s;
+}
+
+.ship:hover {
+  border-color: hsl(var(--primary-hsl) / 0.5);
+}
+
+.shipActive {
+  composes: ship;
+  border-color: var(--primary);
+  background: hsl(var(--primary-hsl) / 0.2);
+}
+
+.shipName {
+  font-size: 0.875rem;
+  font-weight: 500;
+}
+
+.shipDesc {
+  font-size: 0.6875rem;
+  line-height: 1.25;
+  color: var(--muted-foreground);
+}
+
+/* --- pill toggles / actions ---------------------------------------------- */
+
+.toggles {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.toggle {
+  padding: 0.375rem 0.75rem;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  background: none;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+  transition:
+    border-color 0.2s,
+    background 0.2s,
+    color 0.2s;
+}
+
+.toggle:hover {
+  border-color: hsl(var(--primary-hsl) / 0.5);
+}
+
+.toggleOn {
+  composes: toggle;
+  border-color: var(--primary);
+  background: hsl(var(--primary-hsl) / 0.2);
+  color: var(--foreground);
+}
+
+/* --- palettes ------------------------------------------------------------ */
+
+.palettes {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+
+.palette {
+  padding: 0.375rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: none;
+  transition: border-color 0.2s;
+}
+
+.palette:hover {
+  border-color: hsl(var(--primary-hsl) / 0.5);
+}
+
+.paletteActive {
+  composes: palette;
+  border-color: var(--primary);
+}
+
+.paletteSwatch {
+  height: 1.75rem;
+  width: 100%;
+  margin-bottom: 0.25rem;
+  border-radius: var(--radius-sm);
+}
+
+.paletteName {
+  font-size: 0.6875rem;
+  font-weight: 500;
+}
+
+/* --- fields -------------------------------------------------------------- */
+
+.field {
+  display: block;
+}
+
+.fieldHead {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  margin-bottom: 0.375rem;
+  font-size: 0.75rem;
+  color: var(--muted-foreground);
+}
+
+.fieldValue {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  color: hsl(var(--foreground-hsl) / 0.7);
+}
+
+.swatchRow {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.swatchPicker {
+  width: 2.5rem;
+  height: 2.25rem;
+  flex-shrink: 0;
+}
+
+.swatchHex {
+  width: 100%;
+  font-family: var(--font-mono);
+  font-size: 0.75rem;
+}
+
+.select {
+  width: 100%;
+  font-size: 0.875rem;
+}
+
+.note {
+  margin: 0;
+  font-size: 0.6875rem;
+  line-height: 1.4;
+  color: var(--muted-foreground);
+}

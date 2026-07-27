@@ -1,10 +1,5 @@
-import { clsx } from 'clsx'
-import type { ClassValue } from 'clsx'
-import { twMerge } from 'tailwind-merge'
-
-
-export function cn (...inputs: ClassValue[]) {
-  return twMerge(clsx(inputs))
+export function cn (...inputs: Array<string | boolean | undefined | null>): string {
+  return inputs.filter(Boolean).join(' ')
 }
 
 export const COLLISION_GROUPS = {

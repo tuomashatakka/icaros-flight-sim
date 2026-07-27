@@ -94,7 +94,7 @@ export function getFitTransform (
   return { scale: targetSize / maxDim, center: [ center.x, center.y, center.z ]}
 }
 
-type ConfigType = {
+type BaseConfigType = {
   bodyColor:     string;
   texturePreset: ShipConfig['texturePreset'];
   paletteName:   ShipConfig['paletteName'];
@@ -106,7 +106,7 @@ type ConfigType = {
   };
 }
 
-export function drawBaseTexture (config: ConfigType): THREE.CanvasTexture {
+export function drawBaseTexture (config: BaseConfigType): THREE.CanvasTexture {
   const canvas = document.createElement('canvas')
   const ctx    = canvas.getContext('2d')
   if (!ctx)
@@ -252,14 +252,14 @@ function drawPlainPattern (ctx: CanvasRenderingContext2D, bodyColor: string): vo
   ctx.fillRect(0, 0, 1024, 1024)
 }
 
-type ConfigType = {
+type EmissiveConfigType = {
   emissiveColor: string;
   texturePreset: ShipConfig['texturePreset'];
   paletteName:   ShipConfig['paletteName'];
   textureRepeat: number;
 }
 
-export function drawEmissiveTexture (config: ConfigType): THREE.CanvasTexture {
+export function drawEmissiveTexture (config: EmissiveConfigType): THREE.CanvasTexture {
   const canvas = document.createElement('canvas')
   const ctx    = canvas.getContext('2d')
   if (!ctx)

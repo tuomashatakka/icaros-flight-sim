@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import type { App } from 'threejs-scene';
+import styles from './scene-canvas.module.css';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mount fns are generic over their own state shape
 export type AnyApp = App<any>;
@@ -79,8 +80,8 @@ export function SceneCanvas({ mount, onApp, className, fallback }: SceneCanvasPr
   }, [mount, onApp]);
 
   return (
-    <div className={className} style={{ position: 'relative', width: '100%', height: '100%' }}>
-      <div ref={hostRef} style={{ position: 'absolute', inset: 0 }} />
+    <div className={[styles.root, className].filter(Boolean).join(' ')}>
+      <div ref={hostRef} className={styles.host} />
       {/* Sibling of the canvas host, never a child — `replaceChildren` would wipe it. */}
       {status !== 'ready' && (fallback ?? <SceneFallback status={status} error={error} />)}
     </div>
@@ -89,13 +90,11 @@ export function SceneCanvas({ mount, onApp, className, fallback }: SceneCanvasPr
 
 function SceneFallback({ status, error }: { status: 'loading' | 'error'; error: Error | null }) {
   return (
-    <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+    <div className={styles.fallback}>
       {status === 'loading' ? (
-        <p className="animate-pulse font-mono text-sm tracking-widest text-cyan-300/70">
-          INITIALISING…
-        </p>
+        <p className={styles.loading}>INITIALISING…</p>
       ) : (
-        <p className="max-w-md px-6 text-center font-mono text-sm text-rose-400">
+        <p className={styles.error}>
           Scene failed to load{error ? `: ${error.message}` : '.'}
         </p>
       )}

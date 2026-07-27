@@ -85,8 +85,18 @@ function hangarSet () {
 function shipDisplay (onStatus: (status: HangarStatus) => void) {
   let instance: ShipInstance | null = null
   let lastConfig: ShipConfig | null = null
-  let lastWireframe: boolean | null = null
   let generation                    = 0
+  let wireOverlayGroup: THREE.Group | null = null
+
+  // Single shared wireframe overlay material — pre-compiled once so toggling
+  // wireframe mode never sets `material.needsUpdate = true` on solid materials
+  // and never causes WebGL shader recompilation flashing.
+  const wireMat = new THREE.MeshBasicMaterial({
+    color:       '#22d3ee',
+    wireframe:   true,
+    transparent: true,
+    opacity:     0.5,
+  })
 
   // Two nested groups on purpose: the turntable owns yaw, the cradle owns the
   // idle tilt. One group doing both would have the tilt fighting the spin for
@@ -97,22 +107,23 @@ function shipDisplay (onStatus: (status: HangarStatus) => void) {
   const cradle     = new THREE.Group()
   pivot.add(cradle)
 
-  function applyWireframe (on: boolean) {
-    if (!instance)
-      return
-    instance.root.traverse(child => {
-      const mesh = child as THREE.Mesh
-      if (!mesh.isMesh)
-        return
+  function buildWireframeOverlay (root: THREE.Group): THREE.Group {
+    // Deep clone the full root hierarchy so scale/fit/rotation transforms match 1:1
+    const group = root.clone(true)
+    group.name  = 'wireframe-overlay'
 
-      const materials = Array.isArray(mesh.material) ? mesh.material : [ mesh.material ]
-      for (const material of materials)
-        if (material && 'wireframe' in material && !material.transparent)
-          (material as THREE.MeshStandardMaterial).wireframe = on
+    group.traverse(child => {
+      if ((child as THREE.Mesh).isMesh) {
+        const mesh         = child as THREE.Mesh
+        mesh.material      = wireMat
+        mesh.castShadow    = false
+        mesh.receiveShadow = false
+      }
     })
+    return group
   }
 
-  async function swapTo (config: ShipConfig, scene: THREE.Scene) {
+  async function swapTo (config: ShipConfig, scene: THREE.Scene, initialWireframe: boolean) {
     const mine = ++generation
     onStatus('loading')
     try {
@@ -122,13 +133,24 @@ function shipDisplay (onStatus: (status: HangarStatus) => void) {
         next.dispose()
         return
       }
-      instance?.dispose()
-      instance = next
       next.applyConfig(config)
+
+      // Add a dedicated wireframe overlay group to the new ship instance
+      if (wireOverlayGroup)
+        wireOverlayGroup.removeFromParent()
+      wireOverlayGroup = buildWireframeOverlay(next.root)
+      wireOverlayGroup.visible = initialWireframe
+      next.root.add(wireOverlayGroup)
+
       cradle.add(next.root)
       if (!pivot.parent)
         scene.add(pivot)
-      lastWireframe = null // force a re-apply onto the new materials
+
+      // Swap out the old instance AFTER the new one is added to avoid a blank frame
+      const prev = instance
+      instance = next
+      prev?.dispose()
+
       onStatus('ready')
     }
     catch (cause) {
@@ -151,15 +173,13 @@ function shipDisplay (onStatus: (status: HangarStatus) => void) {
         const shipChanged = lastConfig?.shipId !== config.shipId
         lastConfig = config
         if (shipChanged)
-          void swapTo(config, ctx.scene as THREE.Scene)
+          void swapTo(config, ctx.scene as THREE.Scene, state.wireframe)
         else
           instance?.applyConfig(config)
       }
 
-      if (state.wireframe !== lastWireframe) {
-        lastWireframe = state.wireframe
-        applyWireframe(state.wireframe)
-      }
+      if (wireOverlayGroup)
+        wireOverlayGroup.visible = state.wireframe
 
       // Per second, not per frame — the R3F version was framerate-dependent.
       if (state.spinning)
@@ -184,7 +204,9 @@ function shipDisplay (onStatus: (status: HangarStatus) => void) {
       instance?.dispose()
       instance = null
       lastConfig = null
-      lastWireframe = null
+      wireOverlayGroup?.removeFromParent()
+      wireOverlayGroup = null
+      wireMat.dispose()
       pivot.removeFromParent()
     },
   })

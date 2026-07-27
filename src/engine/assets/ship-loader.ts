@@ -114,7 +114,7 @@ export async function loadShip (shipId: ShipId, targetSize: number): Promise<Shi
       // Each hull is one mesh with a 4-material array whose ORDER VARIES per
       // ship, remapped slot-by-slot inside here. Per-instance and order
       // dependent, so it can never be cached.
-      model = buildImportedShipObject(template.clone(true), preset.textureBase)
+      model = await buildImportedShipObject(template.clone(true), preset.textureBase)
       break
     }
     case 'generated':

@@ -144,6 +144,7 @@ export async function mountRace (
           app.setState({
             steer:    controls.steer,
             throttle: controls.throttle,
+            brake:    controls.brake,
             boost:    controls.boost,
             resetSeq: controls.resetSeq,
           })

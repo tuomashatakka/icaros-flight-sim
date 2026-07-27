@@ -1,50 +1,158 @@
-@import "tailwindcss";
-@config "../../tailwind.config.ts";
+/*
+ * Design tokens + reset. No preprocessor, no framework — plain CSS that the
+ * browser reads as written.
+ *
+ * Each colour is declared twice on purpose: once as a bare HSL triple and once
+ * as a finished colour. The triple is what lets a rule compose an alpha variant
+ * (`hsl(var(--accent-hsl) / 0.3)`), which is the one genuinely useful thing the
+ * utility framework did here and the only reason the triples remain.
+ */
 
-@layer base {
-  :root {
-    --background: 260 20% 5%;
-    --foreground: 0 0% 98%;
-    --card: 260 20% 10%;
-    --card-foreground: 0 0% 98%;
-    --popover: 260 20% 5%;
-    --popover-foreground: 0 0% 98%;
-    --primary: 276 100% 70%;
-    --primary-foreground: 276 85% 98%;
-    --secondary: 260 20% 15%;
-    --secondary-foreground: 0 0% 98%;
-    --muted: 260 20% 15%;
-    --muted-foreground: 260 5% 64.9%;
-    --accent: 328 100% 69%;
-    --accent-foreground: 328 85% 98%;
-    --destructive: 0 84.2% 60.2%;
-    --destructive-foreground: 0 0% 98%;
-    --border: 260 20% 20%;
-    --input: 260 20% 20%;
-    --ring: 276 100% 70%;
-    --radius: 0.5rem;
-  }
+:root {
+  --background-hsl: 260 20% 5%;
+  --foreground-hsl: 0 0% 98%;
+  --card-hsl: 260 20% 10%;
+  --primary-hsl: 276 100% 70%;
+  --secondary-hsl: 260 20% 15%;
+  --muted-foreground-hsl: 260 5% 65%;
+  --accent-hsl: 328 100% 69%;
+  --destructive-hsl: 0 84% 60%;
+  --border-hsl: 260 20% 20%;
+  --ring-hsl: 276 100% 70%;
+
+  --background: hsl(var(--background-hsl));
+  --foreground: hsl(var(--foreground-hsl));
+  --card: hsl(var(--card-hsl));
+  --primary: hsl(var(--primary-hsl));
+  --secondary: hsl(var(--secondary-hsl));
+  --muted-foreground: hsl(var(--muted-foreground-hsl));
+  --accent: hsl(var(--accent-hsl));
+  --destructive: hsl(var(--destructive-hsl));
+  --border: hsl(var(--border-hsl));
+  --ring: hsl(var(--ring-hsl));
+
+  --radius: 0.5rem;
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-lg: calc(var(--radius) + 4px);
+
+  --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  --font-sans: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
 }
 
-@layer base {
-  * {
-    border-color: hsl(var(--border));
-    box-sizing: border-box;
-  }
-  html,
-  body,
-  #__next {
-    width: 100%;
-    height: 100%;
-    margin: 0;
-    padding: 0;
-    overflow: hidden;
-  }
-  body {
-    background-color: hsl(var(--background));
-    color: hsl(var(--foreground));
-  }
-  canvas {
-    touch-action: none;
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  border-color: var(--border);
+}
+
+html,
+body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  -webkit-font-smoothing: antialiased;
+}
+
+canvas {
+  touch-action: none;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+}
+
+button:disabled {
+  cursor: not-allowed;
+}
+
+/* Keyboard focus only — a mouse click on a button should not leave a ring. */
+:focus-visible {
+  outline: 2px solid var(--ring);
+  outline-offset: 2px;
+}
+
+/*
+ * Range inputs. Nearly every panel in the app is a stack of sliders, so these
+ * are styled once here rather than per module. Chrome and Firefox need separate
+ * thumb selectors — merged into one selector list, both browsers drop the rule.
+ */
+input[type='range'] {
+  width: 100%;
+  height: 4px;
+  appearance: none;
+  background: hsl(var(--foreground-hsl) / 0.15);
+  border-radius: 999px;
+  cursor: pointer;
+}
+
+input[type='range']::-webkit-slider-thumb {
+  appearance: none;
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+}
+
+input[type='range']::-moz-range-thumb {
+  width: 13px;
+  height: 13px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: none;
+}
+
+input[type='range']:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+input[type='color'] {
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  background: transparent;
+  cursor: pointer;
+}
+
+input[type='text'],
+select {
+  font: inherit;
+  color: inherit;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.375rem 0.5rem;
+}
+
+select {
+  cursor: pointer;
+}
+
+/* Native menus do not inherit the page background on Windows/Linux. */
+select option {
+  background: var(--card);
+  color: var(--foreground);
+}
+
+@keyframes pulse {
+  50% {
+    opacity: 0.4;
   }
 }

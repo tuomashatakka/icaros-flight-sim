@@ -35,6 +35,7 @@ export type RaceState = {
   // --- input: written by engine/input via the frame loop ---
   steer:    number;
   throttle: boolean;
+  brake:    boolean;
   boost:    boolean;
   resetSeq: number;
 
@@ -53,6 +54,7 @@ export function initialRaceState (shipConfig: ShipConfig | null = null): RaceSta
   return {
     steer:       0,
     throttle:    false,
+    brake:       false,
     boost:       false,
     resetSeq:    0,
     status:      'idle',

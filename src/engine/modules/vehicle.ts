@@ -246,13 +246,16 @@ export function vehicleModule (
       // ship does not accelerate on its own), on "GO", and capped at target
       // speed. Engine force only bites while wheels touch ground, so it
       // self-cuts in the air.
+      const isBraking    = racing && state.brake
       const driveForce   = boosting ? t.thrust * boostThrustMultiplier : t.thrust
-      const throttleOpen = state.throttle || boosting
+      const throttleOpen = !isBraking && (state.throttle || boosting)
       const engineForce  = racing && throttleOpen && currentSpeed < targetSpeed ? driveForce : 0
+      const brakeForce   = isBraking ? 180 : 0
+
       for (let i = 0; i < 4; i++) {
         controller.setWheelEngineForce(i, engineForce)
         controller.setWheelSteering(i, 0)
-        controller.setWheelBrake(i, 0)
+        controller.setWheelBrake(i, brakeForce)
       }
 
       // Step the suspension + friction solver. After this, wheel contacts are valid.
