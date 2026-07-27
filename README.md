@@ -113,6 +113,22 @@ src/engine/            vanilla three.js — no React imports anywhere below this
 src/components/scene-canvas.tsx   the ONLY React<->three boundary
 ```
 
+### Styling
+
+Plain CSS. No utility framework, no component library, no preprocessor.
+
+- `src/app/globals.css` — design tokens and the reset. Colours are declared twice: a bare HSL
+  triple (`--accent-hsl`) and a finished colour (`--accent`). The triple exists so a rule can
+  compose an alpha variant, `hsl(var(--accent-hsl) / 0.3)`.
+- `*.module.css` next to each component — scoped class names, no global collisions. Shared chrome
+  within a file uses `composes:`.
+- Form controls (range, color, text, select) are styled once in `globals.css`, since nearly every
+  panel in the app is a stack of them.
+
+Anything genuinely per-instance — a level's card gradient, a slider's fill width — is passed as a
+CSS custom property in a `style` prop and consumed by one rule, rather than generating a class per
+value.
+
 State flows one way: `zustand -> bridge -> app state -> module.update() -> scene`. Modules read
 state and never write it. Engine *outputs* (speed, boost, lap times) travel back out through the
 publish module on a throttled schedule, and the two sets of fields are disjoint, so there is no

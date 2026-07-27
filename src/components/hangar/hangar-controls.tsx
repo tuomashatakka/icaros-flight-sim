@@ -2,9 +2,11 @@
 
 import Link from 'next/link'
 import { useShipStore } from '@/hooks/use-ship-store'
-import { useHangarView, type HangarViewToggle } from '@/hooks/use-hangar-view'
+import { useHangarView } from '@/hooks/use-hangar-view'
+import type { HangarViewToggle } from '@/hooks/use-hangar-view'
 import { PALETTES } from '@/lib/ship/materials'
-import { SHIP_IDS, SHIP_PRESETS, type ShipConfig } from '@/lib/ship/registry'
+import { SHIP_IDS, SHIP_PRESETS } from '@/lib/ship/registry'
+import type { ShipConfig } from '@/lib/ship/registry'
 import styles from './hangar-controls.module.css'
 import { PropsWithChildren } from 'react'
 
@@ -16,6 +18,16 @@ import { PropsWithChildren } from 'react'
  * formatting is injectable because multipliers and bare 0..1 ratios want
  * different suffixes.
  */
+type SliderProps = {
+  label:    string;
+  value:    number;
+  min:      number;
+  max:      number;
+  step:     number;
+  onChange: (value: number) => void;
+  format?:  (value: number) => string;
+}
+
 function Slider ({
   label,
   value,
@@ -24,71 +36,76 @@ function Slider ({
   step,
   onChange,
   format = (v: number) => v.toFixed(2),
-}: {
-  label:    string;
-  value:    number;
-  min:      number;
-  max:      number;
-  step:     number;
-  onChange: (value: number) => void;
-  format?:  (value: number) => string;
-}) {
+}: SliderProps) {
   return <label className={ styles.field }>
     <span className={ styles.fieldHead }>
       <span>{ label }</span>
       <span className={ styles.fieldValue }>{ format(value) }</span>
     </span>
+
     <input
       type="range"
       min={ min }
       max={ max }
       step={ step }
       value={ value }
-      onChange={ e => onChange(parseFloat(e.target.value)) }
-    />
+      onChange={ e => onChange(parseFloat(e.target.value)) } />
   </label>
+}
+
+type SwatchProps = {
+  label:    string;
+  value:    string;
+  onChange: (value: string) => void;
 }
 
 function Swatch ({
   label,
   value,
   onChange,
-}: {
-  label:    string;
-  value:    string;
-  onChange: (value: string) => void;
-}) {
+}: SwatchProps) {
   return <div className={ styles.field }>
     <span className={ styles.fieldHead }>{ label }</span>
+
     <div className={ styles.swatchRow }>
       <input
         type="color"
         value={ value }
         onChange={ e => onChange(e.target.value) }
-        className={ styles.swatchPicker }
-      />
+        className={ styles.swatchPicker } />
+
       <input
         type="text"
         value={ value }
         onChange={ e => onChange(e.target.value) }
-        className={ styles.swatchHex }
-      />
+        className={ styles.swatchHex } />
     </div>
   </div>
 }
 
 type ToggleProps = PropsWithChildren<{
-  on:       boolean;
-  onClick:  () => void;
+
+  /**
+   * Named `pressed`, not `on`: a two-character prop starting with "on" crashes
+   * the `react-strict/jsx-prop-layout` rule, which reads `name[2]` to decide if
+   * a prop is an event handler without checking the length first.
+   */
+  pressed: boolean;
+  onClick: () => void;
 }>
 
-function Toggle ({ on, onClick, children }: ToggleProps) {
-  return <button onClick={ onClick } aria-pressed={ on } className={ on ? styles.toggleOn : styles.toggle }>
+function Toggle ({ pressed, onClick, children }: ToggleProps) {
+  return <button
+    onClick={ onClick }
+    aria-pressed={ pressed }
+    className={ pressed ? styles.toggleOn : styles.toggle }>
     { children }
   </button>
 }
 
-function Section ({ title, children }: { title: string; children: React.ReactNode }) {
+type SectionProps = { title: string; children: React.ReactNode }
+
+function Section ({ title, children }: SectionProps) {
   return <fieldset className={ styles.section }>
     <legend className={ styles.legend }>{ title }</legend>
     { children }
@@ -96,11 +113,11 @@ function Section ({ title, children }: { title: string; children: React.ReactNod
 }
 
 const PATTERNS: { value: ShipConfig['texturePreset']; label: string }[] = [
-  { value: 'plain',   label: 'Plain' },
-  { value: 'panels',  label: 'Panels' },
-  { value: 'carbon',  label: 'Carbon Fiber' },
-  { value: 'hazard',  label: 'Hazard' },
-  { value: 'city',    label: 'Cityscape' },
+  { value: 'plain', label: 'Plain' },
+  { value: 'panels', label: 'Panels' },
+  { value: 'carbon', label: 'Carbon Fiber' },
+  { value: 'hazard', label: 'Hazard' },
+  { value: 'city', label: 'Cityscape' },
   { value: 'gallery', label: 'Gallery' },
 ]
 
@@ -123,7 +140,7 @@ function randomLook (): Partial<ShipConfig> {
 
 export function HangarControls () {
   const { currentConfig, updateConfig, selectShip, resetToDefault, applyToAllShips } = useShipStore()
-  const view = useHangarView()
+  const view                                                                         = useHangarView()
 
   // Only the glTF ship (cb1) has its maps generated from texturePreset; every other ship
   // carries a baked livery that applyShipConfig() modulates but never overwrites.
@@ -139,6 +156,7 @@ export function HangarControls () {
     <header className={ styles.header }>
       <Link href="/" className={ styles.back }>‹ Menu</Link>
       <h1 className={ styles.title }>SHIP HANGAR</h1>
+
       <p className={ styles.subtitle }>
         { SHIP_IDS.length } hulls · drag to orbit · scroll to zoom
       </p>
@@ -153,8 +171,7 @@ export function HangarControls () {
             return <button
               key={ id }
               onClick={ () => selectShip(id) }
-              className={ active ? styles.shipActive : styles.ship }
-            >
+              className={ active ? styles.shipActive : styles.ship }>
               <div className={ styles.shipName }>{ preset.label }</div>
               <div className={ styles.shipDesc }>{ preset.description }</div>
             </button>
@@ -162,9 +179,9 @@ export function HangarControls () {
         </div>
 
         <div className={ styles.toggles }>
-          <Toggle on={ false } onClick={ applyToAllShips }>apply livery to fleet</Toggle>
-          <Toggle on={ false } onClick={ resetToDefault }>reset ship</Toggle>
-          <Toggle on={ false } onClick={ () => updateConfig(randomLook()) }>randomize ✦</Toggle>
+          <Toggle pressed={ false } onClick={ applyToAllShips }>apply livery to fleet</Toggle>
+          <Toggle pressed={ false } onClick={ resetToDefault }>reset ship</Toggle>
+          <Toggle pressed={ false } onClick={ () => updateConfig(randomLook()) }>randomize ✦</Toggle>
         </div>
       </Section>
 
@@ -181,12 +198,11 @@ export function HangarControls () {
                 roughness:         palette.roughness,
                 emissiveIntensity: palette.emissiveIntensity,
               }) }
-              className={ currentConfig.paletteName === key ? styles.paletteActive : styles.palette }
-            >
+              className={ currentConfig.paletteName === key ? styles.paletteActive : styles.palette }>
               <div
                 className={ styles.paletteSwatch }
-                style={{ background: `linear-gradient(135deg, ${palette.bodyColor} 60%, ${palette.emissiveColor})` }}
-              />
+                style={{ background: `linear-gradient(135deg, ${palette.bodyColor} 60%, ${palette.emissiveColor})` }} />
+
               <div className={ styles.paletteName }>{ palette.name }</div>
             </button>
           ) }
@@ -200,18 +216,17 @@ export function HangarControls () {
         <Slider
           label="metalness" value={ currentConfig.metalness }
           min={ 0 } max={ 1 } step={ 0.01 }
-          onChange={ v => set('metalness', v) }
-        />
+          onChange={ v => set('metalness', v) } />
+
         <Slider
           label="roughness" value={ currentConfig.roughness }
           min={ 0 } max={ 1 } step={ 0.01 }
-          onChange={ v => set('roughness', v) }
-        />
+          onChange={ v => set('roughness', v) } />
+
         <Slider
           label="emission" value={ currentConfig.emissiveIntensity }
           min={ 0 } max={ 1 } step={ 0.01 }
-          onChange={ v => set('emissiveIntensity', v) }
-        />
+          onChange={ v => set('emissiveIntensity', v) } />
 
         { hasBakedLivery
           ? <p className={ styles.note }>
@@ -221,40 +236,41 @@ export function HangarControls () {
           : <>
             <label className={ styles.field }>
               <span className={ styles.fieldHead }>pattern</span>
+
               <select
                 value={ currentConfig.texturePreset }
                 onChange={ e => set('texturePreset', e.target.value as ShipConfig['texturePreset']) }
-                className={ styles.select }
-              >
+                className={ styles.select }>
                 { PATTERNS.map(p => <option key={ p.value } value={ p.value }>{ p.label }</option>) }
               </select>
             </label>
+
             <Slider
               label="texture repeat" value={ currentConfig.textureRepeat }
               min={ 0.5 } max={ 5 } step={ 0.25 }
               onChange={ v => set('textureRepeat', v) }
-              format={ v => `${v.toFixed(2)}×` }
-            />
+              format={ v => `${v.toFixed(2)}×` } />
           </> }
       </Section>
 
       <Section title="Afterburner">
         <Swatch label="plume" value={ currentConfig.burnColor } onChange={ v => set('burnColor', v) } />
+
         <Slider
           label="beam intensity" value={ currentConfig.burnIntensity }
           min={ 0 } max={ 2.2 } step={ 0.01 }
-          onChange={ v => set('burnIntensity', v) }
-        />
+          onChange={ v => set('burnIntensity', v) } />
+
         <Slider
           label="beam length" value={ currentConfig.burnLength }
           min={ 0.4 } max={ 3 } step={ 0.01 }
-          onChange={ v => set('burnLength', v) }
-        />
+          onChange={ v => set('burnLength', v) } />
+
         <Slider
           label="nozzle spread" value={ currentConfig.nozzleSpread }
           min={ 0 } max={ 1.6 } step={ 0.01 }
-          onChange={ v => set('nozzleSpread', v) }
-        />
+          onChange={ v => set('nozzleSpread', v) } />
+
         <p className={ styles.note }>
           Pods are found by scanning the hull&apos;s tail for its two thickest points, so 1.00 is
           wherever the geometry says the engines are — nudge it if a beam misses. The plume
@@ -264,10 +280,10 @@ export function HangarControls () {
 
       <Section title="View">
         <div className={ styles.toggles }>
-          <Toggle on={ view.autoOrbit } onClick={ toggle('autoOrbit') }>auto-orbit</Toggle>
-          <Toggle on={ view.flightTilt } onClick={ toggle('flightTilt') }>flight tilt</Toggle>
-          <Toggle on={ view.engines } onClick={ toggle('engines') }>engines</Toggle>
-          <Toggle on={ view.wireframe } onClick={ toggle('wireframe') }>wire overlay</Toggle>
+          <Toggle pressed={ view.autoOrbit } onClick={ toggle('autoOrbit') }>auto-orbit</Toggle>
+          <Toggle pressed={ view.flightTilt } onClick={ toggle('flightTilt') }>flight tilt</Toggle>
+          <Toggle pressed={ view.engines } onClick={ toggle('engines') }>engines</Toggle>
+          <Toggle pressed={ view.wireframe } onClick={ toggle('wireframe') }>wire overlay</Toggle>
         </div>
       </Section>
     </div>
