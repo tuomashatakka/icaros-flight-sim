@@ -57,6 +57,32 @@ type RaceState = {
 
 const DEFAULT_SPAWN: Transform = { position: [ 1, 2, 4 ], quaternion: [ 0, 1, 0, 0 ]}
 
+/**
+ * The live race clocks, as a plain mutable object.
+ *
+ * Same reasoning as `src/engine/telemetry.ts`: these advance every 60 Hz sim
+ * step, and writing them into zustand at that rate forces 60 React commits a
+ * second — which quietly defeated the 15 Hz throttling in the publish module,
+ * since the race bar was re-rendering on every step anyway.
+ *
+ * The holographic HUD reads these directly at frame rate, so it stays exact to
+ * the millisecond; the store mirrors them on a throttle for the DOM, which only
+ * needs them for the finish card.
+ */
+export const raceTimers = { elapsed: 0, lapElapsed: 0, countdown: 3 }
+
+/** Store mirror period, matching `PUBLISH_PERIOD` in the publish module. */
+const COMMIT_PERIOD = 1 / 15
+
+let sinceCommit = 0
+
+function resetTimers (countdown = 3) {
+  raceTimers.elapsed    = 0
+  raceTimers.lapElapsed = 0
+  raceTimers.countdown  = countdown
+  sinceCommit = 0
+}
+
 export const useRaceStore = create<RaceState>()(
   subscribeWithSelector((set, get) => ({
     status:          'idle',
@@ -73,7 +99,8 @@ export const useRaceStore = create<RaceState>()(
     respawn:         DEFAULT_SPAWN,
     spawn:           DEFAULT_SPAWN,
 
-    configureRace: ({ checkpointCount, laps, loop, spawn }) =>
+    configureRace: ({ checkpointCount, laps, loop, spawn }) => {
+      resetTimers()
       set({
         status:         'countdown',
         countdown:      3,
@@ -89,19 +116,39 @@ export const useRaceStore = create<RaceState>()(
         bestLap:        null,
         respawn:        spawn,
         spawn,
-      }),
+      })
+    },
 
     tick: dt => {
       const s = get()
       if (s.status === 'countdown') {
-        const next = s.countdown - dt
-        if (next <= 0)
-          set({ status: 'racing', countdown: 0 }); else
+        const previous       = raceTimers.countdown
+        const next           = previous - dt
+        raceTimers.countdown = next
+
+        if (next <= 0) {
+          set({ status: 'racing', countdown: 0 })
+          return
+        }
+
+        // The overlay renders `Math.ceil(countdown)`, so committing the raw
+        // value every step would fire ~180 commits to change the digit twice.
+        if (Math.ceil(next) !== Math.ceil(previous))
           set({ countdown: next })
         return
       }
-      if (s.status === 'racing')
-        set({ elapsed: s.elapsed + dt, lapElapsed: s.lapElapsed + dt })
+
+      if (s.status !== 'racing')
+        return
+
+      raceTimers.elapsed += dt
+      raceTimers.lapElapsed += dt
+      sinceCommit += dt
+
+      if (sinceCommit >= COMMIT_PERIOD) {
+        sinceCommit = 0
+        set({ elapsed: raceTimers.elapsed, lapElapsed: raceTimers.lapElapsed })
+      }
     },
 
     passCheckpoint: (index, transform) => {
@@ -118,12 +165,26 @@ export const useRaceStore = create<RaceState>()(
       const patch: Partial<RaceState> = { respawn: transform }
 
       if (isFinishLine) {
-        const lapTimes    = [ ...s.lapTimes, s.lapElapsed ]
-        const bestLap     = s.bestLap === null ? s.lapElapsed : Math.min(s.bestLap, s.lapElapsed)
+        // Taken from the live clock, not the store — the store's copy is up to
+        // a commit period stale, and a lap time is the one number that has to be
+        // exact at the instant of the crossing.
+        const lapTime     = raceTimers.lapElapsed
+        const lapTimes    = [ ...s.lapTimes, lapTime ]
+        const bestLap     = s.bestLap === null ? lapTime : Math.min(s.bestLap, lapTime)
         const finishedLap = s.currentLap
 
+        raceTimers.lapElapsed = 0
+        sinceCommit = 0
+
         if (finishedLap >= s.laps) {
-          set({ ...patch, lapTimes, bestLap, status: 'finished', lapElapsed: 0 })
+          set({
+            ...patch,
+            lapTimes,
+            bestLap,
+            status:     'finished',
+            elapsed:    raceTimers.elapsed,
+            lapElapsed: 0,
+          })
           return true
         }
         set({
@@ -131,6 +192,7 @@ export const useRaceStore = create<RaceState>()(
           lapTimes,
           bestLap,
           currentLap:     finishedLap + 1,
+          elapsed:        raceTimers.elapsed,
           lapElapsed:     0,
           nextCheckpoint: count > 1 ? 1 : 0,
         })
@@ -141,7 +203,8 @@ export const useRaceStore = create<RaceState>()(
       return true
     },
 
-    resetRace: () =>
+    resetRace: () => {
+      resetTimers()
       set({
         status:         'countdown',
         countdown:      3,
@@ -152,7 +215,8 @@ export const useRaceStore = create<RaceState>()(
         lapTimes:       [],
         bestLap:        null,
         respawn:        get().spawn,
-      }),
+      })
+    },
   }))
 )
 

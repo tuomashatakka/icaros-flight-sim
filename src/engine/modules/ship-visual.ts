@@ -13,6 +13,18 @@ const SHIP_TARGET_SIZE = 2.8
 /** Lifts the model off the collider centre, as the R3F build's wrapper group did. */
 const VISUAL_LIFT = 0.5
 
+export type ShipVisualHandle = {
+
+  /**
+   * Show or hide the exterior hull. Called from the render phase as the camera
+   * seats itself — at full cockpit the hull encloses the camera, so what you
+   * would otherwise see is the inside of its back faces.
+   */
+  setHullVisible(visible: boolean): void;
+}
+
+type HandleType = { current: ShipVisualHandle | null }
+
 /**
  * The visible hull.
  *
@@ -22,7 +34,8 @@ const VISUAL_LIFT = 0.5
  */
 export function shipVisualModule (
   shipRoot: THREE.Group,
-  telemetry: Telemetry
+  telemetry: Telemetry,
+  handle?: HandleType
 ): AppModule<RaceState> {
   let instance: ShipInstance | null               = null
   let lastConfig: ShipConfig | null               = null
@@ -30,6 +43,10 @@ export function shipVisualModule (
 
   /** Guards against a slow load for ship A landing after the user picked B. */
   let generation = 0
+
+  // Kept out of the instance so a hull swap while seated does not pop the new
+  // model into view for a frame.
+  let hullVisible = true
 
   async function swapTo (config: ShipConfig) {
     const mine = ++generation
@@ -43,6 +60,7 @@ export function shipVisualModule (
     instance = next
     next.applyConfig(config)
     next.root.position.y = VISUAL_LIFT
+    next.root.visible    = hullVisible
     shipRoot.add(next.root)
 
     // Cache the glow materials once instead of traversing the hull every frame,
@@ -65,6 +83,17 @@ export function shipVisualModule (
 
     build (ctx) {
       ctx.scene.add(shipRoot)
+
+      if (handle)
+        handle.current = {
+          setHullVisible (visible) {
+            if (visible === hullVisible)
+              return
+            hullVisible = visible
+            if (instance)
+              instance.root.visible = visible
+          },
+        }
     },
 
     update (state, frame) {
@@ -104,6 +133,8 @@ export function shipVisualModule (
       instance = null
       glowMaterials = []
       lastConfig = null
+      if (handle)
+        handle.current = null
     },
   })
 }

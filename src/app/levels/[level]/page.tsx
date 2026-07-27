@@ -2,7 +2,7 @@
 
 import { use, useCallback } from 'react'
 import { SceneCanvas } from '@/components/scene-canvas'
-import { GameUI } from '@/components/aftertouch-control-panel'
+import { GameUI } from '@/components/hud/game-ui'
 import { mountRace } from '@/engine/scenes/race'
 import type { LevelId } from '@/engine/levels/types'
 import styles from './race.module.css'

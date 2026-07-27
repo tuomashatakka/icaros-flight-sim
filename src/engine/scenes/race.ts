@@ -4,18 +4,22 @@ import type { App } from 'threejs-scene'
 import { standardLighting } from 'threejs-scene/modules/lighting'
 import { postProcessing } from 'threejs-scene/modules/post'
 import { useRaceStore } from '@/hooks/use-race-store'
+import { useCameraView } from '@/hooks/use-camera-view'
 import { initRapier } from '../rapier'
 import { createSimClock } from '../clock'
 import { createPhysics } from '../physics/world'
 import { attachBoxColliders } from '../physics/colliders'
 import { createTelemetry } from '../telemetry'
 import { createControls, attachControls } from '../input'
-import { createChaseRig } from '../camera/rig'
+import { createCameraRig } from '../camera/rig'
+import { hudModule } from '../hud'
+import type { HudHandle } from '../hud'
 import { vehicleModule } from '../modules/vehicle'
 import type { VehicleHandle } from '../modules/vehicle'
 import { physicsStepModule } from '../modules/physics-step'
 import { raceModule } from '../modules/race'
 import { shipVisualModule } from '../modules/ship-visual'
+import type { ShipVisualHandle } from '../modules/ship-visual'
 import { sunModule } from '../modules/sun'
 import type { SunHandle } from '../modules/sun'
 import { publishModule } from '../modules/publish'
@@ -70,6 +74,13 @@ export async function mountRace (
 
   const sun: SunType         = { current: null }
 
+  type HudType = { current: HudHandle | null }
+
+  const hud: HudType                = { current: null }
+  type ShipVisualType = { current: ShipVisualHandle | null }
+
+  const shipVisual: ShipVisualType  = { current: null }
+
   // The composer does not exist at composition time — the effects callback hands
   // it back later, so the root render override reaches it through this binding.
   let composer: { render(delta: number): void } | null = null
@@ -79,7 +90,15 @@ export async function mountRace (
   // afterwards would leave the rig's aspect uncorrected on every resize. It gets
   // its own seeded stream from the same seed so replays stay deterministic.
   const rng = createSeededRng(SEED)
-  const rig = createChaseRig(rng)
+  const rig = createCameraRig(rng)
+
+  /** Last-seen view toggle count — see the `resetSeq` note in `input.ts`. */
+  let lastViewSeq = controls.viewSeq
+
+  // The rig always mounts in chase, but the store outlives the scene (a hot
+  // reload or a level change rebuilds one and not the other), so the mirror has
+  // to be re-seeded or the controls hint ends up describing the wrong view.
+  useCameraView.getState().setView(rig.view())
 
   // Placeholder hull until the ship loader lands. The interpolated pose is
   // written to this root each rendered frame; a real ship will hang its fitted
@@ -133,7 +152,11 @@ export async function mountRace (
         },
       }),
 
-      shipVisualModule(shipRoot, telemetry),
+      shipVisualModule(shipRoot, telemetry, shipVisual),
+
+      // After ship-visual, so the canopy is added to a `shipRoot` that already
+      // exists in the scene.
+      hudModule(shipRoot, level, telemetry, hud),
 
       // Reads input into state. Input is written by DOM listeners onto a plain
       // object; this is the one place it enters the unidirectional flow.
@@ -184,6 +207,16 @@ export async function mountRace (
     // render owner runs per frame and `postProcessing` claims it, so the root
     // override is the only hook guaranteed to run once per REAL frame.
     render (frame) {
+      // Edge-triggered, exactly like `resetSeq`. The view lives on the rig
+      // rather than in app state: the toggle must land on the frame it was
+      // pressed, and routing it through setState would cost a tick of latency
+      // for something the render phase already owns.
+      if (controls.viewSeq !== lastViewSeq) {
+        lastViewSeq = controls.viewSeq
+        rig.toggleView()
+        useCameraView.getState().setView(rig.view())
+      }
+
       const interpolator = vehicle.current?.interpolator
       if (interpolator) {
         // Blend the last two solved poses. Both the hull and the camera read
@@ -191,9 +224,25 @@ export async function mountRace (
         interpolator.sample(clock.alpha(), _shipPosition, _shipQuaternion)
         shipRoot.position.copy(_shipPosition)
         shipRoot.quaternion.copy(_shipQuaternion)
-        rig.drive(frame.delta, _shipPosition, _shipQuaternion)
+        rig.drive(frame.delta, _shipPosition, _shipQuaternion, controls)
         // Keep the shadow volume on the ship, or it drives out of it.
         sun.current?.follow(_shipPosition)
+
+        const blend = rig.blend()
+
+        // Once seated, the hull encloses the camera and all you would see is the
+        // inside of its back faces. The canopy is the interior from here on.
+        shipVisual.current?.setHullVisible(blend < 0.85)
+
+        const throttle = controls.throttle ? controls.boost ? 1 : 0.72 : 0
+        hud.current?.update(
+          frame.elapsed,
+          _shipPosition,
+          _shipQuaternion,
+          throttle,
+          blend,
+          rig.camera
+        )
       }
 
       if (composer)

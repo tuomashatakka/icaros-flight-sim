@@ -27,10 +27,29 @@ export type Controls = {
    * compare against a last-seen value, which is edge-correct at any tick rate.
    */
   resetSeq: number;
+
+  /** Chase <-> cockpit toggle. Edge-counted for the same reason as `resetSeq`. */
+  viewSeq: number;
+
+  /**
+   * Look-around pan, -1..1 on each axis, from pointer HOVER — not drag, which
+   * already steers. Consumed by the camera rig, which eases toward it.
+   */
+  panX: number;
+  panY: number;
 }
 
 export function createControls (): Controls {
-  return { steer: 0, throttle: false, brake: false, boost: false, resetSeq: 0 }
+  return {
+    steer:    0,
+    throttle: false,
+    brake:    false,
+    boost:    false,
+    resetSeq: 0,
+    viewSeq:  0,
+    panX:     0,
+    panY:     0,
+  }
 }
 
 const isLeft     = (key: string) => key === 'ArrowLeft' || key.toLowerCase() === 'a'
@@ -79,6 +98,8 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
       controls.boost = true
     else if (event.key.toLowerCase() === 'r' && !event.repeat)
       controls.resetSeq++
+    else if (event.key.toLowerCase() === 'c' && !event.repeat)
+      controls.viewSeq++
   }
 
   const onKeyUp = (event: KeyboardEvent) => {
@@ -107,6 +128,8 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
     controls.brake    = false
     controls.boost    = false
     controls.steer    = 0
+    controls.panX     = 0
+    controls.panY     = 0
   }
 
   // Drag steering is ABSOLUTE from the press point and recenters on release,
@@ -126,13 +149,31 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
     syncSteer()
   }
 
+  // Panning rides HOVER rather than drag, because drag is already steering. The
+  // two never contend: while a drag is active the pan is left frozen at
+  // whatever it was, so looking around cannot fight a turn mid-corner.
   const onPointerMove = (event: PointerEvent) => {
+    if (pointerId === null) {
+      const rect = target.getBoundingClientRect()
+      if (rect.width > 0 && rect.height > 0) {
+        controls.panX = clampSteer((event.clientX - rect.left) / rect.width * 2 - 1)
+        controls.panY = clampSteer((event.clientY - rect.top) / rect.height * 2 - 1)
+      }
+      return
+    }
+
     if (event.pointerId !== pointerId)
       return
 
     const steeringWidth = Math.max(target.clientWidth * 0.32, 120)
     pointerSteer = clampSteer((event.clientX - pointerStartX) / steeringWidth)
     syncSteer()
+  }
+
+  // Ease back to neutral rather than freezing at the last edge position.
+  const onPointerLeave = () => {
+    controls.panX = 0
+    controls.panY = 0
   }
 
   const endPointer = (event: PointerEvent) => {
@@ -152,6 +193,7 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
   target.addEventListener('pointermove', onPointerMove)
   target.addEventListener('pointerup', endPointer)
   target.addEventListener('pointercancel', endPointer)
+  target.addEventListener('pointerleave', onPointerLeave)
 
   return () => {
     window.removeEventListener('keydown', onKeyDown)
@@ -161,5 +203,6 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
     target.removeEventListener('pointermove', onPointerMove)
     target.removeEventListener('pointerup', endPointer)
     target.removeEventListener('pointercancel', endPointer)
+    target.removeEventListener('pointerleave', onPointerLeave)
   }
 }

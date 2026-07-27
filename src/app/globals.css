@@ -31,6 +31,25 @@
   --border: hsl(var(--border-hsl));
   --ring: hsl(var(--ring-hsl));
 
+  /*
+   * Holographic HUD palette. Kept in sync by hand with `HOLO` in
+   * `src/engine/hud/materials.ts` — the in-scene projection and the DOM chrome
+   * that frames it have to read as one system, and nothing in the build can
+   * share a constant across a GLSL uniform and a stylesheet.
+   */
+  --holo-cyan-hsl: 184 100% 73%;
+  --holo-magenta-hsl: 328 100% 69%;
+  --holo-amber-hsl: 33 100% 64%;
+
+  --holo-cyan: hsl(var(--holo-cyan-hsl));
+  --holo-magenta: hsl(var(--holo-magenta-hsl));
+  --holo-amber: hsl(var(--holo-amber-hsl));
+
+  /* Panel chrome shared by every holo-styled DOM surface. */
+  --holo-scrim: hsl(200 60% 6% / 0.55);
+  --holo-edge: hsl(var(--holo-cyan-hsl) / 0.32);
+  --holo-glow: 0 0 12px hsl(var(--holo-cyan-hsl) / 0.45);
+
   --radius: 0.5rem;
   --radius-sm: calc(var(--radius) - 4px);
   --radius-lg: calc(var(--radius) + 4px);
