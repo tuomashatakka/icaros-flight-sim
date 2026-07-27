@@ -2,37 +2,182 @@
 
 import Link from 'next/link';
 import { useShipStore } from '@/hooks/use-ship-store';
+import { useHangarView, type HangarViewToggle } from '@/hooks/use-hangar-view';
 import { PALETTES } from '@/lib/ship/materials';
-import { SHIP_IDS, SHIP_PRESETS, type ShipId } from '@/lib/ship/registry';
+import { SHIP_IDS, SHIP_PRESETS, type ShipConfig } from '@/lib/ship/registry';
 import { cn } from '@/lib/utils';
 
+/**
+ * Labelled slider.
+ *
+ * The panel is ~a dozen of these; spelling each one out (as the previous
+ * version did) buried the two that actually differ in a wall of identical
+ * markup. Value formatting is injectable because degrees, multipliers and bare
+ * 0..1 ratios all want different suffixes.
+ */
+function Slider({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange,
+  format = (v: number) => v.toFixed(2),
+  disabled,
+}: {
+  label: string;
+  value: number;
+  min: number;
+  max: number;
+  step: number;
+  onChange: (value: number) => void;
+  format?: (value: number) => string;
+  disabled?: boolean;
+}) {
+  return (
+    <label className="block space-y-1.5">
+      <span className="flex items-baseline justify-between text-xs text-muted-foreground">
+        <span>{label}</span>
+        <span className="font-mono tabular-nums text-foreground/70">{format(value)}</span>
+      </span>
+      <input
+        type="range"
+        min={min}
+        max={max}
+        step={step}
+        value={value}
+        disabled={disabled}
+        onChange={(e) => onChange(parseFloat(e.target.value))}
+        className="w-full accent-primary disabled:cursor-not-allowed"
+      />
+    </label>
+  );
+}
+
+function Swatch({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+}) {
+  return (
+    <div className="space-y-1.5">
+      <span className="text-xs text-muted-foreground">{label}</span>
+      <div className="flex items-center gap-2">
+        <input
+          type="color"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="h-9 w-10 shrink-0 cursor-pointer rounded border border-border bg-transparent"
+        />
+        <input
+          type="text"
+          value={value}
+          onChange={(e) => onChange(e.target.value)}
+          className="w-full rounded border border-border bg-transparent px-2 py-1.5 font-mono text-xs"
+        />
+      </div>
+    </div>
+  );
+}
+
+function Toggle({
+  on,
+  onClick,
+  children,
+}: {
+  on: boolean;
+  onClick: () => void;
+  children: React.ReactNode;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      aria-pressed={on}
+      className={cn(
+        'rounded-full border px-3 py-1.5 text-xs transition-colors',
+        on
+          ? 'border-primary bg-primary/20 text-foreground'
+          : 'border-border text-muted-foreground hover:border-primary/50'
+      )}
+    >
+      {children}
+    </button>
+  );
+}
+
+function Section({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <fieldset className="space-y-3 rounded-lg border border-border/60 p-3">
+      <legend className="px-1 font-mono text-[11px] uppercase tracking-widest text-muted-foreground">
+        {title}
+      </legend>
+      {children}
+    </fieldset>
+  );
+}
+
+const PATTERNS: { value: ShipConfig['texturePreset']; label: string }[] = [
+  { value: 'plain', label: 'Plain' },
+  { value: 'panels', label: 'Panels' },
+  { value: 'carbon', label: 'Carbon Fiber' },
+  { value: 'hazard', label: 'Hazard' },
+  { value: 'city', label: 'Cityscape' },
+  { value: 'gallery', label: 'Gallery' },
+];
+
+/** Random livery, in the spirit of the forge prototype's `randomize ✦`. */
+function randomLook(): Partial<ShipConfig> {
+  const palettes = Object.entries(PALETTES);
+  const [name, palette] = palettes[Math.floor(Math.random() * palettes.length)];
+  return {
+    paletteName: name as ShipConfig['paletteName'],
+    bodyColor: palette.bodyColor,
+    emissiveColor: palette.emissiveColor,
+    metalness: 0.2 + Math.random() * 0.75,
+    roughness: 0.15 + Math.random() * 0.7,
+    emissiveIntensity: 0.3 + Math.random() * 0.7,
+    burnColor: palette.emissiveColor,
+    burnIntensity: 0.6 + Math.random() * 1.2,
+    burnLength: 0.7 + Math.random() * 1.6,
+  };
+}
+
 export function HangarControls() {
-  const { currentConfig, updateConfig, selectShip, resetToDefault } = useShipStore();
+  const { currentConfig, updateConfig, selectShip, resetToDefault, applyToAllShips } =
+    useShipStore();
+  const view = useHangarView();
 
-  const handleControlChange = (key: string, value: unknown) => {
-    updateConfig({ [key]: value } as Partial<typeof currentConfig>);
-  };
+  // Only the glTF ship (cb1) has its maps generated from texturePreset; every other ship
+  // carries a baked livery that applyShipConfig() modulates but never overwrites.
+  const activePreset = SHIP_PRESETS[currentConfig.shipId];
+  const hasBakedLivery = activePreset.kind !== 'gltf';
 
-  const handleShipSelect = (shipId: ShipId) => {
-    selectShip(shipId);
-  };
+  const set = <K extends keyof ShipConfig>(key: K, value: ShipConfig[K]) =>
+    updateConfig({ [key]: value } as Partial<ShipConfig>);
+
+  const toggle = (key: HangarViewToggle) => () => view.toggle(key);
 
   return (
-    <div className="w-80 bg-background/95 backdrop-blur-sm border-r border-border p-6 overflow-y-auto h-screen">
-      <header className="mb-6">
+    <div className="h-screen w-full overflow-y-auto border-l border-border bg-background/95 p-5 backdrop-blur-sm">
+      <header className="mb-5">
         <Link
           href="/"
           className="mb-3 inline-block font-mono text-xs text-muted-foreground transition-colors hover:text-accent"
         >
           ‹ Menu
         </Link>
-        <h1 className="text-2xl font-bold">SHIP HANGAR</h1>
-        <p className="text-sm text-muted-foreground">Customize your racer</p>
+        <h1 className="text-2xl font-bold tracking-tight">SHIP HANGAR</h1>
+        <p className="text-sm text-muted-foreground">
+          {SHIP_IDS.length} hulls · drag to orbit · scroll to zoom
+        </p>
       </header>
 
-      <div className="space-y-6">
-        <fieldset className="space-y-3">
-          <legend className="text-sm font-semibold">Ship Selection</legend>
+      <div className="space-y-4">
+        <Section title="Fleet">
           <div className="grid grid-cols-2 gap-2">
             {SHIP_IDS.map((id) => {
               const preset = SHIP_PRESETS[id];
@@ -40,31 +185,41 @@ export function HangarControls() {
               return (
                 <button
                   key={id}
-                  onClick={() => handleShipSelect(id)}
+                  onClick={() => selectShip(id)}
                   className={cn(
-                    "p-3 rounded-lg border text-left transition-all",
-                    active
-                      ? "border-primary bg-primary/20"
-                      : "border-border hover:border-primary/50"
+                    'rounded-lg border p-2.5 text-left transition-all',
+                    active ? 'border-primary bg-primary/20' : 'border-border hover:border-primary/50'
                   )}
                 >
-                  <div className="font-medium">{preset.label}</div>
-                  <div className="text-xs text-muted-foreground">{preset.description}</div>
+                  <div className="text-sm font-medium">{preset.label}</div>
+                  <div className="text-[11px] leading-tight text-muted-foreground">
+                    {preset.description}
+                  </div>
                 </button>
               );
             })}
           </div>
-        </fieldset>
+          <div className="flex flex-wrap gap-2">
+            <Toggle on={false} onClick={applyToAllShips}>
+              apply livery to fleet
+            </Toggle>
+            <Toggle on={false} onClick={resetToDefault}>
+              reset ship
+            </Toggle>
+            <Toggle on={false} onClick={() => updateConfig(randomLook())}>
+              randomize ✦
+            </Toggle>
+          </div>
+        </Section>
 
-        <fieldset className="space-y-3">
-          <legend className="text-sm font-semibold">Color Palette</legend>
+        <Section title="Livery">
           <div className="grid grid-cols-3 gap-2">
             {Object.entries(PALETTES).map(([key, palette]) => (
               <button
                 key={key}
                 onClick={() =>
                   updateConfig({
-                    paletteName: key as typeof currentConfig.paletteName,
+                    paletteName: key as ShipConfig['paletteName'],
                     bodyColor: palette.bodyColor,
                     emissiveColor: palette.emissiveColor,
                     metalness: palette.metalness,
@@ -73,145 +228,149 @@ export function HangarControls() {
                   })
                 }
                 className={cn(
-                  "p-2 rounded-lg border transition-all",
+                  'rounded-lg border p-1.5 transition-all',
                   currentConfig.paletteName === key
-                    ? "border-primary"
-                    : "border-border hover:border-primary/50"
+                    ? 'border-primary'
+                    : 'border-border hover:border-primary/50'
                 )}
               >
                 <div
-                  className="w-full h-8 rounded mb-1"
-                  style={{ background: palette.bodyColor }}
+                  className="mb-1 h-7 w-full rounded"
+                  style={{
+                    background: `linear-gradient(135deg, ${palette.bodyColor} 60%, ${palette.emissiveColor})`,
+                  }}
                 />
-                <div className="text-xs font-medium">{palette.name}</div>
+                <div className="text-[11px] font-medium">{palette.name}</div>
               </button>
             ))}
           </div>
-        </fieldset>
+          <Swatch
+            label="body"
+            value={currentConfig.bodyColor}
+            onChange={(v) => set('bodyColor', v)}
+          />
+          <Swatch
+            label="emissive"
+            value={currentConfig.emissiveColor}
+            onChange={(v) => set('emissiveColor', v)}
+          />
+        </Section>
 
-        <fieldset className="space-y-3">
-          <legend className="text-sm font-semibold">Body Color</legend>
-          <div className="flex items-center gap-3">
-            <input
-              type="color"
-              value={currentConfig.bodyColor}
-              onChange={(e) => handleControlChange('bodyColor', e.target.value)}
-              className="w-12 h-12 rounded border border-border"
-            />
-            <div className="flex-1">
-              <input
-                type="text"
-                value={currentConfig.bodyColor}
-                onChange={(e) => handleControlChange('bodyColor', e.target.value)}
-                className="w-full px-3 py-2 rounded border border-border bg-transparent"
-              />
-            </div>
-          </div>
-        </fieldset>
+        <Section title="Materials & Texture">
+          <Slider
+            label="metalness"
+            value={currentConfig.metalness}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(v) => set('metalness', v)}
+          />
+          <Slider
+            label="roughness"
+            value={currentConfig.roughness}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(v) => set('roughness', v)}
+          />
+          <Slider
+            label="emission"
+            value={currentConfig.emissiveIntensity}
+            min={0}
+            max={1}
+            step={0.01}
+            onChange={(v) => set('emissiveIntensity', v)}
+          />
 
-        <fieldset className="space-y-3">
-          <legend className="text-sm font-semibold">Emissive Color</legend>
-          <div className="flex items-center gap-3">
-            <input
-              type="color"
-              value={currentConfig.emissiveColor}
-              onChange={(e) => handleControlChange('emissiveColor', e.target.value)}
-              className="w-12 h-12 rounded border border-border"
-            />
-            <div className="flex-1">
-              <input
-                type="text"
-                value={currentConfig.emissiveColor}
-                onChange={(e) => handleControlChange('emissiveColor', e.target.value)}
-                className="w-full px-3 py-2 rounded border border-border bg-transparent"
-              />
-            </div>
-          </div>
-          <div className="space-y-2">
-            <label className="block text-xs text-muted-foreground">Emissive Intensity</label>
-            <input
-              type="range"
-              min="0"
-              max="1"
-              step="0.1"
-              value={currentConfig.emissiveIntensity}
-              onChange={(e) => handleControlChange('emissiveIntensity', parseFloat(e.target.value))}
-              className="w-full"
-            />
-          </div>
-        </fieldset>
-
-        <fieldset className="space-y-3">
-          <legend className="text-sm font-semibold">Material Properties</legend>
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <label className="block text-xs text-muted-foreground">Metalness: {currentConfig.metalness.toFixed(2)}</label>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={currentConfig.metalness}
-                onChange={(e) => handleControlChange('metalness', parseFloat(e.target.value))}
-                className="w-full"
-              />
-            </div>
-            <div className="space-y-2">
-              <label className="block text-xs text-muted-foreground">Roughness: {currentConfig.roughness.toFixed(2)}</label>
-              <input
-                type="range"
-                min="0"
-                max="1"
-                step="0.01"
-                value={currentConfig.roughness}
-                onChange={(e) => handleControlChange('roughness', parseFloat(e.target.value))}
-                className="w-full"
-              />
-            </div>
-          </div>
-        </fieldset>
-
-        <fieldset className="space-y-3">
-          <legend className="text-sm font-semibold">Texture & Details</legend>
-          <div className="space-y-3">
-            <div className="space-y-2">
-              <label className="block text-xs text-muted-foreground">Pattern</label>
-              <select
-                value={currentConfig.texturePreset}
-                onChange={(e) => handleControlChange('texturePreset', e.target.value)}
-                className="w-full px-3 py-2 rounded border border-border bg-transparent"
-              >
-                <option value="plain">Plain</option>
-                <option value="panels">Panels</option>
-                <option value="carbon">Carbon Fiber</option>
-                <option value="hazard">Hazard Pattern</option>
-                <option value="city">Cityscape</option>
-                <option value="gallery">Gallery</option>
-              </select>
-            </div>
-            <div className="space-y-2">
-              <label className="block text-xs text-muted-foreground">Detail Scale: {currentConfig.textureRepeat.toFixed(1)}x</label>
-              <input
-                type="range"
-                min="0.5"
-                max="5"
-                step="0.5"
+          {hasBakedLivery ? (
+            <p className="text-[11px] leading-snug text-muted-foreground">
+              {activePreset.label} ships a baked team livery — patterns are disabled so it stays
+              recognisable. The sliders above still apply on top of it.
+            </p>
+          ) : (
+            <>
+              <label className="block space-y-1.5">
+                <span className="text-xs text-muted-foreground">pattern</span>
+                <select
+                  value={currentConfig.texturePreset}
+                  onChange={(e) =>
+                    set('texturePreset', e.target.value as ShipConfig['texturePreset'])
+                  }
+                  className="w-full rounded border border-border bg-transparent px-2 py-1.5 text-sm"
+                >
+                  {PATTERNS.map((p) => (
+                    <option key={p.value} value={p.value}>
+                      {p.label}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <Slider
+                label="texture repeat"
                 value={currentConfig.textureRepeat}
-                onChange={(e) => handleControlChange('textureRepeat', parseFloat(e.target.value))}
-                className="w-full"
+                min={0.5}
+                max={5}
+                step={0.25}
+                onChange={(v) => set('textureRepeat', v)}
+                format={(v) => `${v.toFixed(2)}×`}
               />
-            </div>
-          </div>
-        </fieldset>
+            </>
+          )}
+        </Section>
 
-        <div className="pt-4 border-t border-border">
-          <button
-            onClick={resetToDefault}
-            className="w-full px-4 py-2 rounded border border-border hover:border-primary transition-colors"
-          >
-            Reset to Default
-          </button>
-        </div>
+        <Section title="Afterburner">
+          <Swatch
+            label="plume"
+            value={currentConfig.burnColor}
+            onChange={(v) => set('burnColor', v)}
+          />
+          <Slider
+            label="beam intensity"
+            value={currentConfig.burnIntensity}
+            min={0}
+            max={2.2}
+            step={0.01}
+            onChange={(v) => set('burnIntensity', v)}
+          />
+          <Slider
+            label="beam length"
+            value={currentConfig.burnLength}
+            min={0.4}
+            max={3}
+            step={0.01}
+            onChange={(v) => set('burnLength', v)}
+          />
+          <Slider
+            label="nozzle spread"
+            value={currentConfig.nozzleSpread}
+            min={0}
+            max={1.6}
+            step={0.01}
+            onChange={(v) => set('nozzleSpread', v)}
+          />
+          <p className="text-[11px] leading-snug text-muted-foreground">
+            Pods are found by scanning the hull&apos;s tail for its two thickest points, so 1.00 is
+            wherever the geometry says the engines are — nudge it if a beam misses. The plume
+            follows your throttle out on the track.
+          </p>
+        </Section>
+
+        <Section title="View">
+          <div className="flex flex-wrap gap-2">
+            <Toggle on={view.autoOrbit} onClick={toggle('autoOrbit')}>
+              auto-orbit
+            </Toggle>
+            <Toggle on={view.flightTilt} onClick={toggle('flightTilt')}>
+              flight tilt
+            </Toggle>
+            <Toggle on={view.engines} onClick={toggle('engines')}>
+              engines
+            </Toggle>
+            <Toggle on={view.wireframe} onClick={toggle('wireframe')}>
+              wire overlay
+            </Toggle>
+          </div>
+        </Section>
       </div>
     </div>
   );

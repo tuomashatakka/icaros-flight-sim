@@ -21,6 +21,24 @@ export interface ShipCustomization {
   texturePreset: TexturePreset;
   textureRepeat: number;
   paletteName: PaletteName;
+  /**
+   * Afterburner plume colour.
+   *
+   * Deliberately separate from `emissiveColor`: on the WipEout hulls that field
+   * modulates a BAKED livery map and its factory value is black, so driving the
+   * plume from it would leave seven of nine ships with no visible exhaust.
+   */
+  burnColor: string;
+  /** Afterburner beam brightness. 0 switches the plume off entirely. */
+  burnIntensity: number;
+  /** Afterburner beam length, as a multiple of the derived nozzle radius. */
+  burnLength: number;
+  /**
+   * Multiplier on the DETECTED pod separation: 1 means "where the tail geometry
+   * says the engines are", 0 collapses both beams onto the centreline. The
+   * detection is a heuristic over a scanned mesh, so it stays correctable.
+   */
+  nozzleSpread: number;
 }
 
 /** Per-ship handling bias. Carried as metadata only — not wired into physics (yet). */
@@ -60,6 +78,20 @@ export type ShipPreset =
 
 const STOCK_STATS: ShipStats = { topSpeed: 1, accel: 1, handling: 1, durability: 1 };
 
+/**
+ * Shared factory appearance for the 7 WipEout FBX ships. They carry a baked team livery, so
+ * applyShipConfig() only modulates these on top of it — texturePreset/textureRepeat are
+ * deliberately inert for them (see materials.ts). Without real defaults here the sliders
+ * would snap the whole fleet to BASE_CONFIG grey the moment they went live.
+ */
+const WIPEOUT_LOOK: Partial<ShipCustomization> = {
+  metalness: 0.45,
+  roughness: 0.52,
+  emissiveIntensity: 0.65, // x3 in the glow branch, matching the authored 1.9
+  texturePreset: 'plain',
+  textureRepeat: 1,
+};
+
 export const SHIP_PRESETS = {
   cb1: {
     kind: 'gltf',
@@ -68,7 +100,7 @@ export const SHIP_PRESETS = {
     label: 'CB1',
     description: 'Standard racer',
     modelRotation: [0, -Math.PI / 2, 0],
-    defaults: {},
+    defaults: { burnColor: '#36d6ff' },
     stats: STOCK_STATS,
   },
   icaras: {
@@ -79,6 +111,7 @@ export const SHIP_PRESETS = {
     // Nose points along +z (travel direction); no 180° flip or it drives in reverse.
     modelRotation: [0, 0, 0],
     defaults: {
+      burnColor: '#7a5cff',
       bodyColor: '#4a90e2',
       emissiveColor: '#ff00ff',
       metalness: 0.3,
@@ -99,7 +132,7 @@ export const SHIP_PRESETS = {
     label: 'AG-Systems',
     description: 'Nimble all-rounder',
     modelRotation: [0, 0, 0],
-    defaults: {},
+    defaults: { ...WIPEOUT_LOOK, burnColor: '#36d6ff' },
     stats: { topSpeed: 1.05, accel: 1.0, handling: 1.05, durability: 0.95 },
   },
   assegai: {
@@ -111,7 +144,7 @@ export const SHIP_PRESETS = {
     label: 'Assegai',
     description: 'Quick off the line',
     modelRotation: [0, 0, 0],
-    defaults: {},
+    defaults: { ...WIPEOUT_LOOK, burnColor: '#ffb52f' },
     stats: { topSpeed: 1.0, accel: 1.1, handling: 1.05, durability: 0.9 },
   },
   auricom: {
@@ -123,7 +156,7 @@ export const SHIP_PRESETS = {
     label: 'Auricom',
     description: 'Tanky & grippy',
     modelRotation: [0, 0, 0],
-    defaults: {},
+    defaults: { ...WIPEOUT_LOOK, burnColor: '#ff4a3a' },
     stats: { topSpeed: 0.95, accel: 1.0, handling: 1.1, durability: 1.1 },
   },
   egx: {
@@ -135,7 +168,7 @@ export const SHIP_PRESETS = {
     label: 'EG-X',
     description: 'Top-speed bruiser',
     modelRotation: [0, 0, 0],
-    defaults: {},
+    defaults: { ...WIPEOUT_LOOK, burnColor: '#caff2f' },
     stats: { topSpeed: 1.1, accel: 0.95, handling: 0.9, durability: 1.0 },
   },
   feisar: {
@@ -147,7 +180,7 @@ export const SHIP_PRESETS = {
     label: 'Feisar',
     description: 'Best handling',
     modelRotation: [0, 0, 0],
-    defaults: {},
+    defaults: { ...WIPEOUT_LOOK, burnColor: '#ffd23f' },
     stats: { topSpeed: 1.0, accel: 1.0, handling: 1.15, durability: 1.0 },
   },
   harimau: {
@@ -159,7 +192,7 @@ export const SHIP_PRESETS = {
     label: 'Harimau',
     description: 'Durable heavyweight',
     modelRotation: [0, 0, 0],
-    defaults: {},
+    defaults: { ...WIPEOUT_LOOK, burnColor: '#ffcf2f' },
     stats: { topSpeed: 0.9, accel: 1.05, handling: 1.0, durability: 1.2 },
   },
   qirex: {
@@ -171,7 +204,7 @@ export const SHIP_PRESETS = {
     label: 'Qirex',
     description: 'Fastest, twitchy',
     modelRotation: [0, 0, 0],
-    defaults: {},
+    defaults: { ...WIPEOUT_LOOK, burnColor: '#ff3fd8' },
     stats: { topSpeed: 1.15, accel: 0.9, handling: 0.95, durability: 0.95 },
   },
 } satisfies Record<string, ShipPreset>;
@@ -194,6 +227,10 @@ export const BASE_CONFIG: ShipCustomization = {
   texturePreset: 'plain',
   textureRepeat: 1,
   paletteName: 'default',
+  burnColor: '#7a5cff',
+  burnIntensity: 1,
+  burnLength: 1,
+  nozzleSpread: 1,
 };
 
 export function buildDefaultConfig(shipId: ShipId): ShipConfig {

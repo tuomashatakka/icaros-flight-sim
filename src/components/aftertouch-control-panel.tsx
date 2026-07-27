@@ -2,10 +2,10 @@
 "use client"
 
 import Link from 'next/link';
-import { Leva } from 'leva';
 import { useStore } from "@/hooks/use-store";
 import { useRaceStore, formatTime } from "@/hooks/use-race-store";
 import { useEffect, useMemo, useState } from 'react';
+import { TuningPanel } from '@/components/tuning-panel';
 
 function BackToMenu() {
     return (
@@ -91,7 +91,8 @@ function Minimap() {
 function Controls() {
     return (
         <div className="absolute bottom-8 left-8 text-white text-sm font-mono bg-black/50 p-4 rounded-lg hidden md:block">
-            <p>Arrows / A,D: Steer</p>
+            <p>W / Up: Thrust</p>
+            <p>A,D / Left,Right: Steer</p>
             <p>Shift: Boost</p>
             <p>R: Respawn</p>
         </div>
@@ -205,14 +206,10 @@ function CrashFlash() {
     );
 }
 
-function Editor() {
-    return <Leva collapsed />;
-}
-
 export function GameUI() {
     return (
         <>
-            <Editor />
+            <TuningPanel />
             <BackToMenu />
             <RaceHud />
             <TakedownCounter />

@@ -21,6 +21,8 @@ interface ShipState {
   updateConfig: (updates: Partial<ShipConfig>) => void;
   setConfig: (config: ShipConfig) => void;
   resetToDefault: () => void;
+  /** Push the active ship's customisation onto every other hull (fleet livery). */
+  applyToAllShips: () => void;
 }
 
 type PersistedShipState = Pick<ShipState, 'shipConfigs' | 'currentConfig'>;
@@ -76,6 +78,18 @@ export const useShipStore = create<ShipState>()(
           }));
         },
 
+        applyToAllShips: () => {
+          set((state) => {
+            // `shipId` is identity, not customisation — it must stay per-entry.
+            const { shipId: _ignored, ...look } = state.currentConfig;
+            return {
+              shipConfigs: Object.fromEntries(
+                SHIP_IDS.map((id) => [id, { ...state.shipConfigs[id], ...look }])
+              ) as Record<ShipId, ShipConfig>,
+            };
+          });
+        },
+
         resetToDefault: () => {
           const shipId = get().currentConfig.shipId;
           const def = DEFAULT_CONFIGS[shipId];
@@ -88,7 +102,12 @@ export const useShipStore = create<ShipState>()(
       {
         name: 'ship-config',
         // v2: registry-driven — backfills the 7 WipEout ships onto v1 saves.
-        version: 2,
+        // v3: the WipEout ships gained real factory defaults (WIPEOUT_LOOK) now that the
+        //     sliders actually drive them; v2 saves hold BASE_CONFIG-derived values.
+        // v4: ships gained afterburner tuning (burnColor/burnIntensity/burnLength/
+        //     nozzleSpread); the bump re-runs migrate(), which layers saves over the
+        //     new defaults so existing edits survive but the plume fields appear.
+        version: 4,
         storage: createJSONStorage(() => localStorage),
         partialize: (state) => ({
           shipConfigs: state.shipConfigs,

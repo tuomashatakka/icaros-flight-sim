@@ -134,6 +134,7 @@ export function drawBaseTexture(config: {
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
   texture.repeat.set(config.textureRepeat, config.textureRepeat);
   return markManagedTexture(texture);
 }
@@ -287,6 +288,7 @@ export function drawEmissiveTexture(config: {
   const texture = new THREE.CanvasTexture(canvas);
   texture.wrapS = THREE.RepeatWrapping;
   texture.wrapT = THREE.RepeatWrapping;
+  texture.colorSpace = THREE.SRGBColorSpace;
   texture.repeat.set(config.textureRepeat, config.textureRepeat);
   return markManagedTexture(texture);
 }
@@ -379,19 +381,35 @@ function drawEmissivePlainPattern(ctx: CanvasRenderingContext2D, color: string):
   ctx.globalAlpha = 1.0;
 }
 
+const HANGAR_TEXTURES: Record<string, string> = {
+  details: '/textures/hangar/details.png',
+  details_baseColor: '/textures/hangar/details_baseColor.png',
+  buildings_baseColor: '/textures/hangar/buildings_baseColor.png',
+  buildings_clearcoat: '/textures/hangar/buildings_clearcoat.png',
+  buildings_emissive: '/textures/hangar/buildings_emissive.png',
+  buildings_metallicRoughness: '/textures/hangar/buildings_metallicRoughness.png',
+  buildings_normal: '/textures/hangar/buildings_normal.png',
+  background_buildings_normal: '/textures/hangar/Background_Night_Buildings_normal.png',
+};
+
+/** Non-colour maps (normal / roughness / clearcoat) must stay out of sRGB. */
+const HANGAR_DATA_MAPS = new Set([
+  'buildings_normal',
+  'background_buildings_normal',
+  'buildings_metallicRoughness',
+  'buildings_clearcoat',
+]);
+
 export function loadHangarTexture(name: string): THREE.Texture {
   const loader = new TextureLoader();
-  const textureMap: Record<string, string> = {
-    details: '/textures/hangar/details.png',
-    buildings_baseColor: '/textures/hangar/buildings_baseColor.png',
-    buildings_clearcoat: '/textures/hangar/buildings_clearcoat.png',
-    buildings_emissive: '/textures/hangar/buildings_emissive.png',
-    buildings_metallicRoughness: '/textures/hangar/buildings_metallicRoughness.png',
-    buildings_normal: '/textures/hangar/buildings_normal.png',
-  };
-
-  const path = textureMap[name] || textureMap.details;
-  return markManagedTexture(loader.load(path));
+  const path = HANGAR_TEXTURES[name] || HANGAR_TEXTURES.details;
+  const texture = loader.load(path);
+  texture.wrapS = THREE.RepeatWrapping;
+  texture.wrapT = THREE.RepeatWrapping;
+  if (!HANGAR_DATA_MAPS.has(name)) {
+    texture.colorSpace = THREE.SRGBColorSpace;
+  }
+  return markManagedTexture(texture);
 }
 
 function markManagedTexture<T extends THREE.Texture>(texture: T): T {
@@ -446,18 +464,34 @@ export function applyShipConfig(gltfScene: THREE.Object3D, config: ShipConfig): 
 
         const materialName = material.name.toLowerCase();
 
-        // Materials carrying real PBR maps (generated Icaras) keep them untouched — we only
-        // let the emissive slider pulse the glow, never overwrite the baked textures/colours.
+        const isGlow = materialName.includes('glow');
+        const isGlass = materialName.includes('glass');
+
+        // Materials carrying real PBR maps (generated Icaras, the WipEout FBX liveries) keep
+        // those maps: the sliders MODULATE the baked livery rather than replacing it, so
+        // texturePreset/textureRepeat stay no-ops here and Feisar still looks like Feisar.
         if (material.userData.pbrTextured) {
-          if (materialName.includes('glow')) {
+          if (isGlow) {
+            // Leave `emissive` white — it multiplies the glow atlas, and the config default
+            // (#000000) would extinguish it. Only the intensity is user-driven.
             material.emissiveIntensity = Math.max(1.2, config.emissiveIntensity * 3);
+          } else if (!isGlass) {
+            // BASE_CONFIG.bodyColor is #ffffff, so the default tint is an identity multiply.
+            material.color.set(config.bodyColor);
+            // A metalnessMap/roughnessMap multiplies against the scalar, which is why Icaras
+            // pins both to 1 — overwriting those would flatten its packed map.
+            if (!material.metalnessMap) material.metalness = config.metalness;
+            if (!material.roughnessMap) material.roughness = config.roughness;
+            // Deliberately NOT applying emissiveColor/emissiveIntensity to a textured hull:
+            // a full-body emissive wash is what the plain-material path does, but here it
+            // floods the baked livery out of existence. The emissive controls drive the glow
+            // bucket only — that's the whole point of keeping the livery.
           }
+          // Glass keeps its own tuned metalness/roughness/emissive tint entirely.
           material.needsUpdate = true;
           continue;
         }
 
-        const isGlow = materialName.includes('glow');
-        const isGlass = materialName.includes('glass');
         const receivesPattern = !isGlow && !isGlass;
 
         material.color.set(isGlow ? '#05020a' : isGlass ? config.emissiveColor : config.bodyColor);
@@ -487,7 +521,11 @@ export function applyShipConfig(gltfScene: THREE.Object3D, config: ShipConfig): 
           }
 
           if (config.texturePreset === 'city' || config.texturePreset === 'gallery') {
-            const hangarTexture = loadHangarTexture(config.texturePreset === 'city' ? 'buildings_baseColor' : 'details');
+            // These presets want surface relief, so use the actual tangent-space normal map —
+            // the baseColor/details PNGs that used to land here are colour data, not normals.
+            const hangarTexture = loadHangarTexture(
+              config.texturePreset === 'city' ? 'buildings_normal' : 'background_buildings_normal'
+            );
             replaceTexture(material, 'normalMap', hangarTexture);
             material.normalScale.set(config.textureRepeat, config.textureRepeat);
           } else {
