@@ -1,13 +1,16 @@
-import * as THREE from 'three';
-import { defineModule, type AppModule } from 'threejs-scene';
-import type { RaceState } from '../state';
+import * as THREE from 'three'
+import { defineModule } from 'threejs-scene'
+import type { AppModule } from 'threejs-scene'
+import type { RaceState } from '../state'
 
-const _target = new THREE.Vector3();
+
+const _target = new THREE.Vector3()
 
 export type SunHandle = {
+
   /** Re-centre the shadow camera on the ship. Called from the render phase. */
   follow(position: THREE.Vector3): void;
-};
+}
 
 /**
  * Shadow-casting key light that tracks the ship.
@@ -18,55 +21,61 @@ export type SunHandle = {
  * and its shadow vanishes. Following the ship also lets the frustum stay small,
  * which is what keeps shadow texels dense enough not to shimmer.
  */
-export function sunModule(
-  handle: { current: SunHandle | null },
+type HandleType = { current: SunHandle | null }
+
+export function sunModule (
+  handle: HandleType,
   options: {
+
     /** Direction from the ship to the light. */
-    offset?: [number, number, number];
+    offset?:    [number, number, number];
     intensity?: number;
-    color?: string;
+    color?:     string;
+
     /** Half-extent of the ortho shadow box, in world units. */
     frustum?: number;
     mapSize?: number;
   } = {}
 ): AppModule<RaceState> {
-  const offset = options.offset ?? [40, 60, 25];
-  const frustum = options.frustum ?? 45;
-  const mapSize = options.mapSize ?? 2048;
+  const offset  = options.offset ?? [ 40, 60, 25 ]
+  const frustum = options.frustum ?? 45
+  const mapSize = options.mapSize ?? 2048
 
-  let light: THREE.DirectionalLight | null = null;
+  let light: THREE.DirectionalLight | null = null
+
   /** World units per shadow texel — used to quantise movement. */
-  const texelSize = (frustum * 2) / mapSize;
+  const texelSize = frustum * 2 / mapSize
 
   return defineModule<RaceState>({
     name: 'sun',
 
-    build(ctx) {
-      light = new THREE.DirectionalLight(options.color ?? '#ffffff', options.intensity ?? 1.6);
-      light.castShadow = true;
-      light.shadow.mapSize.set(mapSize, mapSize);
+    build (ctx) {
+      light = new THREE.DirectionalLight(options.color ?? '#ffffff', options.intensity ?? 1.6)
+      light.castShadow = true
+      light.shadow.mapSize.set(mapSize, mapSize)
 
-      const cam = light.shadow.camera;
-      cam.left = -frustum;
-      cam.right = frustum;
-      cam.top = frustum;
-      cam.bottom = -frustum;
-      cam.near = 1;
-      cam.far = 400;
-      cam.updateProjectionMatrix();
+      const cam  = light.shadow.camera
+      cam.left   = -frustum
+      cam.right  = frustum
+      cam.top    = frustum
+      cam.bottom = -frustum
+      cam.near   = 1
+      cam.far    = 400
+      cam.updateProjectionMatrix()
 
       // Normal bias handles the sloped track surfaces far better than a constant
       // bias, which either acne-stripes flat ground or peter-pans the hull.
-      light.shadow.bias = -0.0005;
-      light.shadow.normalBias = 0.02;
+      light.shadow.bias       = -0.0005
+      light.shadow.normalBias = 0.02
 
-      light.position.set(offset[0], offset[1], offset[2]);
-      ctx.scene.add(light);
-      ctx.scene.add(light.target);
+      light.position.set(offset[0], offset[1], offset[2])
+      ctx.scene.add(light)
+      ctx.scene.add(light.target)
 
       handle.current = {
-        follow(position) {
-          if (!light) return;
+        follow (position) {
+          if (!light)
+            return
           // Quantise to whole shadow texels. Without this the shadow map
           // resamples every frame as the camera slides, and the edges crawl —
           // which reads as the whole scene shimmering.
@@ -74,26 +83,26 @@ export function sunModule(
             Math.round(position.x / texelSize) * texelSize,
             Math.round(position.y / texelSize) * texelSize,
             Math.round(position.z / texelSize) * texelSize
-          );
-          light.target.position.copy(_target);
-          light.target.updateMatrixWorld();
+          )
+          light.target.position.copy(_target)
+          light.target.updateMatrixWorld()
           light.position.set(
             _target.x + offset[0],
             _target.y + offset[1],
             _target.z + offset[2]
-          );
+          )
         },
-      };
+      }
     },
 
-    dispose() {
+    dispose () {
       if (light) {
-        light.target.removeFromParent();
-        light.removeFromParent();
-        light.dispose();
-        light = null;
+        light.target.removeFromParent()
+        light.removeFromParent()
+        light.dispose()
+        light = null
       }
-      handle.current = null;
+      handle.current = null
     },
-  });
+  })
 }

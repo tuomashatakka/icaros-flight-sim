@@ -7,23 +7,25 @@
  * The vehicle module is the only writer; `publish` mirrors it out at ~15 Hz.
  */
 export type Telemetry = {
-  speed: number;
+  speed:      number;
   boostMeter: number;
-  boosting: boolean;
-  grounded: boolean;
+  boosting:   boolean;
+  grounded:   boolean;
+
   /** Monotonic crash counter — `publish` fires one flash per unseen increment. */
   crashSeq: number;
+
   /** Impact shake magnitude; decays in the render phase on real time. */
   shake: number;
-};
+}
 
-export function createTelemetry(): Telemetry {
+export function createTelemetry (): Telemetry {
   return {
-    speed: 0,
+    speed:      0,
     boostMeter: 1,
-    boosting: false,
-    grounded: false,
-    crashSeq: 0,
-    shake: 0,
-  };
+    boosting:   false,
+    grounded:   false,
+    crashSeq:   0,
+    shake:      0,
+  }
 }

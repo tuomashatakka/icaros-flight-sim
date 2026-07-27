@@ -1,27 +1,27 @@
-import type { RaceStatus } from '@/hooks/use-race-store';
-import type { ShipConfig } from '@/lib/ship/registry';
-import { vehicleConfig } from '@/lib/utils';
+import type { RaceStatus } from '@/hooks/use-race-store'
+import type { ShipConfig } from '@/lib/ship/registry'
+import { vehicleConfig } from '@/lib/utils'
 
 /** The 7 params the Leva panel used to live-override each step. */
 export type ShipTuning = {
-  hoverHeight: number;
+  hoverHeight:         number;
   suspensionStiffness: number;
-  sideGrip: number;
-  thrust: number;
-  maxYawRate: number;
-  maxBank: number;
-  uprightStrength: number;
-};
+  sideGrip:            number;
+  thrust:              number;
+  maxYawRate:          number;
+  maxBank:             number;
+  uprightStrength:     number;
+}
 
 export const DEFAULT_TUNING: ShipTuning = {
-  hoverHeight: vehicleConfig.hoverHeight,
+  hoverHeight:         vehicleConfig.hoverHeight,
   suspensionStiffness: vehicleConfig.suspensionStiffness,
-  sideGrip: vehicleConfig.sideGrip,
-  thrust: vehicleConfig.thrust,
-  maxYawRate: vehicleConfig.maxYawRate,
-  maxBank: vehicleConfig.maxBank,
-  uprightStrength: vehicleConfig.uprightStrength,
-};
+  sideGrip:            vehicleConfig.sideGrip,
+  thrust:              vehicleConfig.thrust,
+  maxYawRate:          vehicleConfig.maxYawRate,
+  maxBank:             vehicleConfig.maxBank,
+  uprightStrength:     vehicleConfig.uprightStrength,
+}
 
 /**
  * App state for the race scene.
@@ -33,30 +33,31 @@ export const DEFAULT_TUNING: ShipTuning = {
  */
 export type RaceState = {
   // --- input: written by engine/input via the frame loop ---
-  steer: number;
+  steer:    number;
   throttle: boolean;
-  boost: boolean;
+  boost:    boolean;
   resetSeq: number;
 
   // --- mirrored in from zustand by the bridge ---
   status: RaceStatus;
+
   /** Pre-resolved from (zone, speedLevels) so the sim never scans an array per tick. */
   targetSpeed: number;
-  shipConfig: ShipConfig | null;
+  shipConfig:  ShipConfig | null;
 
   // --- dev ---
   tuning: ShipTuning;
-};
+}
 
-export function initialRaceState(shipConfig: ShipConfig | null = null): RaceState {
+export function initialRaceState (shipConfig: ShipConfig | null = null): RaceState {
   return {
-    steer: 0,
-    throttle: false,
-    boost: false,
-    resetSeq: 0,
-    status: 'idle',
+    steer:       0,
+    throttle:    false,
+    boost:       false,
+    resetSeq:    0,
+    status:      'idle',
     targetSpeed: vehicleConfig.maxSpeed,
     shipConfig,
-    tuning: { ...DEFAULT_TUNING },
-  };
+    tuning:      { ...DEFAULT_TUNING },
+  }
 }

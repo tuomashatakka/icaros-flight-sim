@@ -1,4 +1,4 @@
-import type { Clock } from 'threejs-scene';
+import type { Clock } from 'threejs-scene'
 
 /**
  * The simulation timestep. This ONE constant is the clock's step, rapier's
@@ -6,10 +6,10 @@ import type { Clock } from 'threejs-scene';
  * handling in `vehicleConfig` is tuned at this rate; changing it changes the
  * feel of every ship.
  */
-export const STEP = 1 / 60;
+export const STEP = 1 / 60
 
 /** Max sim ticks consumed per real frame. Overflow time is DROPPED, not replayed. */
-export const MAX_SUB_STEPS = 5;
+export const MAX_SUB_STEPS = 5
 
 /**
  * A fixed-step {@link Clock} that also exposes its leftover accumulator.
@@ -22,8 +22,10 @@ export const MAX_SUB_STEPS = 5;
  * after which the two diverge permanently and alpha pins at 1.
  */
 export interface SimClock extends Clock {
+
   /** Interpolation factor in [0, 1): how far into the next step we are. */
   alpha(): number;
+
   /** While paused, `advance` emits no ticks and `alpha` holds — a stable frozen frame. */
   paused: boolean;
 }
@@ -36,46 +38,48 @@ export interface SimClock extends Clock {
  * accumulator on overflow, without which `alpha` would exceed 1 and the
  * renderer would extrapolate past the last solved pose.
  */
-export function createSimClock({ step = STEP, maxSubSteps = MAX_SUB_STEPS } = {}): SimClock {
-  let accumulator = 0;
-  let total = 0;
-  let paused = false;
-  const out: number[] = []; // reused across calls — zero allocation per frame
+export function createSimClock ({ step = STEP, maxSubSteps = MAX_SUB_STEPS } = {}): SimClock {
+  let accumulator = 0
+  let total       = 0
+  let paused      = false
+  const out: number[] = [] // reused across calls — zero allocation per frame
 
   return {
     mode: 'fixed',
 
-    get paused() {
-      return paused;
+    get paused () {
+      return paused
     },
-    set paused(value: boolean) {
-      paused = value;
+    set paused (value: boolean) {
+      paused = value
     },
 
-    advance(realDelta: number): readonly number[] {
-      out.length = 0;
-      if (paused) return out;
+    advance (realDelta: number): readonly number[] {
+      out.length = 0
+      if (paused)
+        return out
 
-      accumulator += realDelta;
+      accumulator += realDelta
       while (accumulator >= step && out.length < maxSubSteps) {
-        accumulator -= step;
-        total += step;
-        out.push(step);
+        accumulator -= step
+        total += step
+        out.push(step)
       }
       // Overflow (hidden tab, GC pause) is dropped rather than replayed, so the
       // sim slows down instead of entering a catch-up spiral.
-      if (out.length >= maxSubSteps) accumulator = 0;
+      if (out.length >= maxSubSteps)
+        accumulator = 0
 
-      return out;
+      return out
     },
 
     elapsed: () => total,
 
     alpha: () => accumulator / step,
 
-    reset() {
-      accumulator = 0;
-      total = 0;
+    reset () {
+      accumulator = 0
+      total = 0
     },
-  };
+  }
 }

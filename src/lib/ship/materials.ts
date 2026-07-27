@@ -1,74 +1,76 @@
-"use client"
+'use client'
 
-import * as THREE from 'three';
-import { TextureLoader } from 'three';
+import * as THREE from 'three'
+import { TextureLoader } from 'three'
 
 // Ship identity + presets now live in the registry (single source of truth).
 // Re-exported here so existing importers of '@/lib/ship/materials' keep working.
-import { SHIP_PRESETS, type ShipConfig, type ShipPreset } from './registry';
+import { SHIP_PRESETS } from './registry'
+import type { ShipConfig, ShipPreset } from './registry'
 
-export { SHIP_PRESETS };
-export type { ShipConfig, ShipPreset };
+
+export { SHIP_PRESETS }
+export type { ShipConfig, ShipPreset }
 
 export interface Palette {
-  name: string;
-  bodyColor: string;
-  emissiveColor: string;
-  metalness: number;
-  roughness: number;
+  name:              string;
+  bodyColor:         string;
+  emissiveColor:     string;
+  metalness:         number;
+  roughness:         number;
   emissiveIntensity: number;
 }
 
 export const PALETTES: Record<string, Palette> = {
   default: {
-    name: 'Default',
-    bodyColor: '#ffffff',
-    emissiveColor: '#000000',
-    metalness: 0.5,
-    roughness: 0.5,
+    name:              'Default',
+    bodyColor:         '#ffffff',
+    emissiveColor:     '#000000',
+    metalness:         0.5,
+    roughness:         0.5,
     emissiveIntensity: 0.0,
   },
   colibri: {
-    name: 'Colibri Pink',
-    bodyColor: '#ff69b4',
-    emissiveColor: '#ff00ff',
-    metalness: 0.3,
-    roughness: 0.4,
+    name:              'Colibri Pink',
+    bodyColor:         '#ff69b4',
+    emissiveColor:     '#ff00ff',
+    metalness:         0.3,
+    roughness:         0.4,
     emissiveIntensity: 0.5,
   },
   ion: {
-    name: 'Ion Cyan',
-    bodyColor: '#00ffff',
-    emissiveColor: '#00ffff',
-    metalness: 0.4,
-    roughness: 0.3,
+    name:              'Ion Cyan',
+    bodyColor:         '#00ffff',
+    emissiveColor:     '#00ffff',
+    metalness:         0.4,
+    roughness:         0.3,
     emissiveIntensity: 0.8,
   },
   ember: {
-    name: 'Ember Red',
-    bodyColor: '#ff4500',
-    emissiveColor: '#ff6347',
-    metalness: 0.6,
-    roughness: 0.7,
+    name:              'Ember Red',
+    bodyColor:         '#ff4500',
+    emissiveColor:     '#ff6347',
+    metalness:         0.6,
+    roughness:         0.7,
     emissiveIntensity: 0.3,
   },
   ink: {
-    name: 'Ink Mono',
-    bodyColor: '#111111',
-    emissiveColor: '#333333',
-    metalness: 0.8,
-    roughness: 0.2,
+    name:              'Ink Mono',
+    bodyColor:         '#111111',
+    emissiveColor:     '#333333',
+    metalness:         0.8,
+    roughness:         0.2,
     emissiveIntensity: 0.1,
   },
   toxic: {
-    name: 'Toxic Green',
-    bodyColor: '#00ff00',
-    emissiveColor: '#00ff00',
-    metalness: 0.2,
-    roughness: 0.6,
+    name:              'Toxic Green',
+    bodyColor:         '#00ff00',
+    emissiveColor:     '#00ff00',
+    metalness:         0.2,
+    roughness:         0.6,
     emissiveIntensity: 0.9,
   },
-};
+}
 
 /**
  * Measures a loaded model and returns the scale + recenter offset needed to make
@@ -76,321 +78,322 @@ export const PALETTES: Record<string, Palette> = {
  * on-screen size despite very different authored scales. Apply as:
  *   <group scale={scale}><primitive object={scene} position={[-cx,-cy,-cz]} /></group>
  */
-export function getFitTransform(
+type GetFitTransformReturnType = { scale: number; center: [number, number, number]}
+
+export function getFitTransform (
   object: THREE.Object3D,
   targetSize: number
-): { scale: number; center: [number, number, number] } {
-  const box = new THREE.Box3().setFromObject(object);
-  const size = new THREE.Vector3();
-  const center = new THREE.Vector3();
-  box.getSize(size);
-  box.getCenter(center);
-  const maxDim = Math.max(size.x, size.y, size.z) || 1;
-  return { scale: targetSize / maxDim, center: [center.x, center.y, center.z] };
+): GetFitTransformReturnType {
+  const box    = new THREE.Box3().setFromObject(object)
+  const size   = new THREE.Vector3()
+  const center = new THREE.Vector3()
+  box.getSize(size)
+  box.getCenter(center)
+
+  const maxDim = Math.max(size.x, size.y, size.z) || 1
+  return { scale: targetSize / maxDim, center: [ center.x, center.y, center.z ]}
 }
 
-export function drawBaseTexture(config: {
-  bodyColor: string;
+type ConfigType = {
+  bodyColor:     string;
   texturePreset: ShipConfig['texturePreset'];
-  paletteName: ShipConfig['paletteName'];
+  paletteName:   ShipConfig['paletteName'];
   textureRepeat: number;
   themeColors: {
-    primary: string;
+    primary:   string;
     secondary: string;
-    accent: string;
+    accent:    string;
   };
-}): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    throw new Error('Could not create 2D context');
-  }
+}
 
-  const width = 1024;
-  const height = 1024;
-  canvas.width = width;
-  canvas.height = height;
+export function drawBaseTexture (config: ConfigType): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas')
+  const ctx    = canvas.getContext('2d')
+  if (!ctx)
+    throw new Error('Could not create 2D context')
+
+  const width   = 1024
+  const height  = 1024
+  canvas.width  = width
+  canvas.height = height
 
   switch (config.texturePreset) {
     case 'panels':
-      drawPanelPattern(ctx, config.bodyColor, config.themeColors);
-      break;
+      drawPanelPattern(ctx, config.bodyColor, config.themeColors)
+      break
     case 'carbon':
-      drawCarbonPattern(ctx, config.bodyColor);
-      break;
+      drawCarbonPattern(ctx, config.bodyColor)
+      break
     case 'hazard':
-      drawHazardPattern(ctx, config.bodyColor);
-      break;
+      drawHazardPattern(ctx, config.bodyColor)
+      break
     case 'city':
-      drawCityPattern(ctx, config.bodyColor);
-      break;
+      drawCityPattern(ctx, config.bodyColor)
+      break
     case 'gallery':
-      drawGalleryPattern(ctx, config.bodyColor);
-      break;
+      drawGalleryPattern(ctx, config.bodyColor)
+      break
     default:
-      drawPlainPattern(ctx, config.bodyColor);
+      drawPlainPattern(ctx, config.bodyColor)
   }
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.repeat.set(config.textureRepeat, config.textureRepeat);
-  return markManagedTexture(texture);
+  const texture      = new THREE.CanvasTexture(canvas)
+  texture.wrapS      = THREE.RepeatWrapping
+  texture.wrapT      = THREE.RepeatWrapping
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.repeat.set(config.textureRepeat, config.textureRepeat)
+  return markManagedTexture(texture)
 }
 
-function drawPanelPattern(
+type ThemeColorsType = { primary: string; secondary: string; accent: string }
+
+function drawPanelPattern (
   ctx: CanvasRenderingContext2D,
   bodyColor: string,
-  themeColors: { primary: string; secondary: string; accent: string }
+  themeColors: ThemeColorsType
 ): void {
-  ctx.fillStyle = bodyColor;
-  ctx.fillRect(0, 0, 1024, 1024);
+  ctx.fillStyle = bodyColor
+  ctx.fillRect(0, 0, 1024, 1024)
 
-  ctx.fillStyle = themeColors.accent;
-  for (let i = 0; i < 8; i++) {
+  ctx.fillStyle = themeColors.accent
+  for (let i = 0; i < 8; i++)
     for (let j = 0; j < 8; j++) {
-      const x = 60 + i * 120;
-      const y = 60 + j * 120;
-      const width = 100;
-      const height = 100;
-      
-      if ((i + j) % 2 === 0) {
-        ctx.fillRect(x, y, width, height);
-      }
+      const x      = 60 + i * 120
+      const y      = 60 + j * 120
+      const width  = 100
+      const height = 100
+
+      if ((i + j) % 2 === 0)
+        ctx.fillRect(x, y, width, height)
     }
-  }
 }
 
-function drawCarbonPattern(ctx: CanvasRenderingContext2D, bodyColor: string): void {
-  ctx.fillStyle = bodyColor;
-  ctx.fillRect(0, 0, 1024, 1024);
+function drawCarbonPattern (ctx: CanvasRenderingContext2D, bodyColor: string): void {
+  ctx.fillStyle = bodyColor
+  ctx.fillRect(0, 0, 1024, 1024)
 
-  ctx.strokeStyle = '#333333';
-  ctx.lineWidth = 2;
-  ctx.setLineDash([10, 10]);
+  ctx.strokeStyle = '#333333'
+  ctx.lineWidth   = 2
+  ctx.setLineDash([ 10, 10 ])
 
   for (let i = 0; i < 1024; i += 40) {
-    ctx.beginPath();
-    ctx.moveTo(i, 0);
-    ctx.lineTo(i - 20, 1024);
-    ctx.stroke();
+    ctx.beginPath()
+    ctx.moveTo(i, 0)
+    ctx.lineTo(i - 20, 1024)
+    ctx.stroke()
   }
 
-  ctx.setLineDash([20, 20]);
+  ctx.setLineDash([ 20, 20 ])
   for (let i = 0; i < 1024; i += 20) {
-    ctx.beginPath();
-    ctx.moveTo(0, i);
-    ctx.lineTo(1024, i - 10);
-    ctx.stroke();
+    ctx.beginPath()
+    ctx.moveTo(0, i)
+    ctx.lineTo(1024, i - 10)
+    ctx.stroke()
   }
 }
 
-function drawHazardPattern(ctx: CanvasRenderingContext2D, bodyColor: string): void {
-  ctx.fillStyle = bodyColor;
-  ctx.fillRect(0, 0, 1024, 1024);
+function drawHazardPattern (ctx: CanvasRenderingContext2D, bodyColor: string): void {
+  ctx.fillStyle = bodyColor
+  ctx.fillRect(0, 0, 1024, 1024)
 
-  ctx.fillStyle = '#ff0000';
-  ctx.fillRect(200, 200, 624, 624);
+  ctx.fillStyle = '#ff0000'
+  ctx.fillRect(200, 200, 624, 624)
 
-  ctx.fillStyle = '#00ff00';
-  ctx.fillRect(100, 100, 824, 824);
+  ctx.fillStyle = '#00ff00'
+  ctx.fillRect(100, 100, 824, 824)
 
-  ctx.strokeStyle = '#ffff00';
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.moveTo(512, 512);
-  ctx.lineTo(200, 800);
-  ctx.lineTo(824, 200);
-  ctx.lineTo(512, 512);
-  ctx.stroke();
+  ctx.strokeStyle = '#ffff00'
+  ctx.lineWidth   = 4
+  ctx.beginPath()
+  ctx.moveTo(512, 512)
+  ctx.lineTo(200, 800)
+  ctx.lineTo(824, 200)
+  ctx.lineTo(512, 512)
+  ctx.stroke()
 }
 
-function drawCityPattern(ctx: CanvasRenderingContext2D, bodyColor: string): void {
-  const rng = mulberry32(0x1ca405);
-  ctx.fillStyle = bodyColor;
-  ctx.fillRect(0, 0, 1024, 1024);
+function drawCityPattern (ctx: CanvasRenderingContext2D, bodyColor: string): void {
+  const rng     = mulberry32(0x1ca405)
+  ctx.fillStyle = bodyColor
+  ctx.fillRect(0, 0, 1024, 1024)
 
-  ctx.fillStyle = '#444444';
+  ctx.fillStyle = '#444444'
   for (let i = 0; i < 20; i++) {
-    const x = rng() * 1024;
-    const y = rng() * 1024;
-    const width = rng() * 40 + 10;
-    const height = rng() * 40 + 10;
-    ctx.fillRect(x, y, width, height);
+    const x      = rng() * 1024
+    const y      = rng() * 1024
+    const width  = rng() * 40 + 10
+    const height = rng() * 40 + 10
+    ctx.fillRect(x, y, width, height)
   }
 }
 
-function drawGalleryPattern(ctx: CanvasRenderingContext2D, bodyColor: string): void {
-  ctx.fillStyle = bodyColor;
-  ctx.fillRect(0, 0, 1024, 1024);
+function drawGalleryPattern (ctx: CanvasRenderingContext2D, bodyColor: string): void {
+  ctx.fillStyle = bodyColor
+  ctx.fillRect(0, 0, 1024, 1024)
 
-  ctx.strokeStyle = '#666666';
-  ctx.lineWidth = 2;
+  ctx.strokeStyle = '#666666'
+  ctx.lineWidth   = 2
 
   for (let i = 0; i < 5; i++) {
-    const x = 50 + i * 190;
-    const y = 50;
-    ctx.strokeRect(x, y, 150, 150);
+    const x = 50 + i * 190
+    const y = 50
+    ctx.strokeRect(x, y, 150, 150)
   }
 
   for (let i = 0; i < 4; i++) {
-    const x = 100;
-    const y = 50 + i * 190;
-    ctx.strokeRect(x, y, 200, 160);
+    const x = 100
+    const y = 50 + i * 190
+    ctx.strokeRect(x, y, 200, 160)
   }
 }
 
-function drawPlainPattern(ctx: CanvasRenderingContext2D, bodyColor: string): void {
-  ctx.fillStyle = bodyColor;
-  ctx.fillRect(0, 0, 1024, 1024);
+function drawPlainPattern (ctx: CanvasRenderingContext2D, bodyColor: string): void {
+  ctx.fillStyle = bodyColor
+  ctx.fillRect(0, 0, 1024, 1024)
 }
 
-export function drawEmissiveTexture(config: {
+type ConfigType = {
   emissiveColor: string;
   texturePreset: ShipConfig['texturePreset'];
-  paletteName: ShipConfig['paletteName'];
+  paletteName:   ShipConfig['paletteName'];
   textureRepeat: number;
-}): THREE.CanvasTexture {
-  const canvas = document.createElement('canvas');
-  const ctx = canvas.getContext('2d');
-  if (!ctx) {
-    throw new Error('Could not create 2D context');
-  }
+}
 
-  const width = 1024;
-  const height = 1024;
-  canvas.width = width;
-  canvas.height = height;
+export function drawEmissiveTexture (config: ConfigType): THREE.CanvasTexture {
+  const canvas = document.createElement('canvas')
+  const ctx    = canvas.getContext('2d')
+  if (!ctx)
+    throw new Error('Could not create 2D context')
 
-  ctx.fillStyle = config.emissiveColor;
+  const width   = 1024
+  const height  = 1024
+  canvas.width  = width
+  canvas.height = height
+
+  ctx.fillStyle = config.emissiveColor
 
   switch (config.texturePreset) {
     case 'panels':
-      drawEmissivePanelPattern(ctx, config.emissiveColor);
-      break;
+      drawEmissivePanelPattern(ctx, config.emissiveColor)
+      break
     case 'carbon':
-      drawEmissiveCarbonPattern(ctx, config.emissiveColor);
-      break;
+      drawEmissiveCarbonPattern(ctx, config.emissiveColor)
+      break
     case 'hazard':
-      drawEmissiveHazardPattern(ctx, config.emissiveColor);
-      break;
+      drawEmissiveHazardPattern(ctx, config.emissiveColor)
+      break
     case 'city':
-      drawEmissiveCityPattern(ctx, config.emissiveColor);
-      break;
+      drawEmissiveCityPattern(ctx, config.emissiveColor)
+      break
     case 'gallery':
-      drawEmissiveGalleryPattern(ctx, config.emissiveColor);
-      break;
+      drawEmissiveGalleryPattern(ctx, config.emissiveColor)
+      break
     default:
-      drawEmissivePlainPattern(ctx, config.emissiveColor);
+      drawEmissivePlainPattern(ctx, config.emissiveColor)
   }
 
-  const texture = new THREE.CanvasTexture(canvas);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  texture.colorSpace = THREE.SRGBColorSpace;
-  texture.repeat.set(config.textureRepeat, config.textureRepeat);
-  return markManagedTexture(texture);
+  const texture      = new THREE.CanvasTexture(canvas)
+  texture.wrapS      = THREE.RepeatWrapping
+  texture.wrapT      = THREE.RepeatWrapping
+  texture.colorSpace = THREE.SRGBColorSpace
+  texture.repeat.set(config.textureRepeat, config.textureRepeat)
+  return markManagedTexture(texture)
 }
 
-function drawEmissivePanelPattern(ctx: CanvasRenderingContext2D, color: string): void {
-  ctx.fillStyle = color;
-  ctx.globalAlpha = 0.5;
-  for (let i = 0; i < 8; i++) {
-    for (let j = 0; j < 8; j++) {
+function drawEmissivePanelPattern (ctx: CanvasRenderingContext2D, color: string): void {
+  ctx.fillStyle   = color
+  ctx.globalAlpha = 0.5
+  for (let i = 0; i < 8; i++)
+    for (let j = 0; j < 8; j++)
       if ((i + j) % 2 === 0) {
-        const x = 60 + i * 120;
-        const y = 60 + j * 120;
-        ctx.fillRect(x, y, 100, 100);
+        const x = 60 + i * 120
+        const y = 60 + j * 120
+        ctx.fillRect(x, y, 100, 100)
       }
-    }
-  }
-  ctx.globalAlpha = 1.0;
+  ctx.globalAlpha = 1.0
 }
 
-function drawEmissiveCarbonPattern(ctx: CanvasRenderingContext2D, color: string): void {
-  ctx.fillStyle = color;
-  ctx.globalAlpha = 0.7;
+function drawEmissiveCarbonPattern (ctx: CanvasRenderingContext2D, color: string): void {
+  ctx.fillStyle   = color
+  ctx.globalAlpha = 0.7
 
-  for (let i = 0; i < 1024; i += 40) {
-    ctx.fillRect(i, 0, 2, 1024);
-  }
+  for (let i = 0; i < 1024; i += 40)
+    ctx.fillRect(i, 0, 2, 1024)
 
-  for (let i = 0; i < 1024; i += 20) {
-    ctx.fillRect(0, i, 1024, 2);
-  }
-  ctx.globalAlpha = 1.0;
+  for (let i = 0; i < 1024; i += 20)
+    ctx.fillRect(0, i, 1024, 2)
+  ctx.globalAlpha = 1.0
 }
 
-function drawEmissiveHazardPattern(ctx: CanvasRenderingContext2D, color: string): void {
-  ctx.fillStyle = color;
-  ctx.globalAlpha = 0.6;
+function drawEmissiveHazardPattern (ctx: CanvasRenderingContext2D, color: string): void {
+  ctx.fillStyle   = color
+  ctx.globalAlpha = 0.6
 
-  ctx.fillRect(200, 200, 624, 624);
-  ctx.fillRect(100, 100, 824, 824);
+  ctx.fillRect(200, 200, 624, 624)
+  ctx.fillRect(100, 100, 824, 824)
 
-  ctx.strokeStyle = color;
-  ctx.lineWidth = 4;
-  ctx.beginPath();
-  ctx.moveTo(512, 512);
-  ctx.lineTo(200, 800);
-  ctx.lineTo(824, 200);
-  ctx.lineTo(512, 512);
-  ctx.stroke();
-  ctx.globalAlpha = 1.0;
+  ctx.strokeStyle = color
+  ctx.lineWidth   = 4
+  ctx.beginPath()
+  ctx.moveTo(512, 512)
+  ctx.lineTo(200, 800)
+  ctx.lineTo(824, 200)
+  ctx.lineTo(512, 512)
+  ctx.stroke()
+  ctx.globalAlpha = 1.0
 }
 
-function drawEmissiveCityPattern(ctx: CanvasRenderingContext2D, color: string): void {
-  const rng = mulberry32(0x1ca406);
-  ctx.fillStyle = color;
-  ctx.globalAlpha = 0.3;
+function drawEmissiveCityPattern (ctx: CanvasRenderingContext2D, color: string): void {
+  const rng       = mulberry32(0x1ca406)
+  ctx.fillStyle   = color
+  ctx.globalAlpha = 0.3
 
   for (let i = 0; i < 30; i++) {
-    const x = rng() * 1024;
-    const y = rng() * 1024;
-    const radius = rng() * 30 + 5;
-    ctx.beginPath();
-    ctx.arc(x, y, radius, 0, Math.PI * 2);
-    ctx.fill();
+    const x      = rng() * 1024
+    const y      = rng() * 1024
+    const radius = rng() * 30 + 5
+    ctx.beginPath()
+    ctx.arc(x, y, radius, 0, Math.PI * 2)
+    ctx.fill()
   }
-  ctx.globalAlpha = 1.0;
+  ctx.globalAlpha = 1.0
 }
 
-function drawEmissiveGalleryPattern(ctx: CanvasRenderingContext2D, color: string): void {
-  ctx.fillStyle = color;
-  ctx.globalAlpha = 0.4;
+function drawEmissiveGalleryPattern (ctx: CanvasRenderingContext2D, color: string): void {
+  ctx.fillStyle   = color
+  ctx.globalAlpha = 0.4
 
   for (let i = 0; i < 5; i++) {
-    const x = 50 + i * 190;
-    const y = 50;
-    ctx.fillRect(x, y, 150, 150);
+    const x = 50 + i * 190
+    const y = 50
+    ctx.fillRect(x, y, 150, 150)
   }
 
   for (let i = 0; i < 4; i++) {
-    const x = 100;
-    const y = 50 + i * 190;
-    ctx.fillRect(x, y, 200, 160);
+    const x = 100
+    const y = 50 + i * 190
+    ctx.fillRect(x, y, 200, 160)
   }
-  ctx.globalAlpha = 1.0;
+  ctx.globalAlpha = 1.0
 }
 
-function drawEmissivePlainPattern(ctx: CanvasRenderingContext2D, color: string): void {
-  ctx.fillStyle = color;
-  ctx.globalAlpha = 0.5;
-  ctx.fillRect(0, 0, 1024, 1024);
-  ctx.globalAlpha = 1.0;
+function drawEmissivePlainPattern (ctx: CanvasRenderingContext2D, color: string): void {
+  ctx.fillStyle   = color
+  ctx.globalAlpha = 0.5
+  ctx.fillRect(0, 0, 1024, 1024)
+  ctx.globalAlpha = 1.0
 }
 
 const HANGAR_TEXTURES: Record<string, string> = {
-  details: '/textures/hangar/details.png',
-  details_baseColor: '/textures/hangar/details_baseColor.png',
-  buildings_baseColor: '/textures/hangar/buildings_baseColor.png',
-  buildings_clearcoat: '/textures/hangar/buildings_clearcoat.png',
-  buildings_emissive: '/textures/hangar/buildings_emissive.png',
+  details:                     '/textures/hangar/details.png',
+  details_baseColor:           '/textures/hangar/details_baseColor.png',
+  buildings_baseColor:         '/textures/hangar/buildings_baseColor.png',
+  buildings_clearcoat:         '/textures/hangar/buildings_clearcoat.png',
+  buildings_emissive:          '/textures/hangar/buildings_emissive.png',
   buildings_metallicRoughness: '/textures/hangar/buildings_metallicRoughness.png',
-  buildings_normal: '/textures/hangar/buildings_normal.png',
+  buildings_normal:            '/textures/hangar/buildings_normal.png',
   background_buildings_normal: '/textures/hangar/Background_Night_Buildings_normal.png',
-};
+}
 
 /** Non-colour maps (normal / roughness / clearcoat) must stay out of sRGB. */
 const HANGAR_DATA_MAPS = new Set([
@@ -398,149 +401,145 @@ const HANGAR_DATA_MAPS = new Set([
   'background_buildings_normal',
   'buildings_metallicRoughness',
   'buildings_clearcoat',
-]);
+])
 
-export function loadHangarTexture(name: string): THREE.Texture {
-  const loader = new TextureLoader();
-  const path = HANGAR_TEXTURES[name] || HANGAR_TEXTURES.details;
-  const texture = loader.load(path);
-  texture.wrapS = THREE.RepeatWrapping;
-  texture.wrapT = THREE.RepeatWrapping;
-  if (!HANGAR_DATA_MAPS.has(name)) {
-    texture.colorSpace = THREE.SRGBColorSpace;
+export function loadHangarTexture (name: string): THREE.Texture {
+  const loader  = new TextureLoader()
+  const path    = HANGAR_TEXTURES[name] || HANGAR_TEXTURES.details
+  const texture = loader.load(path)
+  texture.wrapS = THREE.RepeatWrapping
+  texture.wrapT = THREE.RepeatWrapping
+  if (!HANGAR_DATA_MAPS.has(name))
+    texture.colorSpace = THREE.SRGBColorSpace
+  return markManagedTexture(texture)
+}
+
+function markManagedTexture<T extends THREE.Texture> (texture: T): T {
+  texture.userData.shipManagedTexture = true
+  return texture
+}
+
+function mulberry32 (seed: number): () => number {
+  let a = seed >>> 0
+  return function rng () {
+    a = a + 0x6D2B79F5 >>> 0
+
+    let t = a
+    t = Math.imul(t ^ t >>> 15, t | 1)
+    t ^= t + Math.imul(t ^ t >>> 7, t | 61)
+    return ((t ^ t >>> 14) >>> 0) / 4294967296
   }
-  return markManagedTexture(texture);
 }
 
-function markManagedTexture<T extends THREE.Texture>(texture: T): T {
-  texture.userData.shipManagedTexture = true;
-  return texture;
-}
-
-function mulberry32(seed: number): () => number {
-  let a = seed >>> 0;
-  return function rng() {
-    a = (a + 0x6D2B79F5) >>> 0;
-    let t = a;
-    t = Math.imul(t ^ (t >>> 15), t | 1);
-    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
-    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
-  };
-}
-
-function replaceTexture(
+function replaceTexture (
   material: THREE.MeshStandardMaterial,
   slot: 'map' | 'emissiveMap' | 'normalMap',
   texture: THREE.Texture | null
 ): void {
-  const current = material[slot];
-  if (current && current !== texture && current.userData.shipManagedTexture) {
-    current.dispose();
-  }
-  material[slot] = texture;
+  const current = material[slot]
+  if (current && current !== texture && current.userData.shipManagedTexture)
+    current.dispose()
+  material[slot] = texture
 }
 
-export function applyShipConfig(gltfScene: THREE.Object3D, config: ShipConfig): void {
-  const configuredMaterials = new Set<THREE.MeshStandardMaterial>();
+export function applyShipConfig (gltfScene: THREE.Object3D, config: ShipConfig): void {
+  const configuredMaterials = new Set<THREE.MeshStandardMaterial>()
 
-  gltfScene.traverse((child) => {
+  gltfScene.traverse(child => {
     if ('isMesh' in child && (child as { isMesh?: boolean }).isMesh) {
-      const mesh = child as THREE.Mesh;
+      const mesh = child as THREE.Mesh
 
-      if (!mesh.material || (Array.isArray(mesh.material) && mesh.material.length === 0)) {
-        return;
-      }
+      if (!mesh.material || Array.isArray(mesh.material) && mesh.material.length === 0)
+        return
 
-      const materials = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+      const materials = Array.isArray(mesh.material) ? mesh.material : [ mesh.material ]
 
       for (const material of materials) {
-        if (!(material instanceof THREE.MeshStandardMaterial)) {
-          continue;
-        }
-        if (configuredMaterials.has(material)) {
-          continue;
-        }
-        configuredMaterials.add(material);
+        if (!(material instanceof THREE.MeshStandardMaterial))
+          continue
+        if (configuredMaterials.has(material))
+          continue
+        configuredMaterials.add(material)
 
-        const materialName = material.name.toLowerCase();
+        const materialName = material.name.toLowerCase()
 
-        const isGlow = materialName.includes('glow');
-        const isGlass = materialName.includes('glass');
+        const isGlow  = materialName.includes('glow')
+        const isGlass = materialName.includes('glass')
 
         // Materials carrying real PBR maps (generated Icaras, the WipEout FBX liveries) keep
         // those maps: the sliders MODULATE the baked livery rather than replacing it, so
         // texturePreset/textureRepeat stay no-ops here and Feisar still looks like Feisar.
         if (material.userData.pbrTextured) {
-          if (isGlow) {
-            // Leave `emissive` white — it multiplies the glow atlas, and the config default
-            // (#000000) would extinguish it. Only the intensity is user-driven.
-            material.emissiveIntensity = Math.max(1.2, config.emissiveIntensity * 3);
-          } else if (!isGlass) {
+          if (isGlow)
+            material.emissiveIntensity = Math.max(1.2, config.emissiveIntensity * 3); else if (!isGlass) {
             // BASE_CONFIG.bodyColor is #ffffff, so the default tint is an identity multiply.
-            material.color.set(config.bodyColor);
+            material.color.set(config.bodyColor)
             // A metalnessMap/roughnessMap multiplies against the scalar, which is why Icaras
             // pins both to 1 — overwriting those would flatten its packed map.
-            if (!material.metalnessMap) material.metalness = config.metalness;
-            if (!material.roughnessMap) material.roughness = config.roughness;
+            if (!material.metalnessMap)
+              material.metalness = config.metalness
+            if (!material.roughnessMap)
+              material.roughness = config.roughness
             // Deliberately NOT applying emissiveColor/emissiveIntensity to a textured hull:
             // a full-body emissive wash is what the plain-material path does, but here it
             // floods the baked livery out of existence. The emissive controls drive the glow
             // bucket only — that's the whole point of keeping the livery.
           }
           // Glass keeps its own tuned metalness/roughness/emissive tint entirely.
-          material.needsUpdate = true;
-          continue;
+          material.needsUpdate = true
+          continue
         }
 
-        const receivesPattern = !isGlow && !isGlass;
+        const receivesPattern = !isGlow && !isGlass
 
-        material.color.set(isGlow ? '#05020a' : isGlass ? config.emissiveColor : config.bodyColor);
-        material.metalness = isGlass ? 0.4 : config.metalness;
-        material.roughness = isGlass ? 0.15 : config.roughness;
-        material.emissive.set(config.emissiveColor);
+        material.color.set(isGlow ? '#05020a' : isGlass ? config.emissiveColor : config.bodyColor)
+        material.metalness = isGlass ? 0.4 : config.metalness
+        material.roughness = isGlass ? 0.15 : config.roughness
+        material.emissive.set(config.emissiveColor)
         material.emissiveIntensity = isGlow
           ? Math.max(1.2, config.emissiveIntensity * 3)
-          : config.emissiveIntensity;
+          : config.emissiveIntensity
 
         if (config.texturePreset !== 'plain' && receivesPattern) {
           const patternTexture = drawBaseTexture({
             ...config,
             themeColors: {
-              primary: config.bodyColor,
+              primary:   config.bodyColor,
               secondary: config.emissiveColor,
-              accent: config.emissiveColor,
+              accent:    config.emissiveColor,
             },
-          });
-          replaceTexture(material, 'map', patternTexture);
+          })
+          replaceTexture(material, 'map', patternTexture)
 
           if (config.emissiveIntensity > 0) {
-            const emissivePatternTexture = drawEmissiveTexture(config);
-            replaceTexture(material, 'emissiveMap', emissivePatternTexture);
-          } else {
-            replaceTexture(material, 'emissiveMap', null);
+            const emissivePatternTexture = drawEmissiveTexture(config)
+            replaceTexture(material, 'emissiveMap', emissivePatternTexture)
           }
+          else
+            replaceTexture(material, 'emissiveMap', null)
 
           if (config.texturePreset === 'city' || config.texturePreset === 'gallery') {
             // These presets want surface relief, so use the actual tangent-space normal map —
             // the baseColor/details PNGs that used to land here are colour data, not normals.
             const hangarTexture = loadHangarTexture(
               config.texturePreset === 'city' ? 'buildings_normal' : 'background_buildings_normal'
-            );
-            replaceTexture(material, 'normalMap', hangarTexture);
-            material.normalScale.set(config.textureRepeat, config.textureRepeat);
-          } else {
-            replaceTexture(material, 'normalMap', null);
+            )
+            replaceTexture(material, 'normalMap', hangarTexture)
+            material.normalScale.set(config.textureRepeat, config.textureRepeat)
           }
-        } else {
-          replaceTexture(material, 'map', null);
-          replaceTexture(material, 'emissiveMap', null);
-          replaceTexture(material, 'normalMap', null);
+          else
+            replaceTexture(material, 'normalMap', null)
+        }
+        else {
+          replaceTexture(material, 'map', null)
+          replaceTexture(material, 'emissiveMap', null)
+          replaceTexture(material, 'normalMap', null)
         }
 
-        material.needsUpdate = true;
+        material.needsUpdate = true
       }
     }
-  });
+  })
 }
 
 export const SHIP_MATERIALS = {
@@ -549,4 +548,4 @@ export const SHIP_MATERIALS = {
   loadHangarTexture,
   applyShipConfig,
   PALETTES,
-};
+}

@@ -1,6 +1,6 @@
-'use client';
+'use client'
 
-import { create } from 'zustand';
+import { create } from 'zustand'
 
 /**
  * Hangar viewport toggles.
@@ -11,19 +11,19 @@ import { create } from 'zustand';
  * from firing a livery re-apply every time someone flips the wireframe on.
  */
 export interface HangarViewState {
-  autoOrbit: boolean;
-  wireframe: boolean;
+  autoOrbit:  boolean;
+  wireframe:  boolean;
   flightTilt: boolean;
-  engines: boolean;
-  toggle: (key: HangarViewToggle) => void;
+  engines:    boolean;
+  toggle:     (key: HangarViewToggle) => void;
 }
 
-export type HangarViewToggle = 'autoOrbit' | 'wireframe' | 'flightTilt' | 'engines';
+export type HangarViewToggle = 'autoOrbit' | 'wireframe' | 'flightTilt' | 'engines'
 
-export const useHangarView = create<HangarViewState>()((set) => ({
-  autoOrbit: true,
-  wireframe: false,
+export const useHangarView = create<HangarViewState>()(set => ({
+  autoOrbit:  true,
+  wireframe:  false,
   flightTilt: true,
-  engines: true,
-  toggle: (key) => set((state) => ({ [key]: !state[key] }) as Pick<HangarViewState, typeof key>),
-}));
+  engines:    true,
+  toggle:     key => set(state => ({ [key]: !state[key] }) as Pick<HangarViewState, typeof key>),
+}))

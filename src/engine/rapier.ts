@@ -1,8 +1,9 @@
-import type RAPIER from '@dimforge/rapier3d-compat';
+import type RAPIER from '@dimforge/rapier3d-compat'
 
-export type Rapier = typeof RAPIER;
 
-let pending: Promise<Rapier> | null = null;
+export type Rapier = typeof RAPIER
+
+let pending: Promise<Rapier> | null = null
 
 /**
  * Load and initialise the rapier WASM module, once per page.
@@ -16,10 +17,10 @@ let pending: Promise<Rapier> | null = null;
  * promise means route changes and React StrictMode double-mounts don't re-decode
  * it.
  */
-export function initRapier(): Promise<Rapier> {
-  pending ??= import('@dimforge/rapier3d-compat').then(async (module) => {
-    await module.init();
-    return module;
-  });
-  return pending;
+export function initRapier (): Promise<Rapier> {
+  pending ??= import('@dimforge/rapier3d-compat').then(async module => {
+    await module.init()
+    return module
+  })
+  return pending
 }

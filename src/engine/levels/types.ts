@@ -1,7 +1,7 @@
-import type * as THREE from 'three';
-import type { SceneContext } from 'threejs-scene';
-import type { BoxCollider } from '@/lib/track/build-track';
-import type { Physics } from '../physics/world';
+import type * as THREE from 'three'
+import type { SceneContext } from 'threejs-scene'
+import type { BoxCollider } from '@/lib/track/build-track'
+import type { Physics } from '../physics/world'
 
 /**
  * A level, as data.
@@ -12,20 +12,23 @@ import type { Physics } from '../physics/world';
  * module and the physics module so neither owns it.
  */
 export type LevelSpec = {
-  id: string;
+  id:         string;
   background: string;
+
   /** `[color, near, far]`. Set explicitly per level rather than inherited. */
   fog: [string, number, number];
 
   /** Ordered centreline; checkpoint 0 is the start/finish line. */
   waypoints: THREE.Vector3[];
+
   /** Full road width, so gates span the track. */
   width: number;
-  laps: number;
-  loop: boolean;
+  laps:  number;
+  loop:  boolean;
 
   /** Drivable surface + walls, as oriented cuboids (never a trimesh). */
   colliders: BoxCollider[];
+
   /** World offset applied to the whole collider set. */
   colliderOffset: [number, number, number];
 
@@ -33,6 +36,6 @@ export type LevelSpec = {
   build(ctx: SceneContext, physics: Physics): void;
 
   bloom: { strength: number; threshold: number; radius: number };
-};
+}
 
-export type LevelId = 'flats' | 'procedural' | 'neon-canyon' | 'orbital-ring';
+export type LevelId = 'flats' | 'procedural' | 'neon-canyon' | 'orbital-ring'

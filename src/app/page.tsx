@@ -1,9 +1,6 @@
-import { MainMenu } from '@/components/main-menu';
+import { MainMenu } from '@/components/main-menu'
 
-export default function Home() {
-  return (
-    <>
-      <MainMenu />
-    </>
-  );
+
+export default function Home () {
+  return <MainMenu />
 }

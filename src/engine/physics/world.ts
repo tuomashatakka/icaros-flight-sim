@@ -1,16 +1,18 @@
-import type RAPIER from '@dimforge/rapier3d-compat';
-import type { Rapier } from '../rapier';
-import { STEP } from '../clock';
-import type { BodyInterpolator } from '../interpolation';
+import type RAPIER from '@dimforge/rapier3d-compat'
+import type { Rapier } from '../rapier'
+import { STEP } from '../clock'
+import type { BodyInterpolator } from '../interpolation'
+
 
 export type Physics = {
-  RAPIER: Rapier;
-  world: RAPIER.World;
+  RAPIER:     Rapier;
+  world:      RAPIER.World;
   eventQueue: RAPIER.EventQueue;
+
   /** Bodies sampled at render time. Registered by whoever creates them. */
   interpolators: BodyInterpolator[];
   free(): void;
-};
+}
 
 /**
  * Create the rapier world.
@@ -21,21 +23,21 @@ export type Physics = {
  * modules that need it, the same way the reference template injects its camera
  * rig and telemetry.
  */
-export function createPhysics(RAPIER: Rapier): Physics {
-  const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
-  world.timestep = STEP;
+export function createPhysics (RAPIER: Rapier): Physics {
+  const world    = new RAPIER.World({ x: 0, y: -9.81, z: 0 })
+  world.timestep = STEP
 
-  const eventQueue = new RAPIER.EventQueue(true);
-  const interpolators: BodyInterpolator[] = [];
+  const eventQueue                        = new RAPIER.EventQueue(true)
+  const interpolators: BodyInterpolator[] = []
 
   return {
     RAPIER,
     world,
     eventQueue,
     interpolators,
-    free() {
-      eventQueue.free();
-      world.free();
+    free () {
+      eventQueue.free()
+      world.free()
     },
-  };
+  }
 }
