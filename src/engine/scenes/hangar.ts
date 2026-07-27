@@ -83,9 +83,9 @@ function hangarSet () {
 
 /** The ship on its turntable, plus livery updates and hot-swapping. */
 function shipDisplay (onStatus: (status: HangarStatus) => void) {
-  let instance: ShipInstance | null = null
-  let lastConfig: ShipConfig | null = null
-  let generation                    = 0
+  let instance: ShipInstance | null        = null
+  let lastConfig: ShipConfig | null        = null
+  let generation                           = 0
   let wireOverlayGroup: THREE.Group | null = null
 
   // Single shared wireframe overlay material — pre-compiled once so toggling

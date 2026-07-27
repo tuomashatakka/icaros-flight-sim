@@ -13,9 +13,10 @@ export type Controls = {
 
   /** W / Up arrow. The ship does not accelerate on its own. */
   throttle: boolean;
+
   /** S / Down arrow. Brakes the ship. */
-  brake:    boolean;
-  boost:    boolean;
+  brake: boolean;
+  boost: boolean;
 
   /**
    * Monotonic respawn counter, NOT a boolean.

@@ -27,7 +27,7 @@ type LiverySet = Record<Bucket, THREE.Material> & { Hidden: THREE.Material }
 async function loadTexAsync (url: string, srgb: boolean): Promise<THREE.Texture> {
   const loader = new THREE.TextureLoader()
   try {
-    const t = await loader.loadAsync(url)
+    const t      = await loader.loadAsync(url)
     t.wrapS      = THREE.RepeatWrapping
     t.wrapT      = THREE.RepeatWrapping
     t.anisotropy = 8
@@ -38,9 +38,11 @@ async function loadTexAsync (url: string, srgb: boolean): Promise<THREE.Texture>
   }
   catch (err) {
     console.warn(`[loadTexAsync] failed to load ${url}`, err)
+
     const canvas = document.createElement('canvas')
     canvas.width = canvas.height = 1
-    const t = new THREE.CanvasTexture(canvas)
+
+    const t                       = new THREE.CanvasTexture(canvas)
     t.userData.shipManagedTexture = true
     return t
   }
