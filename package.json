@@ -10,7 +10,13 @@
     "lint": "eslint src",
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
-    "test:physics": "node test/vehicle-physics.mjs"
+    "test:physics": "node test/vehicle-physics.mjs",
+    "dev:cli": "node scripts/dev-cli.mjs",
+    "dev:probe": "node scripts/dev-cli.mjs probe",
+    "dev:scenario": "node scripts/dev-cli.mjs scenario",
+    "dev:shot": "node scripts/dev-cli.mjs shot",
+    "dev:console": "node scripts/dev-cli.mjs console",
+    "dev:eval": "node scripts/dev-cli.mjs eval"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "0.19.2",
@@ -29,6 +35,7 @@
     "@types/react-dom": "^19",
     "@types/three": "^0.185.0",
     "eslint": "^10.8.0",
+    "playwright": "^1.62.0",
     "typescript": "^6",
     "vitest": "^4.1.10"
   }

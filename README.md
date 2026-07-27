@@ -13,15 +13,16 @@ of the flight. Everything else lives inside the canvas as plain three.js driven 
 ## Run locally
 
 ```bash
-bun install       # the project uses bun.lock; npm install works too
-npm run dev       # http://localhost:9002
+bun install                 # the project uses bun.lock; npm install works too
+bun run dev                 # http://localhost:9002
+bunx playwright install chromium   # once, for the dev CLI below
 ```
 
 ```bash
-npm test               # level geometry, nozzle inference, tuning source output
-npm run test:physics   # headless Rapier harness — the ship must stay upright
-npm run typecheck
-npm run lint
+bun run test           # level geometry, nozzle inference, tuning source output
+bun run test:physics   # headless Rapier harness — the ship must stay upright
+bun run typecheck
+bun run lint
 ```
 
 All dependencies come from the public npm registry; no token or private scope is needed.
@@ -125,8 +126,11 @@ src/engine/            vanilla three.js — no React imports anywhere below this
   fx/afterburner.ts    engine plume
   clock.ts             fixed-step clock that exposes its residual (see below)
   bridge.ts            zustand -> app state, one direction only
+  dev/                 dev-only debug harness; dropped from production builds
 src/components/hud/    the DOM half of the race UI
 src/components/scene-canvas.tsx   the ONLY React<->three boundary
+public/scenarios/      scripted input timelines for the dev CLI
+scripts/dev-cli.mjs    drive the running game from a shell (see below)
 ```
 
 State flows one way: `zustand -> bridge -> app state -> module.update() -> scene`. Modules read
@@ -245,9 +249,76 @@ knobs that used to live in Leva. Unlike Leva it persists to `localStorage`, so a
 survives a reload, and **copy as TS** emits just the values that moved as a block you paste into
 `vehicleConfig` in `src/lib/utils.ts`.
 
+## Debugging & dev tooling
+
+The race scene exposes a debug harness at `window.__dev` in development, and
+`scripts/dev-cli.mjs` drives it from a shell. It reuses a dev server already
+listening on :9002 and starts one otherwise.
+
+```bash
+bun run dev:probe --level flats             # full state snapshot as JSON
+bun run dev:scenario straight-line          # deterministic scripted run
+bun run dev:scenario hard-corner --json --out /tmp/trace.json
+bun run dev:shot /tmp/a.png --step 300 --overlay colliders,wheels
+bun run dev:console --seconds 5             # errors, frame times, WebGL state
+bun run dev:eval -e '__dev.probe().ship.up'
+```
+
+### Scenarios
+
+A scenario is a JSON input timeline in `public/scenarios/` — "throttle at 0 s,
+hard left at 5 s, straighten at 7 s". The runner disables rendering and pumps
+the sim with `app.tick()`, so **12 sim seconds complete in about 30 ms**, and
+because the simulation is deterministic two runs produce byte-identical traces.
+A handling change becomes a diff rather than an opinion.
+
+```jsonc
+{
+  "name": "hard-corner",
+  "level": "neon-canyon",
+  "duration": 16,          // sim seconds
+  "sampleEvery": 0.5,      // sim seconds per trace row
+  "start": { "position": [0, 2, 0], "yaw": 0 },   // optional
+  "tuning": { "thrust": 1200 },                    // optional
+  "timeline": [
+    { "at": 0, "input": { "throttle": true } },
+    { "at": 5, "input": { "steer": -1 } },
+    { "at": 7, "input": { "steer": 0, "boost": true } }
+  ]
+}
+```
+
+The default output is a summary. `minUp` is the flip detector (1 = level,
+0 = on its side, -1 = inverted); `flipped` and `fellThrough` are deliberately
+separate, because driving off a canyon edge perfectly level and losing attitude
+control are different bugs with different fixes. `airborneRatio` being high is
+normal — this ship is meant to leave the ground.
+
+Reproducibility is maintained rather than inherited: the runner resets the body
+pose, the race store, telemetry and the publish accumulator, then runs 60 settle
+ticks to wash out rapier's warm-start impulses, before the timeline starts. If
+you add simulation state that persists across ticks, reset it there too or
+scenarios touching it quietly stop being reproducible.
+
+### Debug overlays
+
+`--overlay` (or `?overlay=` on the URL) draws rapier collider wireframes,
+suspension rays with wheel contact normals, contact manifolds, the ship's path,
+and a helper on the sun's shadow camera — the last being the direct check for
+"has the ship driven out of the shadow frustum again".
+
+### URL overrides
+
+`?seed=` `?paused=1` `?overlay=colliders,wheels` `?nohud=1` `?tuning=<base64>`
+`?scenario=<name>` — so any bug report can be a link that reproduces it exactly.
+
+None of this exists in production: it sits behind `NODE_ENV !== 'production'`
+and loads through a dynamic import, so the whole chunk is dropped from the
+build.
+
 ## Deploying
 
-Nothing special — all dependencies are public. `npm ci && npm run build` on any host.
+Nothing special — all dependencies are public. `bun install && bun run build` on any host.
 
 > If an install ever starts failing with `401 Unauthorized` from `npm.pkg.github.com`, the cause is
 > a resurrected `package-lock.json` carrying old `@tuomashatakka`-scoped entries. This project uses

@@ -45,3 +45,9 @@ firebase-debug.log
 firestore-debug.log
 # playwright-mcp scratch output
 .playwright-mcp/
+
+# dev-cli output (screenshots, traces)
+/dev-out/
+
+# Claude Code: share skills, keep personal permissions local
+.claude/settings.local.json

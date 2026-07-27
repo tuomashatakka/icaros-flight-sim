@@ -17,7 +17,22 @@ const ZONE_PERIOD = 10
  * `setSpeed`/`setBoostMeter` every physics tick — 60 zustand writes a second,
  * each re-rendering the HUD tree.
  */
-export function publishModule (telemetry: Telemetry): AppModule<RaceState> {
+/**
+ * Handle for restarting the throttles from a known state.
+ *
+ * Exists for the scenario runner: the zone accumulator advances on sim time
+ * while racing, so a scripted run inherits however far into the current zone
+ * period the live session happened to be — which makes a run that crosses a
+ * zone boundary unreproducible.
+ */
+export type PublishHandle = { reset(): void }
+
+type HandleType = { current: PublishHandle | null }
+
+export function publishModule (
+  telemetry: Telemetry,
+  handle?: HandleType
+): AppModule<RaceState> {
   let publishAccumulator = 0
   let zoneAccumulator    = 0
   let publishedCrashes   = 0
@@ -29,6 +44,16 @@ export function publishModule (telemetry: Telemetry): AppModule<RaceState> {
 
     build () {
       publishedCrashes = telemetry.crashSeq
+      if (handle)
+        handle.current = {
+          reset () {
+            publishAccumulator = 0
+            zoneAccumulator    = 0
+            publishedCrashes   = telemetry.crashSeq
+            lastSpeed          = -1
+            lastBoost          = -1
+          },
+        }
     },
 
     update (state, frame) {

@@ -16,12 +16,15 @@ import { FinishCard } from './finish-card'
  * about the SESSION rather than the flight, plus the tuning panel.
  */
 export function GameUI () {
-  return <>
+  // `data-hud` is the hook `?nohud=1` hides for clean captures — see globals.css.
+  // A fragment cannot carry it, so the chrome gets a wrapper; it is
+  // `display: contents`, so it adds no box and changes no layout.
+  return <div data-hud style={{ display: 'contents' }}>
     <TuningPanel />
     <BackToMenu />
     <Countdown />
     <FinishCard />
     <CrashFlash />
     <ControlsHint />
-  </>
+  </div>
 }

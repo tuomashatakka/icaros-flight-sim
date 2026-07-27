@@ -10,6 +10,9 @@ export type SunHandle = {
 
   /** Re-centre the shadow camera on the ship. Called from the render phase. */
   follow(position: THREE.Vector3): void;
+
+  /** The key light itself — the dev overlay draws a helper on its shadow camera. */
+  readonly light: THREE.DirectionalLight | null;
 }
 
 /**
@@ -73,6 +76,10 @@ export function sunModule (
       ctx.scene.add(light.target)
 
       handle.current = {
+        get light () {
+          return light
+        },
+
         follow (position) {
           if (!light)
             return

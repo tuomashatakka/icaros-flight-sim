@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import { createApp, createSeededRng, defineModule } from 'threejs-scene'
+import type { FrameContext } from 'threejs-scene'
 import type { App } from 'threejs-scene'
 import { standardLighting } from 'threejs-scene/modules/lighting'
 import { postProcessing } from 'threejs-scene/modules/post'
@@ -23,6 +24,7 @@ import type { ShipVisualHandle } from '../modules/ship-visual'
 import { sunModule } from '../modules/sun'
 import type { SunHandle } from '../modules/sun'
 import { publishModule } from '../modules/publish'
+import type { PublishHandle } from '../modules/publish'
 import { attachBridge } from '../bridge'
 import { initialRaceState } from '../state'
 import type { RaceState } from '../state'
@@ -41,6 +43,22 @@ const LEVEL_BUILDERS: Record<LevelId, () => LevelSpec> = {
 }
 
 const SEED = 7
+
+/**
+ * Scene seed, overridable via `?seed=` in development.
+ *
+ * Parsed inline rather than through `engine/dev/params` because the seed is
+ * needed *before* `createApp`, and the dev module is loaded asynchronously after
+ * it. `process.env.NODE_ENV` is statically replaced at build time, so the whole
+ * branch is eliminated from the production bundle.
+ */
+function resolveSeed (): number {
+  if (process.env.NODE_ENV === 'production' || typeof window === 'undefined')
+    return SEED
+
+  const override = Number(new URLSearchParams(window.location.search).get('seed'))
+  return Number.isFinite(override) && override !== 0 ? override : SEED
+}
 
 // Hoisted — sampled once per rendered frame.
 const _shipPosition   = new THREE.Vector3()
@@ -81,6 +99,10 @@ export async function mountRace (
 
   const shipVisual: ShipVisualType  = { current: null }
 
+  type PublishType = { current: PublishHandle | null }
+
+  const publish: PublishType = { current: null }
+
   // The composer does not exist at composition time — the effects callback hands
   // it back later, so the root render override reaches it through this binding.
   let composer: { render(delta: number): void } | null = null
@@ -89,8 +111,18 @@ export async function mountRace (
   // the camera to its resize observer at construction, so swapping ctx.camera
   // afterwards would leave the rig's aspect uncorrected on every resize. It gets
   // its own seeded stream from the same seed so replays stay deterministic.
-  const rng = createSeededRng(SEED)
-  const rig = createCameraRig(rng)
+  const seed = resolveSeed()
+  const rng  = createSeededRng(seed)
+  const rig  = createCameraRig(rng)
+
+  // Dev-only render kill switch. Physics at 1/60 is microseconds; the composer
+  // is milliseconds — so a scenario that skips the draw runs hundreds of times
+  // faster than real time. Always false in production, where nothing can set it.
+  let skipRender = false
+
+  // Set once the dev harness has loaded; the render phase feeds it overlays and
+  // frame timings. Left null in production.
+  let devFrame: ((position: THREE.Vector3, delta: number) => void) | null = null
 
   /** Last-seen view toggle count — see the `resetSeq` note in `input.ts`. */
   let lastViewSeq = controls.viewSeq
@@ -122,7 +154,7 @@ export async function mountRace (
 
   const app = createApp<RaceState>(canvas, {
     state:    initialRaceState(),
-    seed:     SEED,
+    seed,
     clock,
     camera:   rig.camera,
     scene:    { background: level.background },
@@ -178,7 +210,7 @@ export async function mountRace (
       vehicleModule(physics, telemetry, vehicle, () => rig.requestSnap()),
       // Drains gate crossings straight into the race module's handler.
       physicsStepModule(physics, race.handleCollision),
-      publishModule(telemetry),
+      publishModule(telemetry, publish),
 
       // Feed the accumulated impact shake to the rig, then clear it.
       defineModule<RaceState>({
@@ -207,84 +239,111 @@ export async function mountRace (
     // render owner runs per frame and `postProcessing` claims it, so the root
     // override is the only hook guaranteed to run once per REAL frame.
     render (frame) {
-      // Edge-triggered, exactly like `resetSeq`. The view lives on the rig
-      // rather than in app state: the toggle must land on the frame it was
-      // pressed, and routing it through setState would cost a tick of latency
-      // for something the render phase already owns.
-      if (controls.viewSeq !== lastViewSeq) {
-        lastViewSeq = controls.viewSeq
-        rig.toggleView()
-        useCameraView.getState().setView(rig.view())
-      }
-
-      const interpolator = vehicle.current?.interpolator
-      if (interpolator) {
-        // Blend the last two solved poses. Both the hull and the camera read
-        // this, never the raw body, or they stair-step above 60 Hz.
-        interpolator.sample(clock.alpha(), _shipPosition, _shipQuaternion)
-        shipRoot.position.copy(_shipPosition)
-        shipRoot.quaternion.copy(_shipQuaternion)
-        rig.drive(frame.delta, _shipPosition, _shipQuaternion, controls)
-        // Keep the shadow volume on the ship, or it drives out of it.
-        sun.current?.follow(_shipPosition)
-
-        const blend = rig.blend()
-
-        // Once seated, the hull encloses the camera and all you would see is the
-        // inside of its back faces. The canopy is the interior from here on.
-        shipVisual.current?.setHullVisible(blend < 0.85)
-
-        const throttle = controls.throttle ? controls.boost ? 1 : 0.72 : 0
-        hud.current?.update(
-          frame.elapsed,
-          _shipPosition,
-          _shipQuaternion,
-          throttle,
-          blend,
-          rig.camera
-        )
-      }
-
-      if (composer)
-        composer.render(frame.delta)
-      else
-        app.ctx.renderer.render(app.ctx.scene, rig.camera)
+      // The one dev-only line on the hot path. `skipRender` is only ever set by
+      // the scenario runner, which needs the sim to advance without the draw.
+      if (skipRender)
+        return
+      renderFrame(frame)
     },
   })
+
+  /**
+   * Draw one frame from the last solved pose.
+   *
+   * Extracted from the `render` option so the dev harness can force a draw
+   * on demand — `step(n)` pumps ticks with the clock paused, and a paused clock
+   * emits no frames, so without this a screenshot after stepping would still
+   * show the pose from before it.
+   */
+  function renderFrame (frame: FrameContext) {
+    // Edge-triggered, exactly like `resetSeq`. The view lives on the rig
+    // rather than in app state: the toggle must land on the frame it was
+    // pressed, and routing it through setState would cost a tick of latency
+    // for something the render phase already owns.
+    if (controls.viewSeq !== lastViewSeq) {
+      lastViewSeq = controls.viewSeq
+      rig.toggleView()
+      useCameraView.getState().setView(rig.view())
+    }
+
+    const interpolator = vehicle.current?.interpolator
+    if (interpolator) {
+      // Blend the last two solved poses. Both the hull and the camera read
+      // this, never the raw body, or they stair-step above 60 Hz.
+      interpolator.sample(clock.alpha(), _shipPosition, _shipQuaternion)
+      shipRoot.position.copy(_shipPosition)
+      shipRoot.quaternion.copy(_shipQuaternion)
+      rig.drive(frame.delta, _shipPosition, _shipQuaternion, controls)
+      // Keep the shadow volume on the ship, or it drives out of it.
+      sun.current?.follow(_shipPosition)
+
+      const blend = rig.blend()
+
+      // Once seated, the hull encloses the camera and all you would see is the
+      // inside of its back faces. The canopy is the interior from here on.
+      shipVisual.current?.setHullVisible(blend < 0.85)
+
+      const throttle = controls.throttle ? controls.boost ? 1 : 0.72 : 0
+      hud.current?.update(
+        frame.elapsed,
+        _shipPosition,
+        _shipQuaternion,
+        throttle,
+        blend,
+        rig.camera
+      )
+
+      // Debug overlays and the frame-time ring buffer. Null in production, and
+      // placed after the pose is resolved so the overlays draw against the same
+      // interpolated position the player sees.
+      devFrame?.(_shipPosition, frame.delta)
+    }
+
+    if (composer)
+      composer.render(frame.delta)
+    else
+      app.ctx.renderer.render(app.ctx.scene, rig.camera)
+  }
 
   const detachControls = attachControls(canvas, controls)
   const detachBridge   = attachBridge(app)
 
-  // Dev handle: lets the physics be inspected and driven from devtools, and
-  // makes `alpha`, ride height and tick drift observable rather than inferred.
-  if (process.env.NODE_ENV !== 'production')
-    (window as unknown as Record<string, unknown>).__race = {
+  // Dev harness: `window.__dev`, the surface `scripts/dev-cli.mjs` drives.
+  // Loaded through a dynamic import so the scenario runner, the debug overlays
+  // and the trace buffer all land in a separate chunk that the production build
+  // drops entirely — the NODE_ENV comparison is statically false there.
+  let detachDev: (() => void) | null = null
+  if (process.env.NODE_ENV !== 'production') {
+    const { attachDevHarness } = await import('../dev/harness')
+    const harness              = attachDevHarness({
       app,
       physics,
-      telemetry,
-      controls,
       clock,
-      rig,
+      controls,
+      telemetry,
       vehicle,
+      sun,
+      publish,
+      rig,
       level,
-      raceStore: useRaceStore,
-      probe () {
-        const body = vehicle.current?.body
-        const t    = body?.translation()
-        const lv   = body?.linvel()
-        return {
-          alpha:      +clock.alpha().toFixed(4),
-          simElapsed: +clock.elapsed().toFixed(2),
-          y:          t ? +t.y.toFixed(3) : null,
-          speed:      lv ? +Math.hypot(lv.x, lv.y, lv.z).toFixed(2) : null,
-          grounded:   telemetry.grounded,
-          status:     app.getState().status,
-        }
+      seed,
+      levelId,
+      setSkipRender: skip => {
+        skipRender = skip
       },
-    }
+      renderOnce: partial => renderFrame({
+        delta:   partial?.delta ?? 1 / 60,
+        elapsed: partial?.elapsed ?? clock.elapsed(),
+        frame:   partial?.frame ?? 0,
+      }),
+    })
+    devFrame  = harness.onFrame
+    detachDev = harness.detach
+  }
 
   const dispose = app.dispose
   app.dispose   = () => {
+    detachDev?.()
     detachControls()
     detachBridge()
     composer = null

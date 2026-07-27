@@ -177,3 +177,14 @@ select option {
     opacity: 0.4;
   }
 }
+
+/*
+ * Dev-only: `?nohud=1` strips the DOM chrome for clean captures.
+ *
+ * Only the React-rendered overlays are hidden — the in-scene holographic HUD is
+ * geometry inside the canvas and stays, which is usually what you want, since
+ * it is part of the render being inspected.
+ */
+[data-dev-nohud] :is(header, footer, [data-hud]) {
+  display: none !important;
+}
