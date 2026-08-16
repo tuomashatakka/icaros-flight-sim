@@ -147,6 +147,7 @@ export function vehicleModule (
           throttle: state.throttle,
           brake:    state.brake,
           strafe:   state.strafe,
+          boost:    state.boost,
         },
         tuning:      state.tuning,
         state:       simState,

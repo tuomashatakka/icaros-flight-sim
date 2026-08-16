@@ -36,6 +36,7 @@ export type RaceState = {
   steer:    number;
   throttle: boolean;
   brake:    boolean;
+  strafe:   number;
   boost:    boolean;
   resetSeq: number;
 
@@ -53,6 +54,7 @@ export type RaceState = {
 export function initialRaceState (shipConfig: ShipConfig | null = null): RaceState {
   return {
     steer:       0,
+    strafe:      0,
     throttle:    false,
     brake:       false,
     boost:       false,
