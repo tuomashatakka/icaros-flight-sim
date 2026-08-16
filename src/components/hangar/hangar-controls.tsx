@@ -9,6 +9,7 @@ import { SHIP_IDS, SHIP_PRESETS } from '@/lib/ship/registry'
 import type { ShipConfig } from '@/lib/ship/registry'
 import styles from './hangar-controls.module.css'
 import { PropsWithChildren } from 'react'
+import { ShipStatsBlock } from './stats'
 
 /**
  * Labelled slider.
@@ -183,6 +184,10 @@ export function HangarControls () {
           <Toggle pressed={ false } onClick={ resetToDefault }>reset ship</Toggle>
           <Toggle pressed={ false } onClick={ () => updateConfig(randomLook()) }>randomize ✦</Toggle>
         </div>
+      </Section>
+
+      <Section title="Statistics">
+        <ShipStatsBlock stats={ activePreset.stats } shipId={ currentConfig.shipId } />
       </Section>
 
       <Section title="Livery">

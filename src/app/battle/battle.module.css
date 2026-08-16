@@ -1,0 +1,30 @@
+.page {
+  position: relative;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--background);
+}
+
+.wash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom right,
+    hsl(348 96% 50% / 0.12),
+    var(--background) 45%,
+    hsl(187 86% 50% / 0.12)
+  );
+}
+
+.layout {
+  position: relative;
+  z-index: 1;
+  height: 100%;
+}
+
+.viewport {
+  position: relative;
+  height: 100%;
+}

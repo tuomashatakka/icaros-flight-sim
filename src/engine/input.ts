@@ -15,8 +15,10 @@ export type Controls = {
   throttle: boolean;
 
   /** S / Down arrow. Brakes the ship. */
-  brake: boolean;
-  boost: boolean;
+  brake:   boolean;
+  boost:   boolean;
+  reverse: boolean;
+  strafe:  number;
 
   /**
    * Monotonic respawn counter, NOT a boolean.
@@ -45,6 +47,8 @@ export function createControls (): Controls {
     throttle: false,
     brake:    false,
     boost:    false,
+    reverse:  false,
+    strafe:   0,
     resetSeq: 0,
     viewSeq:  0,
     panX:     0,
@@ -65,7 +69,8 @@ const clampSteer = (value: number) => Math.max(-1, Math.min(1, value))
  * @returns A detach function — call it from the app's dispose chain.
  */
 export function attachControls (target: HTMLElement, controls: Controls): () => void {
-  const pressed = new Set<'left' | 'right'>()
+  const pressed       = new Set<'left' | 'right'>()
+  const strafePressed = new Set<'strafeLeft' | 'strafeRight'>()
   let keyboardSteer = 0
   let pointerSteer  = 0
 
@@ -81,7 +86,14 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
     syncSteer()
   }
 
+  const refreshStrafe = () => {
+    const sLeft     = strafePressed.has('strafeLeft')
+    const sRight    = strafePressed.has('strafeRight')
+    controls.strafe = sLeft === sRight ? 0 : sRight ? -1 : 1
+  }
+
   const onKeyDown = (event: KeyboardEvent) => {
+    const k = event.key.toLowerCase()
     if (isLeft(event.key)) {
       pressed.add('left')
       refreshKeyboardSteer()
@@ -90,19 +102,32 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
       pressed.add('right')
       refreshKeyboardSteer()
     }
-    else if (isThrottle(event.key))
+
+    if (k === 'q') {
+      strafePressed.add('strafeLeft')
+      refreshStrafe()
+    }
+    else if (k === 'e') {
+      strafePressed.add('strafeRight')
+      refreshStrafe()
+    }
+
+    if (isThrottle(event.key))
       controls.throttle = true
-    else if (isBrake(event.key))
-      controls.brake = true
+    else if (isBrake(event.key)) {
+      controls.brake   = true
+      controls.reverse = true
+    }
     else if (event.key === 'Shift')
       controls.boost = true
-    else if (event.key.toLowerCase() === 'r' && !event.repeat)
+    else if (k === 'r' && !event.repeat)
       controls.resetSeq++
-    else if (event.key.toLowerCase() === 'c' && !event.repeat)
+    else if (k === 'c' && !event.repeat)
       controls.viewSeq++
   }
 
   const onKeyUp = (event: KeyboardEvent) => {
+    const k = event.key.toLowerCase()
     if (isLeft(event.key)) {
       pressed.delete('left')
       refreshKeyboardSteer()
@@ -111,10 +136,22 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
       pressed.delete('right')
       refreshKeyboardSteer()
     }
-    else if (isThrottle(event.key))
+
+    if (k === 'q') {
+      strafePressed.delete('strafeLeft')
+      refreshStrafe()
+    }
+    else if (k === 'e') {
+      strafePressed.delete('strafeRight')
+      refreshStrafe()
+    }
+
+    if (isThrottle(event.key))
       controls.throttle = false
-    else if (isBrake(event.key))
-      controls.brake = false
+    else if (isBrake(event.key)) {
+      controls.brake   = false
+      controls.reverse = false
+    }
     else if (event.key === 'Shift')
       controls.boost = false
   }
@@ -122,11 +159,14 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
   // Losing focus mid-turn would otherwise leave the ship steering forever.
   const onBlur = () => {
     pressed.clear()
+    strafePressed.clear()
     keyboardSteer = 0
     pointerSteer = 0
     controls.throttle = false
     controls.brake    = false
     controls.boost    = false
+    controls.reverse  = false
+    controls.strafe   = 0
     controls.steer    = 0
     controls.panX     = 0
     controls.panY     = 0

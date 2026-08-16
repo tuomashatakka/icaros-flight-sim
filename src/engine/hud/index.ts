@@ -28,7 +28,9 @@ export type HudHandle = {
     hullQuaternion: THREE.Quaternion,
     throttle: number,
     blend: number,
-    camera: THREE.Camera
+    camera: THREE.Camera,
+    panX: number,
+    panY: number
   ): void;
 }
 
@@ -80,7 +82,7 @@ export function hudModule (
       ctx.scene.add(nav.object)
 
       handle.current = {
-        update (elapsed, shipPosition, hullQuaternion, throttle, blend, camera) {
+        update (elapsed, shipPosition, hullQuaternion, throttle, blend, camera, panX, panY) {
           const state = useRaceStore.getState()
 
           _race.status     = state.status
@@ -108,6 +110,8 @@ export function hudModule (
           _frame.gate           = gate
           _frame.blend          = blend
           _frame.camera         = camera
+          _frame.panX           = panX
+          _frame.panY           = panY
 
           cockpit.update(_frame)
           chase.update(_frame)

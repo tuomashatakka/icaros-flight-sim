@@ -40,6 +40,10 @@ export type HudFrame = {
   blend: number;
 
   camera: THREE.Camera;
+
+  /** Pointer look-around, -1..1 on each axis. Drives parallax + focal DOF. */
+  panX: number;
+  panY: number;
 }
 
 /** Reference top speed the gauges normalise against, m/s. */

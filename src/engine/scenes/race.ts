@@ -1,31 +1,6 @@
-import * as THREE from 'three'
-import { createApp, createSeededRng, defineModule } from 'threejs-scene'
-import type { FrameContext } from 'threejs-scene'
 import type { App } from 'threejs-scene'
-import { standardLighting } from 'threejs-scene/modules/lighting'
-import { postProcessing } from 'threejs-scene/modules/post'
-import { useRaceStore } from '@/hooks/use-race-store'
-import { useCameraView } from '@/hooks/use-camera-view'
-import { initRapier } from '../rapier'
-import { createSimClock } from '../clock'
-import { createPhysics } from '../physics/world'
-import { attachBoxColliders } from '../physics/colliders'
-import { createTelemetry } from '../telemetry'
-import { createControls, attachControls } from '../input'
-import { createCameraRig } from '../camera/rig'
-import { hudModule } from '../hud'
-import type { HudHandle } from '../hud'
-import { vehicleModule } from '../modules/vehicle'
-import type { VehicleHandle } from '../modules/vehicle'
-import { physicsStepModule } from '../modules/physics-step'
 import { raceModule } from '../modules/race'
-import { shipVisualModule } from '../modules/ship-visual'
-import type { ShipVisualHandle } from '../modules/ship-visual'
-import { sunModule } from '../modules/sun'
-import type { SunHandle } from '../modules/sun'
-import { publishModule } from '../modules/publish'
-import type { PublishHandle } from '../modules/publish'
-import { attachBridge } from '../bridge'
+import { hudModule } from '../hud'
 import { initialRaceState } from '../state'
 import type { RaceState } from '../state'
 import { flatsLevel } from '../levels/flats'
@@ -33,6 +8,7 @@ import { neonCanyonLevel } from '../levels/neon-canyon'
 import { orbitalRingLevel } from '../levels/orbital-ring'
 import { proceduralLevel } from '../levels/procedural'
 import type { LevelId, LevelSpec } from '../levels/types'
+import { mountBaseScene } from './base'
 
 
 const LEVEL_BUILDERS: Record<LevelId, () => LevelSpec> = {
@@ -42,316 +18,38 @@ const LEVEL_BUILDERS: Record<LevelId, () => LevelSpec> = {
   'procedural':   proceduralLevel,
 }
 
-const SEED = 7
-
-/**
- * Scene seed, overridable via `?seed=` in development.
- *
- * Parsed inline rather than through `engine/dev/params` because the seed is
- * needed *before* `createApp`, and the dev module is loaded asynchronously after
- * it. `process.env.NODE_ENV` is statically replaced at build time, so the whole
- * branch is eliminated from the production bundle.
- */
-function resolveSeed (): number {
-  if (process.env.NODE_ENV === 'production' || typeof window === 'undefined')
-    return SEED
-
-  const override = Number(new URLSearchParams(window.location.search).get('seed'))
-  return Number.isFinite(override) && override !== 0 ? override : SEED
-}
-
-// Hoisted — sampled once per rendered frame.
-const _shipPosition   = new THREE.Vector3()
-const _shipQuaternion = new THREE.Quaternion()
-
 /**
  * The race scene composition root.
  *
- * Mirrors the reference template's `mount(canvas)` shape. The rapier world and
- * the clock are built here, before `createApp`, and injected — a module cannot
- * own the world because `createApp` builds and updates modules from the same
- * ordered array, so "built first, stepped last" is unsatisfiable.
+ * Uses `mountBaseScene` as its base and attaches race-specific level geometry,
+ * colliders, race logic, and HUD.
  */
 export async function mountRace (
   canvas: HTMLCanvasElement,
   levelId: LevelId
 ): Promise<App<RaceState>> {
-  const RAPIER = await initRapier()
-
   const builder = LEVEL_BUILDERS[levelId] ?? flatsLevel
   const level   = builder()
 
-  const physics   = createPhysics(RAPIER)
-  const clock     = createSimClock()
-  const telemetry = createTelemetry()
-  const controls  = createControls()
-  type VehicleType = { current: VehicleHandle | null }
-
-  const vehicle: VehicleType = { current: null }
-  type SunType = { current: SunHandle | null }
-
-  const sun: SunType         = { current: null }
-
-  type HudType = { current: HudHandle | null }
-
-  const hud: HudType                = { current: null }
-  type ShipVisualType = { current: ShipVisualHandle | null }
-
-  const shipVisual: ShipVisualType  = { current: null }
-
-  type PublishType = { current: PublishHandle | null }
-
-  const publish: PublishType = { current: null }
-
-  // The composer does not exist at composition time — the effects callback hands
-  // it back later, so the root render override reaches it through this binding.
-  let composer: { render(delta: number): void } | null = null
-
-  // The rig is built BEFORE createApp and passed in as `camera`. createApp binds
-  // the camera to its resize observer at construction, so swapping ctx.camera
-  // afterwards would leave the rig's aspect uncorrected on every resize. It gets
-  // its own seeded stream from the same seed so replays stay deterministic.
-  const seed = resolveSeed()
-  const rng  = createSeededRng(seed)
-  const rig  = createCameraRig(rng)
-
-  // Dev-only render kill switch. Physics at 1/60 is microseconds; the composer
-  // is milliseconds — so a scenario that skips the draw runs hundreds of times
-  // faster than real time. Always false in production, where nothing can set it.
-  let skipRender = false
-
-  // Set once the dev harness has loaded; the render phase feeds it overlays and
-  // frame timings. Left null in production.
-  let devFrame: ((position: THREE.Vector3, delta: number) => void) | null = null
-
-  /** Last-seen view toggle count — see the `resetSeq` note in `input.ts`. */
-  let lastViewSeq = controls.viewSeq
-
-  // The rig always mounts in chase, but the store outlives the scene (a hot
-  // reload or a level change rebuilds one and not the other), so the mirror has
-  // to be re-seeded or the controls hint ends up describing the wrong view.
-  useCameraView.getState().setView(rig.view())
-
-  // Placeholder hull until the ship loader lands. The interpolated pose is
-  // written to this root each rendered frame; a real ship will hang its fitted
-  // model underneath so scale never fights the per-frame transform.
-  const shipRoot = new THREE.Group()
-
-  // Gate crossings arrive as collider-handle pairs, so the race module needs a
-  // way to tell the ship from scenery. Resolved lazily — the chassis collider
-  // only exists once the vehicle module has built.
-  const isVehicleCollider = (handle: number) => {
-    const body = vehicle.current?.body
-    if (!body)
-      return false
-    for (let i = 0; i < body.numColliders(); i++)
-      if (body.collider(i).handle === handle)
-        return true
-    return false
-  }
-
-  const race = raceModule(physics, level, isVehicleCollider)
-
-  const app = createApp<RaceState>(canvas, {
-    state:    initialRaceState(),
-    seed,
-    clock,
-    camera:   rig.camera,
-    scene:    { background: level.background },
-    renderer: { shadows: true },
-
-    use: [
-      // Kept dim on purpose: each level adds its own hemisphere and point
-      // lights (ported from the R3F versions), so this is a base layer, not the
-      // whole key. The env map exists mainly so metalness/clearcoat aren't
-      // silent no-ops. `sun: false` — the shadow-casting key is our own module
-      // below, because a fixed shadow camera loses the ship entirely once it
-      // drives past the frustum.
-      standardLighting<RaceState>({
-        env:  { intensity: 0.22 },
-        sun:  { intensity: 0 },
-        hemi: { skyColor: '#8a9bff', groundColor: '#0a0c14', intensity: 0.2 },
-      }),
-
-      sunModule(sun, { intensity: 1.6, frustum: 45, mapSize: 2048 }),
-
-      // Level geometry + its static collider strip.
-      defineModule<RaceState>({
-        name: `level:${level.id}`,
-        build (ctx) {
-          level.build(ctx, physics)
-          attachBoxColliders(physics, level.colliders, level.colliderOffset)
-        },
-      }),
-
-      shipVisualModule(shipRoot, telemetry, shipVisual),
-
-      // After ship-visual, so the canopy is added to a `shipRoot` that already
-      // exists in the scene.
-      hudModule(shipRoot, level, telemetry, hud),
-
-      // Reads input into state. Input is written by DOM listeners onto a plain
-      // object; this is the one place it enters the unidirectional flow.
-      defineModule<RaceState>({
-        name: 'input-sync',
-        build () {},
-        update (_state, _frame, _ctx) {
-          app.setState({
-            steer:    controls.steer,
-            throttle: controls.throttle,
-            brake:    controls.brake,
-            boost:    controls.boost,
-            resetSeq: controls.resetSeq,
-          })
-        },
-      }),
-
-      race,
-      vehicleModule(physics, telemetry, vehicle, () => rig.requestSnap()),
-      // Drains gate crossings straight into the race module's handler.
-      physicsStepModule(physics, race.handleCollision),
-      publishModule(telemetry, publish),
-
-      // Feed the accumulated impact shake to the rig, then clear it.
-      defineModule<RaceState>({
-        name: 'impact',
-        build () {},
-        update () {
-          if (telemetry.shake > 0) {
-            rig.shake(telemetry.shake)
-            telemetry.shake = 0
-          }
-        },
-      }),
-
-      // Must be LAST: the last-mounted module with a render hook wins, and this
-      // one owns the composer we drive from the root render override.
-      postProcessing<RaceState>({
-        bloom:   level.bloom,
-        effects: ctx => {
-          composer = ctx.composer
-          return []
-        },
-      }),
-    ],
-
-    // Interpolation and the camera live here, not in a module: exactly one
-    // render owner runs per frame and `postProcessing` claims it, so the root
-    // override is the only hook guaranteed to run once per REAL frame.
-    render (frame) {
-      // The one dev-only line on the hot path. `skipRender` is only ever set by
-      // the scenario runner, which needs the sim to advance without the draw.
-      if (skipRender)
-        return
-      renderFrame(frame)
+  return mountBaseScene<RaceState>({
+    canvas,
+    levelId,
+    levelSpec:      level,
+    initialState:   initialRaceState(),
+    background:     level.background,
+    bloom:          level.bloom,
+    colliders:      level.colliders,
+    colliderOffset: level.colliderOffset,
+    buildGeometry:  (ctx, physics) => {
+      level.build(ctx, physics)
     },
+    gameModuleFactory: (physics, isVehicleCollider) => {
+      const race = raceModule(physics, level, isVehicleCollider)
+      return {
+        module:          race,
+        handleCollision: race.handleCollision,
+      }
+    },
+    hudModuleFactory: (shipRoot, telemetry, hudRef) => hudModule(shipRoot, level, telemetry, hudRef),
   })
-
-  /**
-   * Draw one frame from the last solved pose.
-   *
-   * Extracted from the `render` option so the dev harness can force a draw
-   * on demand — `step(n)` pumps ticks with the clock paused, and a paused clock
-   * emits no frames, so without this a screenshot after stepping would still
-   * show the pose from before it.
-   */
-  function renderFrame (frame: FrameContext) {
-    // Edge-triggered, exactly like `resetSeq`. The view lives on the rig
-    // rather than in app state: the toggle must land on the frame it was
-    // pressed, and routing it through setState would cost a tick of latency
-    // for something the render phase already owns.
-    if (controls.viewSeq !== lastViewSeq) {
-      lastViewSeq = controls.viewSeq
-      rig.toggleView()
-      useCameraView.getState().setView(rig.view())
-    }
-
-    const interpolator = vehicle.current?.interpolator
-    if (interpolator) {
-      // Blend the last two solved poses. Both the hull and the camera read
-      // this, never the raw body, or they stair-step above 60 Hz.
-      interpolator.sample(clock.alpha(), _shipPosition, _shipQuaternion)
-      shipRoot.position.copy(_shipPosition)
-      shipRoot.quaternion.copy(_shipQuaternion)
-      rig.drive(frame.delta, _shipPosition, _shipQuaternion, controls)
-      // Keep the shadow volume on the ship, or it drives out of it.
-      sun.current?.follow(_shipPosition)
-
-      const blend = rig.blend()
-
-      // Once seated, the hull encloses the camera and all you would see is the
-      // inside of its back faces. The canopy is the interior from here on.
-      shipVisual.current?.setHullVisible(blend < 0.85)
-
-      const throttle = controls.throttle ? controls.boost ? 1 : 0.72 : 0
-      hud.current?.update(
-        frame.elapsed,
-        _shipPosition,
-        _shipQuaternion,
-        throttle,
-        blend,
-        rig.camera
-      )
-
-      // Debug overlays and the frame-time ring buffer. Null in production, and
-      // placed after the pose is resolved so the overlays draw against the same
-      // interpolated position the player sees.
-      devFrame?.(_shipPosition, frame.delta)
-    }
-
-    if (composer)
-      composer.render(frame.delta)
-    else
-      app.ctx.renderer.render(app.ctx.scene, rig.camera)
-  }
-
-  const detachControls = attachControls(canvas, controls)
-  const detachBridge   = attachBridge(app)
-
-  // Dev harness: `window.__dev`, the surface `scripts/dev-cli.mjs` drives.
-  // Loaded through a dynamic import so the scenario runner, the debug overlays
-  // and the trace buffer all land in a separate chunk that the production build
-  // drops entirely — the NODE_ENV comparison is statically false there.
-  let detachDev: (() => void) | null = null
-  if (process.env.NODE_ENV !== 'production') {
-    const { attachDevHarness } = await import('../dev/harness')
-    const harness              = attachDevHarness({
-      app,
-      physics,
-      clock,
-      controls,
-      telemetry,
-      vehicle,
-      sun,
-      publish,
-      rig,
-      level,
-      seed,
-      levelId,
-      setSkipRender: skip => {
-        skipRender = skip
-      },
-      renderOnce: partial => renderFrame({
-        delta:   partial?.delta ?? 1 / 60,
-        elapsed: partial?.elapsed ?? clock.elapsed(),
-        frame:   partial?.frame ?? 0,
-      }),
-    })
-    devFrame  = harness.onFrame
-    detachDev = harness.detach
-  }
-
-  const dispose = app.dispose
-  app.dispose   = () => {
-    detachDev?.()
-    detachControls()
-    detachBridge()
-    composer = null
-    dispose()
-    // After the modules: they call world.removeRigidBody in their own dispose,
-    // so the world has to outlive them.
-    physics.free()
-  }
-
-  return app
 }
