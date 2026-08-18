@@ -505,8 +505,16 @@ export function buildZoneVisual (radius: number): ZoneVisual {
     blending:    THREE.AdditiveBlending,
     toneMapped:  false,
   })
-  const column      = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.7, radius * 0.85, 55, 20, 1, true), columnMat)
-  column.position.y = 27
+  // A NARROW pillar at the point's centre, lifted clear of ship height.
+  //
+  // Sizing it to the capture radius made it a marker you stand inside, and an
+  // additive tube wrapped around the camera tints the entire frame in team
+  // colour the moment you drive onto the point you are capturing.
+  const column      = new THREE.Mesh(new THREE.CylinderGeometry(radius * 0.1, radius * 0.16, 70, 16, 1, true), columnMat)
+  // Base 20 units up. The chase camera rides ~4 above a ship that hovers ~1
+  // above the surface, so anything lower puts the camera INSIDE the tube for
+  // the whole time you are capturing the point.
+  column.position.y = 55
   group.add(column)
 
   return {
@@ -527,7 +535,7 @@ export function buildZoneVisual (radius: number): ZoneVisual {
       // from the other side of the arena.
       const pulse       = contested ? 0.5 + Math.abs(Math.sin(elapsed * 5)) * 0.5 : 1
       ringMat.opacity   = (owner ? 0.85 : 0.5) * pulse
-      columnMat.opacity = (owner ? 0.1 : 0.05) * pulse
+      columnMat.opacity = (owner ? 0.4 : 0.22) * pulse
     },
 
     dispose () {
