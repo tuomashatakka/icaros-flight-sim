@@ -16,6 +16,7 @@ export interface Palette {
   name:              string;
   bodyColor:         string;
   emissiveColor:     string;
+  trimColor:         string;
   metalness:         number;
   roughness:         number;
   emissiveIntensity: number;
@@ -26,6 +27,7 @@ export const PALETTES: Record<string, Palette> = {
     name:              'Default',
     bodyColor:         '#ffffff',
     emissiveColor:     '#000000',
+    trimColor:         '#36d6ff',
     metalness:         0.5,
     roughness:         0.5,
     emissiveIntensity: 0.0,
@@ -34,6 +36,7 @@ export const PALETTES: Record<string, Palette> = {
     name:              'Colibri Pink',
     bodyColor:         '#ff69b4',
     emissiveColor:     '#ff00ff',
+    trimColor:         '#ffe6a8',
     metalness:         0.3,
     roughness:         0.4,
     emissiveIntensity: 0.5,
@@ -42,6 +45,7 @@ export const PALETTES: Record<string, Palette> = {
     name:              'Ion Cyan',
     bodyColor:         '#00ffff',
     emissiveColor:     '#00ffff',
+    trimColor:         '#0a2a3a',
     metalness:         0.4,
     roughness:         0.3,
     emissiveIntensity: 0.8,
@@ -50,6 +54,7 @@ export const PALETTES: Record<string, Palette> = {
     name:              'Ember Red',
     bodyColor:         '#ff4500',
     emissiveColor:     '#ff6347',
+    trimColor:         '#1a1108',
     metalness:         0.6,
     roughness:         0.7,
     emissiveIntensity: 0.3,
@@ -58,6 +63,7 @@ export const PALETTES: Record<string, Palette> = {
     name:              'Ink Mono',
     bodyColor:         '#111111',
     emissiveColor:     '#333333',
+    trimColor:         '#d8dbe6',
     metalness:         0.8,
     roughness:         0.2,
     emissiveIntensity: 0.1,
@@ -66,9 +72,64 @@ export const PALETTES: Record<string, Palette> = {
     name:              'Toxic Green',
     bodyColor:         '#00ff00',
     emissiveColor:     '#00ff00',
+    trimColor:         '#08240c',
     metalness:         0.2,
     roughness:         0.6,
     emissiveIntensity: 0.9,
+  },
+  mercury: {
+    name:              'Mercury',
+    bodyColor:         '#c9d2e0',
+    emissiveColor:     '#7fb3ff',
+    trimColor:         '#2b3446',
+    metalness:         0.95,
+    roughness:         0.12,
+    emissiveIntensity: 0.25,
+  },
+  venom: {
+    name:              'Venom',
+    bodyColor:         '#2a1b3d',
+    emissiveColor:     '#a855f7',
+    trimColor:         '#b7f34a',
+    metalness:         0.6,
+    roughness:         0.35,
+    emissiveIntensity: 0.7,
+  },
+  sunset: {
+    name:              'Sunset Strip',
+    bodyColor:         '#ff8a3d',
+    emissiveColor:     '#ff2d6f',
+    trimColor:         '#ffe6a8',
+    metalness:         0.45,
+    roughness:         0.35,
+    emissiveIntensity: 0.55,
+  },
+  abyss: {
+    name:              'Abyss',
+    bodyColor:         '#0d2b3e',
+    emissiveColor:     '#22d3ee',
+    trimColor:         '#0affc2',
+    metalness:         0.7,
+    roughness:         0.28,
+    emissiveIntensity: 0.65,
+  },
+  bone: {
+    name:              'Bone Ceramic',
+    bodyColor:         '#efe7d6',
+    emissiveColor:     '#ffb347',
+    trimColor:         '#3a2f24',
+    metalness:         0.15,
+    roughness:         0.62,
+    emissiveIntensity: 0.2,
+  },
+  vapor: {
+    name:              'Vapor',
+    bodyColor:         '#f5c2ff',
+    emissiveColor:     '#61e8ff',
+    trimColor:         '#5b21b6',
+    metalness:         0.35,
+    roughness:         0.25,
+    emissiveIntensity: 0.6,
   },
 }
 
@@ -99,11 +160,23 @@ type BaseConfigType = {
   texturePreset: ShipConfig['texturePreset'];
   paletteName:   ShipConfig['paletteName'];
   textureRepeat: number;
+  patternAngle?: number;
   themeColors: {
     primary:   string;
     secondary: string;
     accent:    string;
   };
+}
+
+/** Repeat + rotation, applied identically to the base and emissive maps. */
+function orientTexture (texture: THREE.CanvasTexture, repeat: number, angle = 0): void {
+  texture.repeat.set(repeat, repeat)
+  if (angle !== 0) {
+    // Rotation is about the UV ORIGIN unless the centre is moved first, which
+    // sends the whole livery sliding off the hull as the slider moves.
+    texture.center.set(0.5, 0.5)
+    texture.rotation = angle
+  }
 }
 
 export function drawBaseTexture (config: BaseConfigType): THREE.CanvasTexture {
@@ -133,6 +206,15 @@ export function drawBaseTexture (config: BaseConfigType): THREE.CanvasTexture {
     case 'gallery':
       drawGalleryPattern(ctx, config.bodyColor)
       break
+    case 'racing':
+      drawRacingPattern(ctx, config.bodyColor, config.themeColors)
+      break
+    case 'splinter':
+      drawSplinterPattern(ctx, config.bodyColor, config.themeColors)
+      break
+    case 'circuit':
+      drawCircuitPattern(ctx, config.bodyColor, config.themeColors)
+      break
     default:
       drawPlainPattern(ctx, config.bodyColor)
   }
@@ -141,7 +223,7 @@ export function drawBaseTexture (config: BaseConfigType): THREE.CanvasTexture {
   texture.wrapS      = THREE.RepeatWrapping
   texture.wrapT      = THREE.RepeatWrapping
   texture.colorSpace = THREE.SRGBColorSpace
-  texture.repeat.set(config.textureRepeat, config.textureRepeat)
+  orientTexture(texture, config.textureRepeat, config.patternAngle)
   return markManagedTexture(texture)
 }
 
@@ -252,11 +334,108 @@ function drawPlainPattern (ctx: CanvasRenderingContext2D, bodyColor: string): vo
   ctx.fillRect(0, 0, 1024, 1024)
 }
 
+/** Twin centre stripes with a thin trim outline — the classic race livery. */
+function drawRacingPattern (
+  ctx: CanvasRenderingContext2D,
+  bodyColor: string,
+  theme: ThemeColorsType
+): void {
+  ctx.fillStyle = bodyColor
+  ctx.fillRect(0, 0, 1024, 1024)
+
+  for (const x of [ 400, 560 ]) {
+    ctx.fillStyle = theme.secondary
+    ctx.fillRect(x, 0, 64, 1024)
+    ctx.fillStyle = theme.accent
+    ctx.fillRect(x - 8, 0, 8, 1024)
+    ctx.fillRect(x + 64, 0, 8, 1024)
+  }
+
+  // Nose flash: a wedge across the front third.
+  ctx.fillStyle = theme.accent
+  ctx.beginPath()
+  ctx.moveTo(0, 120)
+  ctx.lineTo(1024, 40)
+  ctx.lineTo(1024, 96)
+  ctx.lineTo(0, 176)
+  ctx.closePath()
+  ctx.fill()
+}
+
+/** Angular splinter camo. Deterministic — a livery must not reshuffle on reload. */
+function drawSplinterPattern (
+  ctx: CanvasRenderingContext2D,
+  bodyColor: string,
+  theme: ThemeColorsType
+): void {
+  const rng     = mulberry32(0x5911e4)
+  ctx.fillStyle = bodyColor
+  ctx.fillRect(0, 0, 1024, 1024)
+
+  const tones = [ theme.secondary, theme.accent, '#00000055' ]
+  for (let i = 0; i < 46; i++) {
+    const x       = rng() * 1024
+    const y       = rng() * 1024
+    const r       = 60 + rng() * 190
+    ctx.fillStyle = tones[Math.floor(rng() * tones.length)]
+    ctx.beginPath()
+    for (let k = 0; k < 3 + Math.floor(rng() * 3); k++) {
+      const a  = k / 5 * Math.PI * 2 + rng() * 0.9
+      const rr = r * (0.4 + rng() * 0.6)
+      const px = x + Math.cos(a) * rr
+      const py = y + Math.sin(a) * rr
+      if (k === 0)
+        ctx.moveTo(px, py)
+      else
+        ctx.lineTo(px, py)
+    }
+    ctx.closePath()
+    ctx.fill()
+  }
+}
+
+/** Circuit traces with solder pads. */
+function drawCircuitPattern (
+  ctx: CanvasRenderingContext2D,
+  bodyColor: string,
+  theme: ThemeColorsType
+): void {
+  const rng     = mulberry32(0xc1c17)
+  ctx.fillStyle = bodyColor
+  ctx.fillRect(0, 0, 1024, 1024)
+
+  ctx.strokeStyle = theme.accent
+  ctx.lineWidth   = 3
+  ctx.lineCap     = 'square'
+
+  for (let i = 0; i < 60; i++) {
+    let x = Math.floor(rng() * 32) * 32
+    let y = Math.floor(rng() * 32) * 32
+    ctx.beginPath()
+    ctx.moveTo(x, y)
+    // Manhattan walk: the right-angle turns are what read as a circuit.
+    for (let step = 0; step < 3 + Math.floor(rng() * 4); step++) {
+      if (rng() > 0.5)
+        x += (rng() > 0.5 ? 1 : -1) * 32 * (1 + Math.floor(rng() * 3))
+      else
+        y += (rng() > 0.5 ? 1 : -1) * 32 * (1 + Math.floor(rng() * 3))
+      ctx.lineTo(x, y)
+    }
+    ctx.stroke()
+
+    ctx.fillStyle = theme.secondary
+    ctx.beginPath()
+    ctx.arc(x, y, 6, 0, Math.PI * 2)
+    ctx.fill()
+  }
+}
+
 type EmissiveConfigType = {
   emissiveColor: string;
   texturePreset: ShipConfig['texturePreset'];
   paletteName:   ShipConfig['paletteName'];
   textureRepeat: number;
+  patternAngle?: number;
 }
 
 export function drawEmissiveTexture (config: EmissiveConfigType): THREE.CanvasTexture {
@@ -288,6 +467,15 @@ export function drawEmissiveTexture (config: EmissiveConfigType): THREE.CanvasTe
     case 'gallery':
       drawEmissiveGalleryPattern(ctx, config.emissiveColor)
       break
+    case 'racing':
+      drawEmissiveRacingPattern(ctx, config.emissiveColor)
+      break
+    case 'splinter':
+      drawEmissiveSplinterPattern(ctx, config.emissiveColor)
+      break
+    case 'circuit':
+      drawEmissiveCircuitPattern(ctx, config.emissiveColor)
+      break
     default:
       drawEmissivePlainPattern(ctx, config.emissiveColor)
   }
@@ -296,7 +484,7 @@ export function drawEmissiveTexture (config: EmissiveConfigType): THREE.CanvasTe
   texture.wrapS      = THREE.RepeatWrapping
   texture.wrapT      = THREE.RepeatWrapping
   texture.colorSpace = THREE.SRGBColorSpace
-  texture.repeat.set(config.textureRepeat, config.textureRepeat)
+  orientTexture(texture, config.textureRepeat, config.patternAngle)
   return markManagedTexture(texture)
 }
 
@@ -375,6 +563,40 @@ function drawEmissiveGalleryPattern (ctx: CanvasRenderingContext2D, color: strin
     ctx.fillRect(x, y, 200, 160)
   }
   ctx.globalAlpha = 1.0
+}
+
+function drawEmissiveRacingPattern (ctx: CanvasRenderingContext2D, color: string): void {
+  ctx.fillStyle   = color
+  ctx.globalAlpha = 0.85
+  for (const x of [ 392, 624 ])
+    ctx.fillRect(x, 0, 8, 1024)
+  ctx.globalAlpha = 1
+}
+
+function drawEmissiveSplinterPattern (ctx: CanvasRenderingContext2D, color: string): void {
+  const rng       = mulberry32(0x5911e5)
+  ctx.fillStyle   = color
+  ctx.globalAlpha = 0.5
+  for (let i = 0; i < 22; i++) {
+    const x = rng() * 1024
+    const y = rng() * 1024
+    ctx.fillRect(x, y, 6 + rng() * 40, 6)
+  }
+  ctx.globalAlpha = 1
+}
+
+function drawEmissiveCircuitPattern (ctx: CanvasRenderingContext2D, color: string): void {
+  const rng       = mulberry32(0xc1c18)
+  ctx.fillStyle   = color
+  ctx.globalAlpha = 0.75
+  for (let i = 0; i < 120; i++) {
+    const x = Math.floor(rng() * 32) * 32
+    const y = Math.floor(rng() * 32) * 32
+    ctx.beginPath()
+    ctx.arc(x, y, 5, 0, Math.PI * 2)
+    ctx.fill()
+  }
+  ctx.globalAlpha = 1
 }
 
 function drawEmissivePlainPattern (ctx: CanvasRenderingContext2D, color: string): void {
@@ -485,17 +707,25 @@ export function applyShipConfig (gltfScene: THREE.Object3D, config: ShipConfig):
             // floods the baked livery out of existence. The emissive controls drive the glow
             // bucket only — that's the whole point of keeping the livery.
           }
-          // Glass keeps its own tuned metalness/roughness/emissive tint entirely.
-          material.needsUpdate = true
+          // Glass keeps its own tuned metalness/roughness, but takes the trim
+          // colour: on a baked hull it is the only surface the player can
+          // recolour without washing the authored livery away.
+          if (isGlass) {
+            material.color.set(config.trimColor)
+            material.emissive.set(config.trimColor)
+          }
+          material.envMapIntensity = config.gloss
+          material.needsUpdate     = true
           continue
         }
 
         const receivesPattern = !isGlow && !isGlass
 
-        material.color.set(isGlow ? '#05020a' : isGlass ? config.emissiveColor : config.bodyColor)
-        material.metalness = isGlass ? 0.4 : config.metalness
-        material.roughness = isGlass ? 0.15 : config.roughness
-        material.emissive.set(config.emissiveColor)
+        material.color.set(isGlow ? '#05020a' : isGlass ? config.trimColor : config.bodyColor)
+        material.metalness       = isGlass ? 0.4 : config.metalness
+        material.roughness       = isGlass ? 0.15 : config.roughness
+        material.envMapIntensity = config.gloss
+        material.emissive.set(isGlass ? config.trimColor : config.emissiveColor)
         material.emissiveIntensity = isGlow
           ? Math.max(1.2, config.emissiveIntensity * 3)
           : config.emissiveIntensity
@@ -506,7 +736,7 @@ export function applyShipConfig (gltfScene: THREE.Object3D, config: ShipConfig):
             themeColors: {
               primary:   config.bodyColor,
               secondary: config.emissiveColor,
-              accent:    config.emissiveColor,
+              accent:    config.trimColor,
             },
           })
           replaceTexture(material, 'map', patternTexture)
@@ -525,7 +755,7 @@ export function applyShipConfig (gltfScene: THREE.Object3D, config: ShipConfig):
               config.texturePreset === 'city' ? 'buildings_normal' : 'background_buildings_normal'
             )
             replaceTexture(material, 'normalMap', hangarTexture)
-            material.normalScale.set(config.textureRepeat, config.textureRepeat)
+            material.normalScale.set(config.platingDepth, config.platingDepth)
           }
           else
             replaceTexture(material, 'normalMap', null)

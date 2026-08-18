@@ -8,8 +8,13 @@
 // pulled into the zustand store, React components, and the material layer alike
 // without dragging WebGL code where it doesn't belong.
 
-export type TexturePreset = 'plain' | 'panels' | 'carbon' | 'hazard' | 'city' | 'gallery'
-export type PaletteName = 'default' | 'colibri' | 'ion' | 'ember' | 'ink' | 'toxic'
+import type { WeaponId } from '@/engine/battle/weapons'
+
+
+export type TexturePreset = 'plain' | 'panels' | 'carbon' | 'hazard' | 'city' | 'gallery' | 'racing' | 'splinter' | 'circuit'
+export type PaletteName =
+  | 'default' | 'colibri' | 'ion' | 'ember' | 'ink' | 'toxic' |
+  'mercury' | 'venom' | 'sunset' | 'abyss' | 'bone' | 'vapor'
 
 /** The user-tweakable appearance fields (everything in a config except which ship it is). */
 export interface ShipCustomization {
@@ -43,6 +48,66 @@ export interface ShipCustomization {
    * detection is a heuristic over a scanned mesh, so it stays correctable.
    */
   nozzleSpread: number;
+
+  // --- livery, second layer -------------------------------------------------
+
+  /**
+   * Accent colour for stripes, panel edges and canopy tint.
+   *
+   * Separate from `emissiveColor` because that one drives the GLOW bucket on
+   * the baked-livery hulls and is black by default there; a trim colour has to
+   * be visible on all nine.
+   */
+  trimColor: string;
+
+  /**
+   * Gloss, 0..1.
+   *
+   * Driven into `envMapIntensity`, not a clearcoat lobe: the hulls are
+   * `MeshStandardMaterial` and swapping nine of them to `MeshPhysicalMaterial`
+   * to gain one slider costs a full shader recompile per ship. Against the
+   * hangar's PMREM environment the reflective response is what "gloss" means
+   * to the eye anyway.
+   */
+  gloss: number;
+
+  /** Rotates the generated pattern, so stripes need not run along the hull axis. */
+  patternAngle: number;
+
+  // --- hull shape -----------------------------------------------------------
+  //
+  // Non-uniform scale on the fitted hull. Applied on the fit group rather than
+  // the root, because the sim writes the root's pose every frame and would
+  // clobber anything set there.
+
+  /** Beam multiplier. */
+  bodyWidth: number;
+
+  /** Ride-height / canopy multiplier. */
+  bodyHeight: number;
+
+  /** Nose-to-tail multiplier. */
+  bodyLength: number;
+
+  /** Normal-map depth, i.e. how pronounced the hull plating reads. */
+  platingDepth: number;
+
+  // --- armament -------------------------------------------------------------
+
+  /** Beam-class weapon on the primary trigger. */
+  primaryWeapon: WeaponId;
+
+  /** Missile-class weapon on the secondary trigger. Requires a lock to fire. */
+  secondaryWeapon: WeaponId;
+
+  /** Barrel size multiplier on the derived hardpoints. */
+  gunScale: number;
+
+  /** Multiplier on the hull half-width when placing the two hardpoints. */
+  gunSpread: number;
+
+  /** Hide the bolt-on barrels entirely (some hulls read better clean). */
+  gunsVisible: boolean;
 }
 
 /** Per-ship handling bias. Carried as metadata only — not wired into physics (yet). */
@@ -243,6 +308,18 @@ export const BASE_CONFIG: ShipCustomization = {
   burnIntensity:     1,
   burnLength:        1,
   nozzleSpread:      1,
+  trimColor:         '#36d6ff',
+  gloss:             0.9,
+  patternAngle:      0,
+  bodyWidth:         1,
+  bodyHeight:        1,
+  bodyLength:        1,
+  platingDepth:      1,
+  primaryWeapon:     'pulse',
+  secondaryWeapon:   'hornet',
+  gunScale:          0.85,
+  gunSpread:         1,
+  gunsVisible:       true,
 }
 
 export function buildDefaultConfig (shipId: ShipId): ShipConfig {

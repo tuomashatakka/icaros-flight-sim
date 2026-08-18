@@ -328,12 +328,17 @@
   to   { transform: scale(1); }
 }
 
+/*
+ * Above the reticle, not below it: in chase view the ship's own nose occupies
+ * everything under the crosshair, and a target callout printed across your own
+ * hull is unreadable at exactly the moment it matters.
+ */
 .lockLabel {
   position: absolute;
-  top: 100%;
+  bottom: 100%;
   left: 50%;
   transform: translateX(-50%);
-  margin-top: 0.4rem;
+  margin-bottom: 0.45rem;
   white-space: nowrap;
   font-size: 0.6rem;
   letter-spacing: 0.16em;

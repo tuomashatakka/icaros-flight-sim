@@ -15,9 +15,13 @@ the game is doing. `scripts/dev-cli.mjs` boots it, drives the in-page
 bun run dev:probe --level flats             # full state snapshot
 bun run dev:scenario straight-line          # deterministic scripted run + summary
 bun run dev:shot /tmp/a.png --step 300 --overlay colliders,wheels
+bun run dev:shot /tmp/b.png --level battle --at 0,3,-190
 bun run dev:console --seconds 5             # errors, frame times, WebGL state
 bun run dev:eval -e '__dev.probe().ship.up'
 ```
+
+`--level battle` drives `/battle`; `--at x,y,z[,yaw]` teleports before framing.
+Set `CHROMIUM_PATH` if the sandbox's chromium build does not match playwright's.
 
 Scenarios are input timelines in `public/scenarios/`, run with rendering off:
 ~12 sim seconds in ~20–40 ms, byte-identical across runs. Two runs of the same

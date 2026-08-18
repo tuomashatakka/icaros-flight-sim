@@ -7,6 +7,8 @@ import type { HangarViewToggle } from '@/hooks/use-hangar-view'
 import { PALETTES } from '@/lib/ship/materials'
 import { SHIP_IDS, SHIP_PRESETS } from '@/lib/ship/registry'
 import type { ShipConfig } from '@/lib/ship/registry'
+import { BEAM_WEAPONS, MISSILE_WEAPONS, WEAPONS } from '@/engine/battle/weapons'
+import type { WeaponId } from '@/engine/battle/weapons'
 import styles from './hangar-controls.module.css'
 import { PropsWithChildren } from 'react'
 import { ShipStatsBlock } from './stats'
@@ -115,27 +117,82 @@ function Section ({ title, children }: SectionProps) {
 
 const PATTERNS: { value: ShipConfig['texturePreset']; label: string }[] = [
   { value: 'plain', label: 'Plain' },
+  { value: 'racing', label: 'Racing Stripes' },
   { value: 'panels', label: 'Panels' },
   { value: 'carbon', label: 'Carbon Fiber' },
+  { value: 'splinter', label: 'Splinter Camo' },
+  { value: 'circuit', label: 'Circuitry' },
   { value: 'hazard', label: 'Hazard' },
   { value: 'city', label: 'Cityscape' },
   { value: 'gallery', label: 'Gallery' },
 ]
 
+/** Weapon picker row — one chip per weapon of a class, with its stat line. */
+type WeaponPickerProps = {
+  options:  WeaponId[];
+  value:    WeaponId;
+  onChange: (id: WeaponId) => void;
+}
+
+function WeaponPicker ({ options, value, onChange }: WeaponPickerProps) {
+  return <div className={ styles.weapons }>
+    { options.map(id => {
+      const spec   = WEAPONS[id]
+      const active = value === id
+      return <button
+        key={ id }
+        onClick={ () => onChange(id) }
+        className={ active ? styles.weaponActive : styles.weapon }>
+        <span className={ styles.weaponDot } style={{ background: spec.color }} />
+
+        <span className={ styles.weaponBody }>
+          <span className={ styles.weaponName }>{ spec.label }</span>
+          <span className={ styles.weaponBlurb }>{ spec.blurb }</span>
+
+          <span className={ styles.weaponStats }>
+            { spec.damage } dmg · { spec.cooldown.toFixed(2) }s · { spec.range }m
+            { spec.needsLock ? ' · lock' : '' }
+          </span>
+        </span>
+      </button>
+    }) }
+  </div>
+}
+
+const pick = <T,>(list: readonly T[]): T => list[Math.floor(Math.random() * list.length)]
+
 /** Random livery, in the spirit of the forge prototype's `randomize ✦`. */
 function randomLook (): Partial<ShipConfig> {
   const palettes          = Object.entries(PALETTES)
-  const [ name, palette ] = palettes[Math.floor(Math.random() * palettes.length)]
+  const [ name, palette ] = pick(palettes)
   return {
     paletteName:       name as ShipConfig['paletteName'],
     bodyColor:         palette.bodyColor,
     emissiveColor:     palette.emissiveColor,
+    trimColor:         palette.trimColor,
     metalness:         0.2 + Math.random() * 0.75,
     roughness:         0.15 + Math.random() * 0.7,
     emissiveIntensity: 0.3 + Math.random() * 0.7,
+    gloss:             0.4 + Math.random() * 1.2,
+    texturePreset:     pick(PATTERNS).value,
+    patternAngle:      Math.random() * Math.PI,
     burnColor:         palette.emissiveColor,
     burnIntensity:     0.6 + Math.random() * 1.2,
     burnLength:        0.7 + Math.random() * 1.6,
+  }
+}
+
+/** Random silhouette + armament. Kept separate: a lot of pilots want one, not both. */
+function randomBuild (): Partial<ShipConfig> {
+  return {
+    bodyWidth:       0.7 + Math.random() * 0.9,
+    bodyHeight:      0.7 + Math.random() * 0.8,
+    bodyLength:      0.75 + Math.random() * 0.85,
+    platingDepth:    Math.random() * 2,
+    primaryWeapon:   pick(BEAM_WEAPONS),
+    secondaryWeapon: pick(MISSILE_WEAPONS),
+    gunScale:        0.6 + Math.random() * 0.8,
+    gunSpread:       0.4 + Math.random() * 0.9,
   }
 }
 
@@ -182,7 +239,8 @@ export function HangarControls () {
         <div className={ styles.toggles }>
           <Toggle pressed={ false } onClick={ applyToAllShips }>apply livery to fleet</Toggle>
           <Toggle pressed={ false } onClick={ resetToDefault }>reset ship</Toggle>
-          <Toggle pressed={ false } onClick={ () => updateConfig(randomLook()) }>randomize ✦</Toggle>
+          <Toggle pressed={ false } onClick={ () => updateConfig(randomLook()) }>randomize paint ✦</Toggle>
+          <Toggle pressed={ false } onClick={ () => updateConfig(randomBuild()) }>randomize build ⚙</Toggle>
         </div>
       </Section>
 
@@ -215,6 +273,85 @@ export function HangarControls () {
 
         <Swatch label="body" value={ currentConfig.bodyColor } onChange={ v => set('bodyColor', v) } />
         <Swatch label="emissive" value={ currentConfig.emissiveColor } onChange={ v => set('emissiveColor', v) } />
+        <Swatch label="trim" value={ currentConfig.trimColor } onChange={ v => set('trimColor', v) } />
+      </Section>
+
+      <Section title="Hull Shape">
+        <Slider
+          label="beam (width)" value={ currentConfig.bodyWidth }
+          min={ 0.6 } max={ 1.7 } step={ 0.01 }
+          onChange={ v => set('bodyWidth', v) }
+          format={ v => `${v.toFixed(2)}×` } />
+
+        <Slider
+          label="profile (height)" value={ currentConfig.bodyHeight }
+          min={ 0.5 } max={ 1.8 } step={ 0.01 }
+          onChange={ v => set('bodyHeight', v) }
+          format={ v => `${v.toFixed(2)}×` } />
+
+        <Slider
+          label="length" value={ currentConfig.bodyLength }
+          min={ 0.6 } max={ 1.7 } step={ 0.01 }
+          onChange={ v => set('bodyLength', v) }
+          format={ v => `${v.toFixed(2)}×` } />
+
+        <Slider
+          label="plating depth" value={ currentConfig.platingDepth }
+          min={ 0 } max={ 2.5 } step={ 0.01 }
+          onChange={ v => set('platingDepth', v) } />
+
+        <div className={ styles.toggles }>
+          <Toggle
+            pressed={ false }
+            onClick={ () => updateConfig({ bodyWidth: 1, bodyHeight: 1, bodyLength: 1 }) }>
+            reset silhouette
+          </Toggle>
+        </div>
+
+        <p className={ styles.note }>
+          Deform scales the fitted hull, so the engine nozzles and gun hardpoints are
+          re-derived from the new silhouette rather than staying pinned to the old one.
+          Handling is unaffected — the collider is the same box on every hull.
+        </p>
+      </Section>
+
+      <Section title="Armament">
+        <span className={ styles.fieldHead }>primary · beam class</span>
+
+        <WeaponPicker
+          options={ BEAM_WEAPONS }
+          value={ currentConfig.primaryWeapon }
+          onChange={ v => set('primaryWeapon', v) } />
+
+        <span className={ styles.fieldHead }>secondary · guided</span>
+
+        <WeaponPicker
+          options={ MISSILE_WEAPONS }
+          value={ currentConfig.secondaryWeapon }
+          onChange={ v => set('secondaryWeapon', v) } />
+
+        <Slider
+          label="barrel size" value={ currentConfig.gunScale }
+          min={ 0.4 } max={ 1.6 } step={ 0.01 }
+          onChange={ v => set('gunScale', v) }
+          format={ v => `${v.toFixed(2)}×` } />
+
+        <Slider
+          label="hardpoint spread" value={ currentConfig.gunSpread }
+          min={ 0 } max={ 1.4 } step={ 0.01 }
+          onChange={ v => set('gunSpread', v) }
+          format={ v => `${v.toFixed(2)}×` } />
+
+        <div className={ styles.toggles }>
+          <Toggle pressed={ currentConfig.gunsVisible } onClick={ () => set('gunsVisible', !currentConfig.gunsVisible) }>
+            show barrels
+          </Toggle>
+        </div>
+
+        <p className={ styles.note }>
+          Beam weapons are hitscan and fire freely; guided weapons only launch once the
+          lock meter fills. This loadout is what you take into battle.
+        </p>
       </Section>
 
       <Section title="Materials & Texture">
@@ -232,6 +369,11 @@ export function HangarControls () {
           label="emission" value={ currentConfig.emissiveIntensity }
           min={ 0 } max={ 1 } step={ 0.01 }
           onChange={ v => set('emissiveIntensity', v) } />
+
+        <Slider
+          label="gloss" value={ currentConfig.gloss }
+          min={ 0 } max={ 2 } step={ 0.01 }
+          onChange={ v => set('gloss', v) } />
 
         { hasBakedLivery
           ? <p className={ styles.note }>
@@ -255,6 +397,12 @@ export function HangarControls () {
               min={ 0.5 } max={ 5 } step={ 0.25 }
               onChange={ v => set('textureRepeat', v) }
               format={ v => `${v.toFixed(2)}×` } />
+
+            <Slider
+              label="pattern angle" value={ currentConfig.patternAngle }
+              min={ 0 } max={ Math.PI } step={ 0.01 }
+              onChange={ v => set('patternAngle', v) }
+              format={ v => `${Math.round(v * 180 / Math.PI)}°` } />
           </> }
       </Section>
 

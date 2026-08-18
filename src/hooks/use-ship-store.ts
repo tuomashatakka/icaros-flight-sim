@@ -109,7 +109,12 @@ export const useShipStore = create<ShipState>()(
         // v4: ships gained afterburner tuning (burnColor/burnIntensity/burnLength/
         //     nozzleSpread); the bump re-runs migrate(), which layers saves over the
         //     new defaults so existing edits survive but the plume fields appear.
-        version:    4,
+        // v5: hull-shape deform (bodyWidth/bodyHeight/bodyLength/platingDepth), the
+        //     second livery layer (trimColor/gloss/patternAngle) and the armament
+        //     block (primaryWeapon/secondaryWeapon/gunScale/gunSpread/gunsVisible).
+        //     Without the bump a v4 save reaches the loader with bodyWidth undefined
+        //     and every hull collapses to a zero-scale point.
+        version:    5,
         storage:    createJSONStorage(() => localStorage),
         partialize: state => ({
           shipConfigs:   state.shipConfigs,

@@ -164,7 +164,7 @@ export function buildCaretMarker (): CaretMarker {
   group.renderOrder = OVERLAY_ORDER
   group.visible     = false
 
-  const caretMat                     = overlayMaterial('#dfe6ff', 0.9)
+  const caretMat                     = overlayMaterial('#dfe6ff', 0.95)
   const carets: THREE.LineSegments[] = []
   const geo                          = caretGeometry()
 
@@ -187,7 +187,7 @@ export function buildCaretMarker (): CaretMarker {
     depthWrite:  false,
     toneMapped:  false,
   })
-  const arc       = new THREE.Mesh(new THREE.RingGeometry(1.28, 1.46, 40, 1, Math.PI / 2, 0.001), arcMat)
+  const arc       = new THREE.Mesh(new THREE.RingGeometry(1.28, 1.52, 40, 1, Math.PI / 2, 0.001), arcMat)
   arc.renderOrder = OVERLAY_ORDER + 1
   group.add(arc)
 
@@ -217,8 +217,10 @@ export function buildCaretMarker (): CaretMarker {
       _a.setFromMatrixPosition(group.matrixWorld)
       _b.setFromMatrixPosition(camera.matrixWorld)
 
+      // Tuned so the bracket FRAMES a ~3-unit hull rather than swallowing it:
+      // at 120 m this is roughly 60 px on a 900 px viewport.
       const dist = Math.max(_a.distanceTo(_b), 1)
-      group.scale.setScalar(dist * 0.035)
+      group.scale.setScalar(dist * 0.015)
 
       // Carets pull in from 1.9 to 1.0 as the lock fills — the movement is the
       // readable part; the arc is confirmation.
@@ -236,7 +238,7 @@ export function buildCaretMarker (): CaretMarker {
       if (Math.abs(span - arcSpan) > 0.02) {
         arcSpan = span
         arc.geometry.dispose()
-        arc.geometry = new THREE.RingGeometry(1.28, 1.46, 40, 1, Math.PI / 2, -span)
+        arc.geometry = new THREE.RingGeometry(1.28, 1.52, 40, 1, Math.PI / 2, -span)
       }
       arc.visible     = !locked && progress > 0.02
       arc.scale.setScalar(spread)

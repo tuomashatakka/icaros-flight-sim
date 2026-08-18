@@ -5,6 +5,7 @@ import { useSearchParams } from 'next/navigation'
 import { SceneCanvas } from '@/components/scene-canvas'
 import { BattleUI } from '@/components/battle/battle-ui'
 import { mountBattle } from '@/engine/scenes/battle'
+import { useShipStore } from '@/hooks/use-ship-store'
 import type { ShipId } from '@/lib/ship/registry'
 import styles from './battle.module.css'
 
@@ -14,7 +15,17 @@ function BattleContent () {
   const mount  = useCallback((canvas: HTMLCanvasElement) => {
     const name = params.get('n')
     const ship = params.get('ship')
-    return mountBattle(canvas, name || 'nuller', (ship as ShipId) || 'icaras')
+
+    // Read the hangar loadout through `getState`, not a hook: `mount` has to
+    // stay referentially stable or SceneCanvas tears the WebGL context down and
+    // rebuilds the whole match on every livery tweak.
+    const config = useShipStore.getState().currentConfig
+    return mountBattle(
+      canvas,
+      name || 'nuller',
+      (ship as ShipId) || config.shipId,
+      { primary: config.primaryWeapon, secondary: config.secondaryWeapon }
+    )
   }, [ params ])
 
   return <div className={ styles.page }>

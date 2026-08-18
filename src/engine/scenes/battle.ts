@@ -529,5 +529,47 @@ export async function mountBattle (
     },
   })
 
+  // Dev-only handle on the sim itself.
+  //
+  // The generic `window.__dev` harness speaks vehicle-and-track; nothing in it
+  // can place an enemy, read a lock meter or confirm a beam was drawn. Named
+  // with the `__dev` prefix on purpose so the post-build leak grep
+  // (`grep -r "__dev" .next/static`) catches this too if the guard ever breaks.
+  if (process.env.NODE_ENV !== 'production')
+    (window as unknown as Record<string, unknown>).__devBattle = {
+      probe: () => ({
+        status:   sim.status,
+        scores:   sim.scores,
+        lock:     { ...localPlayer.lock },
+        beams:    sim.beams.length,
+        missiles: sim.missiles.length,
+        players:  sim.players.map(p => {
+          const t = p.chassis.translation()
+          return { id: p.id, team: p.team, hp: p.health, x: Math.round(t.x), y: Math.round(t.y), z: Math.round(t.z) }
+        }),
+        zones: sim.zones.map(z => ({ id: z.def.id, owner: z.owner, progress: Math.round(z.progress * 100) / 100 })),
+      }),
+
+      /** Drop an enemy at a spot, facing the local player. Returns its id. */
+      place: (id: string, x: number, y: number, z: number) => {
+        const target = sim.getPlayer(id) ?? sim.players.find(p => p.team !== localPlayer.team)
+        if (!target)
+          return null
+        target.chassis.setTranslation({ x, y, z }, true)
+        target.chassis.setLinvel({ x: 0, y: 0, z: 0 }, true)
+        target.chassis.setAngvel({ x: 0, y: 0, z: 0 }, true)
+        return target.id
+      },
+
+      /** Aim the local ship at a world point, so a lock can be driven from a script. */
+      face: (x: number, z: number) => {
+        const t   = localPlayer.chassis.translation()
+        const yaw = Math.atan2(x - t.x, z - t.z)
+        localPlayer.chassis.setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }, true)
+        localPlayer.chassis.setAngvel({ x: 0, y: 0, z: 0 }, true)
+        return yaw
+      },
+    }
+
   return app
 }
