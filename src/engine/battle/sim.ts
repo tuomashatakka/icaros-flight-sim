@@ -63,10 +63,19 @@ export const NEUTRAL_INPUT: BattleInput = {
   resetSeq:      0,
 }
 
+/**
+ * Scoring is tuned so no single point can carry a match.
+ *
+ * Five zones ticking +1 every `zonePeriod` (6 s) means holding one is 10/min —
+ * short of 60 inside the 5-minute clock — while three is 30/min and all five
+ * is 50/min, i.e. a rout ends in about 70 seconds. At the old 25/4 s a team
+ * that took the central spire and nothing else simply won, which is why bot
+ * matches ended with four of the five points still neutral.
+ */
 export const DEFAULT_BATTLE_CONFIG: BattleConfig = {
   matchTime:        300,
-  scoreTarget:      25,
-  captureBonus:     5,
+  scoreTarget:      60,
+  captureBonus:     8,
   zoneScore:        1,
   stunDuration:     0.7,
   contactSpeed:     26,

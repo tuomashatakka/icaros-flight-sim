@@ -19,6 +19,38 @@ const wrapPi = (a: number) => {
 type Waypoint = { x: number; z: number }
 
 /**
+ * Stable 32-bit hash (FNV-1a) of a string.
+ *
+ * Bots need decisions that hold still. Drawing from the shared rng inside a
+ * per-tick decision re-rolls it sixty times a second, which is what the old
+ * `tick % 240 >= 190 * rng()` did: the goal flipped between the enemy core and
+ * a control point every tick, the steer sign flipped with it, and the bot
+ * jittered on the spot for an entire match without ever arriving anywhere.
+ * Hashing identity + a coarse time block gives a choice that is still varied
+ * across the team and still deterministic, but commits for long enough to act
+ * on.
+ */
+function hashOf (text: string): number {
+  let h = 0x811c9dc5
+  for (let i = 0; i < text.length; i++) {
+    h ^= text.charCodeAt(i)
+    h = Math.imul(h, 0x01000193)
+  }
+  return h >>> 0
+}
+
+/**
+ * Ticks a bot sticks with an objective before reconsidering.
+ *
+ * Has to cover travel plus a capture. On a 600-unit deck a crossing runs 15–20
+ * seconds and a point takes another 9 to flip, so a short window means arriving
+ * somewhere, starting a capture, and abandoning it — which is exactly what a
+ * 12-second window produced: bots on every mesa in the arena and not one zone
+ * held between them.
+ */
+const COMMIT_TICKS = 60 * 25
+
+/**
  * Objective-driven bot controller.
  *
  * Runs INSIDE the sim's tick, so bots are just another input source — identical
@@ -45,7 +77,7 @@ export function botInput (
   _quat.set(q.x, q.y, q.z, q.w)
   _fwd.set(0, 0, 1).applyQuaternion(_quat)
 
-  const goal = routeTo(sim, player, chooseTarget(sim, player, rng, tick))
+  const goal = routeTo(sim, player, chooseTarget(sim, player, tick))
 
   _to.set(goal.x - t.x, 0, goal.z - t.z)
 
@@ -113,28 +145,39 @@ export function botInput (
 function chooseTarget (
   sim: BattleSim,
   player: BattlePlayer,
-  rng: () => number,
   tick: number
 ): Waypoint {
   const ownBase = sim.arena.bases[player.team].position
 
-  // 1. Escort the stolen objective home.
+  // 1. Escort the stolen core home.
   if (player.carriedFlag)
     return { x: ownBase[0], z: ownBase[2] }
 
-  // 2. Grab an exposed enemy objective.
+  // 2. Standing on a point that still needs work? Hold it, whatever the commit
+  // window says. Walking off a half-captured point resets the whole effort, and
+  // a point of ours under contest is about to stop being ours.
+  const t = player.chassis.translation()
+  for (const zone of sim.zones) {
+    const inside  = Math.hypot(t.x - zone.def.position[0], t.z - zone.def.position[2]) <= zone.def.radius
+    const settled = zone.owner === player.team && !zone.contested
+    if (inside && !settled)
+      return { x: zone.def.position[0], z: zone.def.position[2] }
+  }
+
+  // Stagger the commit windows across the team so they do not all reconsider
+  // on the same tick and swap objectives in lockstep.
+  const seat  = hashOf(player.id)
+  const block = Math.floor((tick + seat % COMMIT_TICKS) / COMMIT_TICKS)
+
+  // 3. A minority of the team runs the enemy core; the rest take ground. Five
+  // control points outscore two cores, so most bots should be on the points.
   const enemyFlag = sim.flags.find(f => f.team !== player.team && f.state === 'dropped')
   const homeFlag  = sim.flags.find(f => f.team !== player.team && f.state === 'home')
   const flag      = enemyFlag ?? homeFlag
-  if (flag && flag.state !== 'carried') {
-    // Occasionally peel off to farm zones instead so the whole team isn't
-    // camped on the objective. Deterministic to the sim's seeded rng.
-    if (tick % 240 >= 190 * rng())
-      return pickUndefendedZone(sim, player)
+  const runCore   = hashOf(`${player.id}:${block}`) % 100 < 25
+  if (flag && flag.state !== 'carried' && runCore)
     return { x: flag.position[0], z: flag.position[2] }
-  }
 
-  // 3. Otherwise, take ground.
   return pickUndefendedZone(sim, player)
 }
 
@@ -144,11 +187,18 @@ function pickUndefendedZone (sim: BattleSim, player: BattlePlayer): Waypoint {
   const t = player.chassis.translation()
 
   for (const zone of sim.zones) {
+    let score = Math.hypot(zone.def.position[0] - t.x, zone.def.position[2] - t.z)
+
     // A point already fully ours is worth visiting only if nothing else is
     // closer — but a CONTESTED one of ours jumps the queue.
-    let score = Math.hypot(zone.def.position[0] - t.x, zone.def.position[2] - t.z)
     if (zone.owner === player.team && zone.progress >= 1)
       score *= zone.contested ? 0.6 : 2.5
+
+    // Per-(bot, zone) bias, constant for the life of the match. Without it
+    // every bot on a team ranks the points identically, they all converge on
+    // the same one, and a team of three holds exactly one zone.
+    score *= 1 + hashOf(player.id + zone.def.id) % 100 / 100 * 0.9
+
     if (score < bestScore) {
       bestScore = score
       best = { x: zone.def.position[0], z: zone.def.position[2] }

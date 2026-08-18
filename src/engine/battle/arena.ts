@@ -219,13 +219,26 @@ export function rampFeet (p: PlateauDef): Array<[number, number]> {
  *
  * Two answers only. Lined up on a ramp's centreline between its foot and the
  * mesa edge, the answer is the mesa centre — that line IS the ramp. Anywhere
- * else it is the nearest ramp GATE: a staging point out on the deck beyond the
- * foot, so the approach straightens out before the climb starts.
+ * else it is the gate of the ramp facing the ship: a staging point out on the
+ * deck beyond the foot, so the approach straightens out before the climb.
+ *
+ * Which ramp is chosen by ANGULAR SECTOR — the ramp whose outward direction
+ * best matches the ship's bearing from the mesa centre. Two more obvious rules
+ * both fail:
+ *
+ * - Nearest gate flips as you travel between two gates, so the goal swaps, the
+ *   ship turns around, and it paces the gap between them forever.
+ * - A fixed ramp per ship never flips, but half the time it is the one on the
+ *   far side of the mesa, and a ship with no path planning drives straight into
+ *   the cliff and grinds along it.
+ *
+ * Sector selection is self-reinforcing instead: heading for a gate moves your
+ * bearing further into that ramp's sector, and the boundary between sectors
+ * sits out on a diagonal where both gates are equally reachable.
  *
  * The lateral tolerance is deliberately TIGHTER than the ramp, not wider. A
- * generous one lets a ship that is beside the ramp think it is on it, drive
- * north, and pin itself against the mesa's vertical face — which is where every
- * bot ended up when the tolerance was `RAMP_HALF_W + 9`.
+ * generous one lets a ship beside the ramp think it is on it, drive at the
+ * mesa's vertical face, and pin itself there.
  */
 export function rampApproach (p: PlateauDef, x: number, z: number): [number, number] {
   const [ cx, cz ] = p.centre
@@ -233,8 +246,12 @@ export function rampApproach (p: PlateauDef, x: number, z: number): [number, num
   const run        = p.height * RAMP_SLOPE
   const lateral    = RAMP_HALF_W - 2
 
+  const dx      = x - cx
+  const dz      = z - cz
+  const bearing = Math.hypot(dx, dz)
+
   let gate: [number, number] = [ cx, cz ]
-  let bestD                  = Number.POSITIVE_INFINITY
+  let bestFacing             = -Infinity
 
   for (const side of p.ramps) {
     const alongZ = side === '+z' || side === '-z'
@@ -242,23 +259,23 @@ export function rampApproach (p: PlateauDef, x: number, z: number): [number, num
     const edge   = alongZ ? cz + sign * hz : cx + sign * hx
     const foot   = edge + sign * run
 
-    // The committed strip runs PAST the foot far enough to swallow the gate:
-    // if the gate sat outside it, a ship that reached the gate would find the
-    // gate zero distance away, have no heading to hold, and circle it forever.
+    // The committed strip runs PAST the foot far enough to swallow the gate: if
+    // the gate sat outside it, a ship that reached the gate would find it zero
+    // distance away, have no heading to hold, and circle it forever.
     const stage = foot + sign * run * 0.45
     const outer = foot + sign * run * 0.55
 
     const axial   = alongZ ? z : x
-    const cross   = alongZ ? x - cx : z - cz
+    const cross   = alongZ ? dx : dz
     const between = sign > 0 ? axial >= edge && axial <= outer : axial <= edge && axial >= outer
     if (between && Math.abs(cross) <= lateral)
       return [ cx, cz ]
 
-    const point: [number, number] = alongZ ? [ cx, stage ] : [ stage, cz ]
-    const d                       = Math.hypot(point[0] - x, point[1] - z)
-    if (d < bestD) {
-      bestD = d
-      gate  = point
+    // Dot of the ship's bearing with this ramp's outward direction.
+    const facing = bearing < 1e-3 ? 0 : (alongZ ? dz : dx) * sign / bearing
+    if (facing > bestFacing) {
+      bestFacing = facing
+      gate       = alongZ ? [ cx, stage ] : [ stage, cz ]
     }
   }
 
@@ -394,7 +411,7 @@ export function apexArena (): BattleArena {
     controlPoints,
     captureTime:    9,
     contestDrain:   4.5,
-    zonePeriod:     4,
+    zonePeriod:     6,
     flagReturnTime: 8,
 
     buildVisual (ctx) {
