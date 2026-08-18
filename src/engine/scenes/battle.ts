@@ -1,33 +1,28 @@
 import * as THREE from 'three'
 import type { App, AppModule } from 'threejs-scene'
 import { defineModule } from 'threejs-scene'
-import { apexArena } from '../battle/arena'
-import { BATTLE_TEAMS, TEAM_COLORS, NEUTRAL_COLOR } from '../battle/arena'
+import { apexArena, BATTLE_TEAMS, TEAM_COLORS } from '../battle/arena'
 import type { BattleTeam } from '../battle/arena'
 import { BattleSim } from '../battle/sim'
-import { verifyActionHash } from '../battle/hash'
+import type { BattlePlayer } from '../battle/sim'
+import { WEAPONS } from '../battle/weapons'
+import type { Loadout } from '../battle/weapons'
+import {
+  buildBeamPool,
+  buildCaretMarker,
+  buildMissilePool,
+  buildNameplate,
+  buildObjective,
+  buildZoneVisual
+} from '../battle/visuals'
+import type { CaretMarker, Nameplate, ObjectiveVisual, ZoneVisual } from '../battle/visuals'
+import { calculateActionHash, verifyActionHash } from '../battle/hash'
 import type { ServerAction } from '../battle/hash'
 import { BodyInterpolator } from '../interpolation'
 import { useBattleStore } from '@/hooks/use-battle-store'
+import { IDLE_LOCK } from '@/hooks/use-battle-store'
 import type { ShipId } from '@/lib/ship/registry'
 import { mountBaseScene } from './base'
-function createHealthBar(): THREE.Sprite {
-  const canvas = document.createElement('canvas')
-  canvas.width = 128
-  canvas.height = 16
-  const ctx = canvas.getContext('2d')!
-  ctx.fillStyle = '#00ff00'
-  ctx.fillRect(0, 0, canvas.width, canvas.height)
-  const texture = new THREE.CanvasTexture(canvas)
-  const material = new THREE.SpriteMaterial({ map: texture })
-  const sprite = new THREE.Sprite(material)
-  sprite.scale.set(2, 0.25, 1)
-  sprite.position.set(0, 2.5, 0)
-  ;(sprite as any).healthCanvas = canvas
-  ;(sprite as any).healthCtx = ctx
-  ;(sprite as any).healthTexture = texture
-  return sprite
-}
 
 
 export type BattleState = {
@@ -46,41 +41,69 @@ export const initialBattleState = (): BattleState => ({
   resetSeq: 0,
 })
 
+/** Beams and missiles both cap out well under these; the pools never grow. */
+const BEAM_POOL    = 48
+const MISSILE_POOL = 64
+
+/**
+ * Opponent hull.
+ *
+ * Deliberately procedural rather than a loaded ship: a battle can hold a dozen
+ * hulls, and the FBX path clones geometry AND textures per instance. This is
+ * one draw call's worth of boxes that still reads as a ship at 100 m.
+ */
 function buildShipHull (team: BattleTeam): THREE.Group {
-
-
   const color = new THREE.Color(TEAM_COLORS[team])
   const root  = new THREE.Group()
 
+  // Sized to the actual collider (1.0 × 0.225 × 2.65 half-extents) rather than
+  // eyeballed: a hull visibly wider than the body it wraps makes every near
+  // miss look like a hit.
   const chassis = new THREE.Mesh(
-    new THREE.BoxGeometry(2.2, 0.7, 3.4),
-    new THREE.MeshStandardMaterial({ color: color.clone().multiplyScalar(0.6), metalness: 0.55, roughness: 0.4 })
+    new THREE.BoxGeometry(1.7, 0.55, 2.6),
+    new THREE.MeshStandardMaterial({ color: color.clone().multiplyScalar(0.4), metalness: 0.6, roughness: 0.38 })
   )
   chassis.position.y = 0.5
   root.add(chassis)
 
   const nose = new THREE.Mesh(
-    new THREE.ConeGeometry(0.7, 1.4, 6),
-    new THREE.MeshStandardMaterial({ color: color.clone().multiplyScalar(0.85), metalness: 0.4, roughness: 0.45 })
+    new THREE.ConeGeometry(0.55, 1.3, 6),
+    new THREE.MeshStandardMaterial({ color: color.clone().multiplyScalar(0.75), metalness: 0.45, roughness: 0.4 })
   )
-  nose.rotation.x = -Math.PI / 2
-  nose.position.set(0, 0.6, -2.1)
+  nose.rotation.x = Math.PI / 2
+  nose.position.set(0, 0.5, 1.7)
   root.add(nose)
 
   const canopy = new THREE.Mesh(
-    new THREE.SphereGeometry(0.55, 12, 8),
-    new THREE.MeshStandardMaterial({ color: '#0d0f18', metalness: 0.9, roughness: 0.15 })
+    new THREE.SphereGeometry(0.4, 12, 8),
+    new THREE.MeshStandardMaterial({ color: '#0d0f18', metalness: 0.9, roughness: 0.12 })
   )
   canopy.scale.set(0.85, 0.7, 1.2)
-  canopy.position.y = 0.95
+  canopy.position.set(0, 0.78, 0.2)
   root.add(canopy)
 
+  for (const x of [ -1.05, 1.05 ]) {
+    const fin = new THREE.Mesh(
+      new THREE.BoxGeometry(0.45, 0.18, 1.7),
+      new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.35, metalness: 0.5, roughness: 0.4 })
+    )
+    fin.position.set(x, 0.4, -0.3)
+    root.add(fin)
+  }
+
   const skirt = new THREE.Mesh(
-    new THREE.BoxGeometry(1.6, 0.12, 2.8),
+    new THREE.BoxGeometry(1.25, 0.1, 2.2),
     new THREE.MeshStandardMaterial({ color: '#05060a', metalness: 0.2, roughness: 0.8 })
   )
   skirt.position.y = 0.08
   root.add(skirt)
+
+  const glow = new THREE.Mesh(
+    new THREE.PlaneGeometry(1.1, 0.3),
+    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, side: THREE.DoubleSide, toneMapped: false })
+  )
+  glow.position.set(0, 0.45, -1.35)
+  root.add(glow)
 
   root.traverse(o => {
     o.castShadow    = true
@@ -89,39 +112,10 @@ function buildShipHull (team: BattleTeam): THREE.Group {
   return root
 }
 
-function buildFlag (team: BattleTeam): THREE.Group {
-  const root  = new THREE.Group()
-  const color = new THREE.Color(TEAM_COLORS[team])
-
-  const pole = new THREE.Mesh(
-    new THREE.CylinderGeometry(0.04, 0.04, 2.2, 6),
-    new THREE.MeshStandardMaterial({ color: '#dfe3ff', metalness: 0.8, roughness: 0.3 })
-  )
-  pole.position.y = 1.1
-  root.add(pole)
-
-  const banner = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.1, 0.7),
-    new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.55, side: THREE.DoubleSide })
-  )
-  banner.position.set(-0.62, 1.55, 0)
-  root.add(banner)
-
-  const tip = new THREE.Mesh(
-    new THREE.SphereGeometry(0.06, 6, 6),
-    new THREE.MeshBasicMaterial({ color })
-  )
-  tip.position.y = 2.25
-  root.add(tip)
-
-  return root
-}
-
-function buildBoltMesh (): THREE.Mesh {
-  return new THREE.Mesh(
-    new THREE.CapsuleGeometry(0.18, 0.7, 4, 8),
-    new THREE.MeshBasicMaterial({ color: '#fff', transparent: true, opacity: 0.95 })
-  )
+type Opponent = {
+  root:      THREE.Group;
+  nameplate: Nameplate;
+  caret:     CaretMarker;
 }
 
 const _pose = new THREE.Vector3()
@@ -130,21 +124,33 @@ const _quat = new THREE.Quaternion()
 /**
  * The battle scene composition root extending `mountBaseScene`.
  *
- * Physics are calculated locally using Rapier (`BattleSim`). Every action that
- * modifies players or game state (input tick, fire, hit, zone claim, respawn)
- * generates a local hash verified against the server's event action hash.
+ * Physics and game rules run locally in `BattleSim`; every rule-changing event
+ * is hashed and checked against the (currently local) authority, which is the
+ * seam a real server drops into. Rendering never reads the sim's arrays
+ * directly into React — HUD state goes through `useBattleStore`, throttled by
+ * that store's own equality checks.
  */
 export async function mountBattle (
   canvas: HTMLCanvasElement,
   name = 'Pilot',
-  shipId: ShipId = 'icaras'
+  shipId: ShipId = 'icaras',
+  loadout?: Partial<Loadout>
 ): Promise<App<BattleState>> {
   const arena = apexArena()
   const sim   = await BattleSim.create(arena)
 
   const localTeam: BattleTeam = 'red'
   const localPlayer           = sim.addPlayer(name, localTeam, shipId)
-  sim.addBot('blue')
+  if (loadout)
+    sim.setLoadout(localPlayer.id, loadout)
+
+  // A five-point arena needs bodies on it, or every zone is uncontested and the
+  // capture rules never get exercised.
+  for (let i = 0; i < 3; i++) {
+    sim.addBot('blue')
+    if (i > 0)
+      sim.addBot('red')
+  }
 
   useBattleStore.getState().resetSession()
   useBattleStore.getState().joined({
@@ -154,72 +160,128 @@ export async function mountBattle (
     name,
   })
 
-  // Start match immediately so driving controls are enabled right away
+  // Start immediately so driving controls are live on arrival.
   sim.start(0)
 
-  let fireHeld   = false
+  let firePrimary   = false
+  let fireSecondary = false
+
   const onKeyDown = (e: KeyboardEvent) => {
     if (e.code === 'Space' || e.code === 'KeyF') {
-      fireHeld = true
+      firePrimary = true
+      e.preventDefault()
+    }
+    else if (e.code === 'KeyX') {
+      fireSecondary = true
       e.preventDefault()
     }
   }
   const onKeyUp = (e: KeyboardEvent) => {
     if (e.code === 'Space' || e.code === 'KeyF')
-      fireHeld = false
+      firePrimary = false
+    else if (e.code === 'KeyX')
+      fireSecondary = false
   }
+
+  // Mouse: left drag already steers, so the triggers ride the OTHER two buttons.
+  const onPointerDown = (e: PointerEvent) => {
+    if (e.button === 2)
+      fireSecondary = true
+    else if (e.button === 1)
+      firePrimary = true
+  }
+  const onPointerUp = (e: PointerEvent) => {
+    if (e.button === 2)
+      fireSecondary = false
+    else if (e.button === 1)
+      firePrimary = false
+  }
+  const onContextMenu = (e: Event) => e.preventDefault()
 
   document.addEventListener('keydown', onKeyDown)
   document.addEventListener('keyup', onKeyUp)
+  canvas.addEventListener('pointerdown', onPointerDown)
+  canvas.addEventListener('pointerup', onPointerUp)
+  canvas.addEventListener('contextmenu', onContextMenu)
 
-  // Control zones visual rings
-  const zoneMeshes: { mesh: THREE.Mesh; mat: THREE.MeshStandardMaterial }[] = []
-  for (const cp of arena.controlPoints) {
-    const mat = new THREE.MeshStandardMaterial({
-      color:             NEUTRAL_COLOR,
-      emissive:          NEUTRAL_COLOR,
-      emissiveIntensity: 0.85,
-      side:              THREE.DoubleSide,
-      transparent:       true,
-      opacity:           0.85,
-    })
-    const ring      = new THREE.Mesh(new THREE.RingGeometry(0.55, 1, 48), mat)
-    ring.rotation.x = -Math.PI / 2
-    ring.position.set(cp.position[0], 0.06, cp.position[2])
-    ring.scale.set(cp.radius, cp.radius, cp.radius)
-    zoneMeshes.push({ mesh: ring, mat })
-  }
+  // --- persistent visuals ---------------------------------------------------
 
-  const flags: Partial<Record<BattleTeam, THREE.Group>> = {}
-  for (const team of BATTLE_TEAMS) {
-    const f     = buildFlag(team)
-    flags[team] = f
-  }
+  const zoneVisuals: ZoneVisual[] = arena.controlPoints.map(cp => {
+    const visual = buildZoneVisual(cp.radius)
+    visual.group.position.set(cp.position[0], cp.position[1], cp.position[2])
+    return visual
+  })
 
-  const bolts: THREE.Mesh[] = []
-  for (let i = 0; i < 16; i++) {
-    const b   = buildBoltMesh()
-    b.visible = false
-    bolts.push(b)
-  }
+  const objectives: Partial<Record<BattleTeam, ObjectiveVisual>> = {}
+  for (const team of BATTLE_TEAMS)
+    objectives[team] = buildObjective(team)
 
-  const opponentShips = new Map<string, THREE.Group>()
-  const shipRoot      = new THREE.Group()
+  const beamPool    = buildBeamPool(BEAM_POOL)
+  const missilePool = buildMissilePool(MISSILE_POOL)
 
+  const opponents = new Map<string, Opponent>()
+  const shipRoot  = new THREE.Group()
+  const overlays  = new THREE.Group()
+
+  // The local ship needs its own caret target too — for the ONE enemy the local
+  // player is tracking, drawn around that enemy, not around us.
   let tickCount = 0
+
+  const zoneViews = () => sim.zones.map(z => ({
+    id:        z.def.id,
+    name:      z.def.name,
+    short:     z.def.short,
+    owner:     z.owner,
+    progress:  z.progress,
+    capturing: z.capturing,
+    contested: z.contested,
+  }))
+
+  const nameOf = () => new Map(sim.players.map(p => [ p.id, p.name ]))
+
+  function ensureOpponent (player: BattlePlayer): Opponent {
+    let entry = opponents.get(player.id)
+    if (entry)
+      return entry
+
+    const root      = buildShipHull(player.team)
+    const nameplate = buildNameplate()
+    const caret     = buildCaretMarker()
+    root.add(nameplate.sprite)
+    shipRoot.add(root)
+    overlays.add(caret.group)
+
+    entry = { root, nameplate, caret }
+    opponents.set(player.id, entry)
+    return entry
+  }
+
+  function dropOpponent (id: string): void {
+    const entry = opponents.get(id)
+    if (!entry)
+      return
+    entry.nameplate.dispose()
+    entry.caret.dispose()
+    entry.root.removeFromParent()
+    entry.caret.group.removeFromParent()
+    opponents.delete(id)
+  }
 
   const app = await mountBaseScene<BattleState>({
     canvas,
     initialState:            initialBattleState(),
     background:              new THREE.Color(arena.background),
+    bloom:                   arena.bloom,
     colliders:               arena.colliders,
-    colliderOffset:          [ 0, 0, 0 ],
+    colliderOffset:          arena.colliderOffset,
     useDefaultVehicleModule: false,
+    // The deck's diagonal is ~850 units; the race rig's 400 far plane would
+    // clip the far wall clean off.
+    cameraFar:               1600,
     buildGeometry:           ctx => {
       arena.buildVisual(ctx)
     },
     gameModuleFactory: (physics, _isVehicleCollider, _telemetry, controls, vehicleRef, rig) => {
-      // Local player body interpolator
       const localInterpolator = new BodyInterpolator(localPlayer.chassis)
       physics.interpolators.push(localInterpolator)
 
@@ -248,117 +310,112 @@ export async function mountBattle (
       const battleGameModule: AppModule<BattleState> = defineModule<BattleState>({
         name: 'battle-sim-logic',
         build () {},
-        update (state, _frame, _ctx) {
+        update (state) {
           tickCount++
 
           sim.setInput(localPlayer.id, {
-            steer:    state.steer,
-            throttle: state.throttle,
-            brake:    state.brake,
-            boost:    state.boost,
-            fire:     fireHeld,
-            reverse:  controls.reverse,
-            strafe:   controls.strafe,
-            resetSeq: state.resetSeq,
+            steer:         state.steer,
+            throttle:      state.throttle,
+            brake:         state.brake,
+            boost:         state.boost,
+            fire:          firePrimary,
+            fireSecondary: fireSecondary,
+            reverse:       controls.reverse,
+            strafe:        controls.strafe,
+            resetSeq:      state.resetSeq,
           })
 
-          // Step physics and game rules locally in Rapier
           sim.step(1 / 60)
 
           const snap   = sim.snapshot()
           const events = sim.drainEvents()
+          const store  = useBattleStore.getState()
 
-          // Compute lock-on target status
-          const enemy = sim.nearestEnemy(localPlayer)
-          if (enemy) {
-            const pt   = localPlayer.chassis.translation()
-            const et   = enemy.chassis.translation()
-            const dx   = et.x - pt.x
-            const dz   = et.z - pt.z
-            const dist = Math.hypot(dx, dz)
-
-            const q = localPlayer.chassis.rotation()
-            _quat.set(q.x, q.y, q.z, q.w)
-            _pose.set(0, 0, 1).applyQuaternion(_quat)
-
-            const dirX = dx / Math.max(dist, 1e-4)
-            const dirZ = dz / Math.max(dist, 1e-4)
-            const dot  = _pose.x * dirX + _pose.z * dirZ
-
-            if (dist < 85 && dot > 0.6)
-              useBattleStore.getState().setLockOn({
-                active:   true,
-                targetId: enemy.id,
-                name:     enemy.name,
-                distance: Math.round(dist),
-                team:     enemy.team,
-              })
-            else
-              useBattleStore.getState().setLockOn({
-                active:   false,
-                targetId: null,
-                name:     null,
-                distance: 0,
-                team:     null,
-              })
+          // --- lock-on readout ---
+          const lock   = localPlayer.lock
+          const target = lock.targetId ? sim.getPlayer(lock.targetId) : undefined
+          if (target) {
+            const pt = localPlayer.chassis.translation()
+            const tt = target.chassis.translation()
+            store.setLockOn({
+              phase:    lock.phase,
+              targetId: target.id,
+              name:     target.name,
+              distance: Math.hypot(tt.x - pt.x, tt.y - pt.y, tt.z - pt.z),
+              team:     target.team,
+              progress: lock.progress,
+            })
           }
           else
-            useBattleStore.getState().setLockOn({
-              active:   false,
-              targetId: null,
-              name:     null,
-              distance: 0,
-              team:     null,
-            })
+            store.setLockOn(IDLE_LOCK)
 
-          useBattleStore.getState().setHealth(localPlayer.health, localPlayer.maxHealth)
+          store.setPilot({
+            health:    localPlayer.health,
+            maxHealth: localPlayer.maxHealth,
+            boost:     localPlayer.boostMeter,
+            kills:     localPlayer.kills,
+            deaths:    localPlayer.deaths,
+            carrying:  localPlayer.carriedFlag,
+          })
 
-          for (const e of events) {
-            useBattleStore.getState().applyEvent(e)
+          const primarySpec   = WEAPONS[localPlayer.loadout.primary]
+          const secondarySpec = WEAPONS[localPlayer.loadout.secondary]
+          store.setWeapons(
+            { id: primarySpec.id, cooldown: localPlayer.cooldown.primary / primarySpec.cooldown, needsLock: primarySpec.needsLock },
+            { id: secondarySpec.id, cooldown: localPlayer.cooldown.secondary / secondarySpec.cooldown, needsLock: secondarySpec.needsLock }
+          )
 
-            const localSnapshot = {
-              scores:      snap.scores,
-              status:      snap.status,
-              playerCount: snap.players.length,
-              eventType:   e.type,
-            }
+          if (events.length) {
+            const names = nameOf()
+            for (const e of events) {
+              store.applyEvent(e, names)
 
-            const mockServerAction: ServerAction = {
-              tick:    tickCount,
-              type:    e.type,
-              payload: e as Record<string, unknown>,
-              hash:    verifyActionHash({
+              const localSnapshot = {
+                scores:      snap.scores,
+                status:      snap.status,
+                playerCount: snap.players.length,
+                eventType:   e.type,
+              }
+
+              // Compute the authority's hash directly. Deriving it by calling
+              // `verifyActionHash` with an empty hash "worked", but that call
+              // console.warns on every mismatch — so every single event logged
+              // a verification failure that had not actually happened.
+              const mockServerAction: ServerAction = {
                 tick:    tickCount,
                 type:    e.type,
                 payload: e as Record<string, unknown>,
-                hash:    '',
-              }, localSnapshot).localHash,
-            }
+                hash:    calculateActionHash(e.type, tickCount, e as Record<string, unknown>, localSnapshot),
+              }
 
-            const vResult = verifyActionHash(mockServerAction, localSnapshot)
-            useBattleStore.getState().setVerification({
-              tick:    vResult.tick,
-              hash:    vResult.serverHash,
-              matched: vResult.matched,
-            })
+              const vResult = verifyActionHash(mockServerAction, localSnapshot)
+              store.setVerification({
+                tick:    vResult.tick,
+                hash:    vResult.serverHash,
+                matched: vResult.matched,
+              })
+            }
           }
 
-          useBattleStore.getState().setRoster(
+          store.setRoster(
             sim.players.map(p => ({
-              id:    p.id,
-              name:  p.name,
-              team:  p.team,
-              isBot: p.isBot,
+              id:     p.id,
+              name:   p.name,
+              team:   p.team,
+              isBot:  p.isBot,
+              kills:  p.kills,
+              deaths: p.deaths,
             }))
           )
 
-          useBattleStore.getState().setChrome({
-            status:    snap.status,
-            countdown: snap.countdown,
-            timeLeft:  Math.round(snap.timeLeft),
-            scores:    snap.scores,
-            zones:     snap.zones,
-            flags:     snap.flags.map(f => ({
+          store.setChrome({
+            status:      snap.status,
+            countdown:   snap.countdown,
+            timeLeft:    Math.round(snap.timeLeft),
+            scores:      snap.scores,
+            scoreTarget: sim.config.scoreTarget,
+            zones:       zoneViews(),
+            flags:       snap.flags.map(f => ({
               team:      f.team,
               state:     f.state,
               carrierId: f.carrierId,
@@ -369,115 +426,105 @@ export async function mountBattle (
 
       return { module: battleGameModule }
     },
+
     extraModules: [
       defineModule<BattleState>({
         name:  'battle-visuals',
         build: ctx => {
-          for (const f of Object.values(flags))
-            if (f)
-              ctx.scene.add(f)
-          for (const b of bolts)
-            ctx.scene.add(b)
-          ctx.scene.add(shipRoot, ...zoneMeshes.map(z => z.mesh))
+          for (const objective of Object.values(objectives))
+            if (objective)
+              ctx.scene.add(objective.group)
+          for (const zone of zoneVisuals)
+            ctx.scene.add(zone.group)
+          ctx.scene.add(shipRoot, overlays, beamPool.group, missilePool.group)
         },
       }),
     ],
-    onFrame: (_frame, _pos, _quat, _rig, _controls) => {
-      // Reconcile opponent / bot meshes
+
+    onFrame: frame => {
+      const elapsed = frame.elapsed
+
+      // --- opponents ---
       for (const p of sim.players) {
         if (p.id === localPlayer.id)
           continue
-        if (!opponentShips.has(p.id)) {
-            const hull = buildShipHull(p.team)
-            const healthBar = createHealthBar()
-            hull.add(healthBar)
-            // store health bar reference in map for later updates
-            ;(hull as any).healthBar = healthBar
-            opponentShips.set(p.id, hull)
-            shipRoot.add(hull)
-          }
-      }
-      for (const [ id, mesh ] of opponentShips)
-        if (!sim.players.some(p => p.id === id)) {
-          shipRoot.remove(mesh)
-          opponentShips.delete(id)
+
+        const entry = ensureOpponent(p)
+        const t     = p.chassis.translation()
+        const q     = p.chassis.rotation()
+        _pose.set(t.x, t.y, t.z)
+        _quat.set(q.x, q.y, q.z, q.w)
+        entry.root.position.copy(_pose)
+        entry.root.quaternion.copy(_quat)
+        entry.nameplate.set(p.name, p.health, p.maxHealth, p.team, p.carriedFlag !== null)
+
+        // The caret only ever appears on the ONE ship the local player's lock
+        // is working on — a bracket on every enemy is wallpaper, not a target.
+        const lock    = localPlayer.lock
+        const tracked = lock.targetId === p.id && p.team !== localPlayer.team
+        entry.caret.setVisible(tracked && lock.phase !== 'idle')
+        if (tracked) {
+          entry.caret.group.position.set(t.x, t.y + 1.4, t.z)
+          entry.caret.group.updateMatrixWorld()
+          entry.caret.update(app.ctx.camera, lock.progress, lock.phase === 'locked', true, elapsed)
         }
-
-      // Update positions of opponent ships
-      for (const p of sim.players) {
-        if (p.id === localPlayer.id)
-          continue
-
-        const mesh = opponentShips.get(p.id)
-          if (mesh) {
-            const t = p.chassis.translation()
-            const q = p.chassis.rotation()
-            _pose.set(t.x, t.y, t.z)
-            _quat.set(q.x, q.y, q.z, q.w)
-            mesh.position.copy(_pose)
-            mesh.quaternion.copy(_quat)
-            // Update health bar texture based on player health
-            const healthBar = (mesh as any).healthBar as THREE.Sprite
-            if (healthBar) {
-              const hp = p.health
-              const maxHp = p.maxHealth
-              const percent = Math.max(0, Math.min(1, hp / maxHp))
-              const canvas = (healthBar as any).healthCanvas as HTMLCanvasElement
-              const ctx = (healthBar as any).healthCtx as CanvasRenderingContext2D
-              const width = canvas.width
-              const height = canvas.height
-              // clear
-              ctx.clearRect(0, 0, width, height)
-              // background (dark)
-              ctx.fillStyle = '#444'
-              ctx.fillRect(0, 0, width, height)
-              // health bar
-              const green = Math.round(255 * percent)
-              const red = 255 - green
-              ctx.fillStyle = `rgb(${red},${green},0)`
-              ctx.fillRect(0, 0, width * percent, height)
-              ;(healthBar as any).healthTexture.needsUpdate = true
-            }
-          }
       }
 
-      // Synchronize flag meshes
+      for (const id of [ ...opponents.keys() ])
+        if (!sim.players.some(p => p.id === id))
+          dropOpponent(id)
+
+      // --- objectives ---
       for (const team of BATTLE_TEAMS) {
-        const f  = flags[team]
-        const sf = sim.flags.find(fl => fl.team === team)
-        if (f && sf)
-          f.position.set(sf.position[0], sf.position[1], sf.position[2])
+        const visual = objectives[team]
+        const state  = sim.flags.find(f => f.team === team)
+        if (!visual || !state)
+          continue
+        visual.group.position.set(state.position[0], state.position[1], state.position[2])
+        visual.update(elapsed, state.state === 'carried')
       }
 
-      // Synchronize bolt projectile meshes
-      bolts.forEach((b, i) => {
-        const src = sim.bolts[i]
-        if (!src) {
-          b.visible = false
-          return
-        }
-        b.position.set(src.position[0], src.position[1], src.position[2])
-        b.visible = true;
-        (b.material as THREE.MeshBasicMaterial).color.set(TEAM_COLORS[src.team])
+      // --- weapons ---
+      sim.beams.forEach((b, i) => {
+        const spec = WEAPONS[b.weapon]
+        // Fade over the beam's remaining life so a hit reads as a flash, not a
+        // rod that blinks out.
+        beamPool.show(i, { x: b.from[0], y: b.from[1], z: b.from[2] }, { x: b.to[0], y: b.to[1], z: b.to[2] },
+                      b.weapon, Math.max(0, Math.min(1, b.life / (spec.beamLife ?? 0.1))))
       })
+      beamPool.hideFrom(sim.beams.length)
 
-      // Update zone control ring colors
-      const zones = sim.zones
-      zoneMeshes.forEach(({ mesh, mat }, i) => {
-        const z = zones[i]
-        if (!z)
-          return
+      sim.missiles.forEach((m, i) => {
+        missilePool.show(i,
+                         { x: m.position[0], y: m.position[1], z: m.position[2] },
+                         { x: m.velocity[0], y: m.velocity[1], z: m.velocity[2] },
+                         m.weapon)
+      })
+      missilePool.hideFrom(sim.missiles.length)
 
-        const col = z.owner ? TEAM_COLORS[z.owner] : NEUTRAL_COLOR
-        mat.color.set(col)
-        mat.emissive.set(col)
-        mat.emissiveIntensity = z.owner ? 0.85 + z.progress * 0.5 : 0.5
-        mesh.visible          = true
+      // --- control points ---
+      zoneVisuals.forEach((visual, i) => {
+        const z = sim.zones[i]
+        if (z)
+          visual.update(z.owner, z.capturing, z.progress, z.contested, elapsed)
       })
     },
+
     onDispose: () => {
       document.removeEventListener('keydown', onKeyDown)
       document.removeEventListener('keyup', onKeyUp)
+      canvas.removeEventListener('pointerdown', onPointerDown)
+      canvas.removeEventListener('pointerup', onPointerUp)
+      canvas.removeEventListener('contextmenu', onContextMenu)
+
+      for (const id of [ ...opponents.keys() ])
+        dropOpponent(id)
+      for (const objective of Object.values(objectives))
+        objective?.dispose()
+      for (const zone of zoneVisuals)
+        zone.dispose()
+      beamPool.dispose()
+      missilePool.dispose()
       sim.dispose()
     },
   })

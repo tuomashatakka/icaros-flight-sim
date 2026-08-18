@@ -125,7 +125,9 @@ function buildUrl (args, extra = {}) {
     query.set(key, String(value))
 
   const search = query.toString()
-  return `${ORIGIN}/levels/${level}${search ? `?${search}` : ''}`
+  // `--level battle` targets the arena route, which is not under /levels.
+  const path   = level === 'battle' ? '/battle' : `/levels/${level}`
+  return `${ORIGIN}${path}${search ? `?${search}` : ''}`
 }
 
 /**
@@ -137,8 +139,13 @@ function buildUrl (args, extra = {}) {
  */
 async function withPage (args, fn, { urlExtra = {}} = {}) {
   const server  = await ensureServer()
-  const browser = await chromium.launch({
+  // Sandboxes and CI images often ship a chromium that does not match the build
+  // playwright pinned; point at it with CHROMIUM_PATH rather than re-downloading
+  // half a gigabyte on every run.
+  const executablePath = process.env.CHROMIUM_PATH || undefined
+  const browser        = await chromium.launch({
     headless: args.headed ? false : true,
+    executablePath,
     args:     [
       '--enable-unsafe-swiftshader',
       '--use-angle=swiftshader',
@@ -235,7 +242,7 @@ const commands = {
   async shot (args) {
     const target = args._[0]
     if (!target)
-      fail('usage: dev-cli shot <out.png> [--step N] [--overlay a,b] [--size WxH]')
+      fail('usage: dev-cli shot <out.png> [--step N] [--at x,y,z[,yaw]] [--overlay a,b] [--size WxH]')
 
     const path = resolve(target)
     await mkdir(dirname(path), { recursive: true })
@@ -245,6 +252,17 @@ const commands = {
       // command land on the same tick with the same seed, so the images are
       // comparable — an unpaused screenshot is at the mercy of frame timing.
       await page.evaluate(() => window.__dev.pause())
+
+      // `--at x,y,z[,yaw]` frames a specific part of the level without having to
+      // drive there, which on a 600-unit deck is most of the run time.
+      if (args.at) {
+        const [ x, y, z, yaw ] = String(args.at).split(',')
+          .map(Number)
+        await page.evaluate(
+          place => window.__dev.teleport({ position: [ place.x, place.y, place.z ], yaw: place.yaw }),
+          { x, y, z, yaw: Number.isFinite(yaw) ? yaw : 0 }
+        )
+      }
 
       const steps  = Number(args.step ?? 0)
       const result = steps > 0

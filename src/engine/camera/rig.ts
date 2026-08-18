@@ -148,7 +148,11 @@ export type CameraRig = {
  * camera it is given to its resize observer at construction, so a second camera
  * swapped in later would never have its aspect corrected.
  */
-export function createCameraRig (rng: SeededRng): CameraRig {
+/**
+ * @param far - Far plane. The race tracks fit inside 400; the battle deck is
+ * 600 units across and needs its far wall to survive the frustum cull.
+ */
+export function createCameraRig (rng: SeededRng, far = 400): CameraRig {
   const shakeRng = rng.fork('camera-shake')
 
   const rig = createFollowCamera({
@@ -158,7 +162,7 @@ export function createCameraRig (rng: SeededRng): CameraRig {
     lookDamping:     CHASE.lookDamping,
     fov:             CHASE.fov,
     near:            0.1,
-    far:             400,
+    far,
   })
 
   let camYaw: number | null = null

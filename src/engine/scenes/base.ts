@@ -56,7 +56,10 @@ export type BaseSceneConfig<TState extends object> = {
   colliders?:               readonly BoxCollider[];
   colliderOffset?:          readonly [number, number, number];
   useDefaultVehicleModule?: boolean;
-  buildGeometry?:           (ctx: AppContext<TState>, physics: Physics) => void;
+
+  /** Camera far plane. Defaults to the race rig's 400. */
+  cameraFar?:         number;
+  buildGeometry?:     (ctx: AppContext<TState>, physics: Physics) => void;
   gameModuleFactory?: (
     physics: Physics,
     isVehicleCollider: (handle: number) => boolean,
@@ -130,7 +133,7 @@ export async function mountBaseScene<TState extends object> (
 
   const seed = resolveSeed(config.seed ?? SEED)
   const rng  = createSeededRng(seed)
-  const rig  = createCameraRig(rng)
+  const rig  = createCameraRig(rng, config.cameraFar)
 
   let skipRender                                                          = false
   let devFrame: ((position: THREE.Vector3, delta: number) => void) | null = null
