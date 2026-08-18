@@ -1,24 +1,68 @@
 import { create } from 'zustand'
 import type { BattleStatus } from '@/engine/battle/sim'
 import type { BattleTeam } from '@/engine/battle/arena'
+import type { LockPhase, WeaponId } from '@/engine/battle/weapons'
 
 
 export type BattleRosterEntry = {
-  id:    string;
-  name:  string;
-  team:  BattleTeam;
-  isBot: boolean;
+  id:     string;
+  name:   string;
+  team:   BattleTeam;
+  isBot:  boolean;
+  kills:  number;
+  deaths: number;
 }
 
-export type BattleZoneView = { id: string; owner: BattleTeam | null; progress: number }
+export type BattleZoneView = {
+  id:   string;
+  name: string;
+
+  /** 1–2 character code for the pip glyph. */
+  short:     string;
+  owner:     BattleTeam | null;
+  progress:  number;
+  capturing: BattleTeam | null;
+  contested: boolean;
+}
+
 export type BattleFlagView = { team: BattleTeam; state: string; carrierId: string | null }
 
 export type LockOnState = {
-  active:   boolean;
+  phase:    LockPhase;
   targetId: string | null;
   name:     string | null;
   distance: number;
   team:     BattleTeam | null;
+
+  /** 0..1 acquisition meter. */
+  progress: number;
+}
+
+export type WeaponView = {
+  id: WeaponId;
+
+  /** 1 = just fired, 0 = ready. */
+  cooldown: number;
+
+  /** The slot cannot fire without a completed lock. */
+  needsLock: boolean;
+}
+
+export type KillFeedEntry = {
+  key:    string;
+  killer: string;
+  victim: string;
+  weapon: WeaponId | null;
+  team:   BattleTeam | null;
+}
+
+export const IDLE_LOCK: LockOnState = {
+  phase:    'idle',
+  targetId: null,
+  name:     null,
+  distance: 0,
+  team:     null,
+  progress: 0,
 }
 
 export type BattleSessionState = {
@@ -30,14 +74,22 @@ export type BattleSessionState = {
   myShip:           string | null;
   myHealth:         number;
   maxHealth:        number;
+  myBoost:          number;
+  myKills:          number;
+  myDeaths:         number;
+  carrying:         BattleTeam | null;
   lockOn:           LockOnState;
+  primary:          WeaponView | null;
+  secondary:        WeaponView | null;
   countdown:        number;
   timeLeft:         number;
   scores:           Record<BattleTeam, number>;
+  scoreTarget:      number;
   roster:           BattleRosterEntry[];
   zones:            BattleZoneView[];
   flags:            BattleFlagView[];
   toasts:           string[];
+  killFeed:         KillFeedEntry[];
   verifiedTicks:    number;
   lastVerifiedHash: string | null;
   hashMatchStatus:  'ok' | 'mismatch' | 'unverified';
@@ -52,14 +104,22 @@ const initial: BattleSessionState = {
   myShip:           null,
   myHealth:         100,
   maxHealth:        100,
-  lockOn:           { active: false, targetId: null, name: null, distance: 0, team: null },
+  myBoost:          1,
+  myKills:          0,
+  myDeaths:         0,
+  carrying:         null,
+  lockOn:           IDLE_LOCK,
+  primary:          null,
+  secondary:        null,
   countdown:        0,
   timeLeft:         0,
   scores:           { red: 0, blue: 0 },
+  scoreTarget:      25,
   roster:           [],
   zones:            [],
   flags:            [],
   toasts:           [],
+  killFeed:         [],
   verifiedTicks:    0,
   lastVerifiedHash: null,
   hashMatchStatus:  'unverified',
@@ -68,20 +128,38 @@ const initial: BattleSessionState = {
 let toastSeq = 0
 
 function toast (list: string[], text: string, cap = 3): string[] {
-  const next = [ `${toastSeq++}|${text}`, ...list ].slice(0, cap)
-  return next
+  return [ `${toastSeq++}|${text}`, ...list ].slice(0, cap)
 }
 
+/** Quantised so a value that only wiggles in the noise cannot force a commit. */
+const q = (v: number, steps = 100) => Math.round(v * steps) / steps
+
 export const useBattleStore = create<BattleSessionState & {
-  setStatus:       (s: BattleSessionState['status']) => void;
-  setError:        (msg: string) => void;
-  joined:          (p: { playerId: string; team: BattleTeam; shipId: string; name: string }) => void;
-  setRoster:       (r: BattleRosterEntry[]) => void;
-  setChrome:       (c: { status: BattleStatus; countdown: number; timeLeft: number; scores: Record<BattleTeam, number>; zones: BattleZoneView[]; flags: BattleFlagView[] }) => void;
-  setHealth:       (hp: number, maxHp?: number) => void;
+  setStatus: (s: BattleSessionState['status']) => void;
+  setError:  (msg: string) => void;
+  joined:    (p: { playerId: string; team: BattleTeam; shipId: string; name: string }) => void;
+  setRoster: (r: BattleRosterEntry[]) => void;
+  setChrome:       (c: {
+    status:       BattleStatus;
+    countdown:    number;
+    timeLeft:     number;
+    scores:       Record<BattleTeam, number>;
+    scoreTarget?: number;
+    zones:        BattleZoneView[];
+    flags:        BattleFlagView[];
+  }) => void;
+  setPilot:        (p: {
+    health:    number;
+    maxHealth: number;
+    boost:     number;
+    kills:     number;
+    deaths:    number;
+    carrying:  BattleTeam | null;
+  }) => void;
   setLockOn:       (lock: LockOnState) => void;
+  setWeapons:      (primary: WeaponView, secondary: WeaponView) => void;
   setVerification: (v: { tick: number; hash: string; matched: boolean }) => void;
-  applyEvent:      (e: import('@/engine/battle/sim').BattleEvent) => void;
+  applyEvent:      (e: import('@/engine/battle/sim').BattleEvent, names?: Map<string, string>) => void;
   clearToast:      (key: string) => void;
   resetSession:    () => void;
 }>(set => ({
@@ -91,9 +169,47 @@ export const useBattleStore = create<BattleSessionState & {
 
   setError: msg => set({ status: 'error', error: msg }),
 
-  setHealth: (hp, maxHp = 100) => set({ myHealth: hp, maxHealth: maxHp }),
+  setLockOn: next => set(state => {
+    const prev = state.lockOn
+    // The meter ticks 60×/s; only commit when it moves a visible amount.
+    const same = prev.phase === next.phase &&
+      prev.targetId === next.targetId &&
+      Math.abs(prev.progress - next.progress) < 0.02 &&
+      Math.abs(prev.distance - next.distance) < 2
+    return same ? {} : { lockOn: { ...next, progress: q(next.progress, 50), distance: Math.round(next.distance) }}
+  }),
 
-  setLockOn: lockOn => set({ lockOn }),
+  setWeapons: (primary, secondary) => set(state => {
+    const same = state.primary?.id === primary.id &&
+      state.secondary?.id === secondary.id &&
+      Math.abs((state.primary?.cooldown ?? 0) - primary.cooldown) < 0.05 &&
+      Math.abs((state.secondary?.cooldown ?? 0) - secondary.cooldown) < 0.05
+    return same
+      ? {}
+      : {
+        primary:   { ...primary, cooldown: q(primary.cooldown, 20) },
+        secondary: { ...secondary, cooldown: q(secondary.cooldown, 20) },
+      }
+  }),
+
+  setPilot: ({ health, maxHealth, boost, kills, deaths, carrying }) => set(state => {
+    const same = state.myHealth === health &&
+      state.maxHealth === maxHealth &&
+      state.myKills === kills &&
+      state.myDeaths === deaths &&
+      state.carrying === carrying &&
+      Math.abs(state.myBoost - boost) < 0.02
+    return same
+      ? {}
+      : {
+        myHealth:  health,
+        maxHealth: maxHealth,
+        myBoost:   q(boost, 50),
+        myKills:   kills,
+        myDeaths:  deaths,
+        carrying,
+      }
+  }),
 
   joined: ({ playerId, team, shipId, name }) => set({
     playerId, myTeam: team, myShip: shipId, myName: name, status: 'queued',
@@ -101,25 +217,48 @@ export const useBattleStore = create<BattleSessionState & {
 
   setRoster: roster => {
     // Keep it stable enough to not re-render the HUD every packet: only
-    // replace when membership or a name/team actually changed.
+    // replace when membership or a score actually changed.
     set(state => {
       const same = state.roster.length === roster.length &&
-        state.roster.every((r, i) => r.id === roster[i].id && r.team === roster[i].team && r.isBot === roster[i].isBot)
+        state.roster.every((r, i) =>
+          r.id === roster[i].id &&
+          r.team === roster[i].team &&
+          r.isBot === roster[i].isBot &&
+          r.kills === roster[i].kills &&
+          r.deaths === roster[i].deaths)
       return same ? {} : { roster }
     })
   },
 
-  setChrome: ({ status, countdown, timeLeft, scores, zones, flags }) => set(state => {
+  setChrome: ({ status, countdown, timeLeft, scores, scoreTarget, zones, flags }) => set(state => {
     const zoneSame = zones.length === state.zones.length &&
-      zones.every((z, i) => z.owner === state.zones[i].owner && z.id === state.zones[i].id)
-    const flagSame = flags.length === state.flags.length && flags.every((f, i) => f.team === state.flags[i].team && f.state === state.flags[i].state)
+      zones.every((z, i) => {
+        const prev = state.zones[i]
+        return z.owner === prev.owner &&
+          z.id === prev.id &&
+          z.capturing === prev.capturing &&
+          z.contested === prev.contested &&
+          Math.abs(z.progress - prev.progress) < 0.02
+      })
+    const flagSame = flags.length === state.flags.length &&
+      flags.every((f, i) => f.team === state.flags[i].team && f.state === state.flags[i].state)
+    const chromeSame = state.status === status &&
+      state.countdown === countdown &&
+      state.timeLeft === timeLeft &&
+      state.scores.red === scores.red &&
+      state.scores.blue === scores.blue
+
+    if (chromeSame && zoneSame && flagSame)
+      return {}
+
     return {
       status,
       countdown,
       timeLeft,
       scores,
-      zones: zoneSame ? state.zones : zones.map((z, i) => ({ ...z, progress: Math.round(z.progress * 10) / 10 })),
-      flags: flagSame ? state.flags : flags,
+      scoreTarget: scoreTarget ?? state.scoreTarget,
+      zones:       zoneSame ? state.zones : zones.map(z => ({ ...z, progress: q(z.progress, 50) })),
+      flags:       flagSame ? state.flags : flags,
     }
   }),
 
@@ -129,18 +268,31 @@ export const useBattleStore = create<BattleSessionState & {
     hashMatchStatus:  matched ? 'ok' : 'mismatch',
   })),
 
-  applyEvent: e => set(state => {
+  applyEvent: (e, names) => set(state => {
+    const who = (id: string) => names?.get(id) ?? id
     switch (e.type) {
+      case 'kill': {
+        const entry: KillFeedEntry = {
+          key:    `${toastSeq++}`,
+          killer: who(e.hitBy),
+          victim: who(e.target),
+          weapon: e.weapon,
+          team:   state.roster.find(r => r.id === e.hitBy)?.team ?? null,
+        }
+        return { killFeed: [ entry, ...state.killFeed ].slice(0, 5) }
+      }
       case 'flagScored':
-        return { toasts: toast(state.toasts, `${e.team.toUpperCase()} scored! +3`) }
+        return { toasts: toast(state.toasts, `${e.team.toUpperCase()} core delivered · +5`) }
       case 'flagTaken':
-        return { toasts: toast(state.toasts, `${e.team.toUpperCase()} flag stolen`) }
+        return { toasts: toast(state.toasts, `${e.team.toUpperCase()} core stolen`) }
       case 'flagReturned':
-        return { toasts: toast(state.toasts, `${e.team.toUpperCase()} flag returned`) }
-      case 'zoneChange':
-        return { toasts: toast(state.toasts, `${e.id.toUpperCase()} → ${e.owner?.toUpperCase() ?? 'neutral'}`) }
+        return { toasts: toast(state.toasts, `${e.team.toUpperCase()} core returned`) }
+      case 'zoneChange': {
+        const name = state.zones.find(z => z.id === e.id)?.name ?? e.id
+        return { toasts: toast(state.toasts, `${name} → ${e.owner?.toUpperCase() ?? 'NEUTRAL'}`) }
+      }
       case 'matchStart':
-        return { toasts: []}
+        return { toasts: [], killFeed: []}
       default:
         return {}
     }

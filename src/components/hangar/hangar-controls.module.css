@@ -221,3 +221,74 @@
   line-height: 1.4;
   color: var(--muted-foreground);
 }
+
+/* --- armament ------------------------------------------------------------ */
+
+.weapons {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+  margin: 0.35rem 0 0.75rem;
+}
+
+/*
+ * A weapon chip is a full row rather than a pill: the choice is made on the
+ * stat line and the blurb, not the name, and a grid of five names tells the
+ * player nothing about what they are picking.
+ */
+.weapon {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.55rem;
+  width: 100%;
+  padding: 0.5rem 0.6rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: none;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.2s, background 0.2s;
+}
+
+.weapon:hover {
+  border-color: hsl(var(--primary-hsl) / 0.5);
+}
+
+.weaponActive {
+  composes: weapon;
+  border-color: var(--primary);
+  background: hsl(var(--primary-hsl) / 0.08);
+}
+
+.weaponDot {
+  width: 0.5rem;
+  height: 0.5rem;
+  margin-top: 0.28rem;
+  border-radius: 999px;
+  flex-shrink: 0;
+}
+
+.weaponBody {
+  display: flex;
+  flex-direction: column;
+  gap: 0.12rem;
+  min-width: 0;
+}
+
+.weaponName {
+  font-size: 0.8125rem;
+  font-weight: 600;
+}
+
+.weaponBlurb {
+  font-size: 0.6875rem;
+  line-height: 1.35;
+  color: var(--muted-foreground);
+}
+
+.weaponStats {
+  font-family: var(--font-mono);
+  font-size: 0.625rem;
+  letter-spacing: 0.04em;
+  color: hsl(var(--primary-hsl) / 0.85);
+}

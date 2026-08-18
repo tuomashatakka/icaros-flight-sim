@@ -1,13 +1,51 @@
+/*
+ * Battle HUD.
+ *
+ * Everything reads as one instrument cluster: the same scrim, the same hairline
+ * edge, the same mono type. Colour is reserved — teams, weapon identity and
+ * danger are the only things allowed to be saturated, so when the hull bar goes
+ * red it means something.
+ *
+ * Layout is corner-anchored rather than flowed: the middle of the screen is the
+ * game, and nothing but the reticle is permitted there.
+ */
+
 .hud {
   position: absolute;
   inset: 0;
   pointer-events: none;
   font-family: var(--font-mono);
   color: var(--foreground);
+
+  --scrim: hsl(228 40% 5% / 0.62);
+  --edge: hsl(210 60% 80% / 0.16);
+  --dim: hsl(220 15% 72% / 0.62);
+  --red: #ff2d6f;
+  --blue: #22d3ee;
+  --pad: clamp(0.75rem, 1.6vw, 1.5rem);
 }
 
 .hud button {
   pointer-events: auto;
+}
+
+.hud kbd {
+  font: inherit;
+}
+
+/* A hull under 30% tints the whole frame. Cheap, and impossible to miss. */
+.hudCritical::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 8rem hsl(348 100% 50% / 0.28);
+  animation: critical-pulse 1.1s ease-in-out infinite alternate;
+}
+
+@keyframes critical-pulse {
+  from { opacity: 0.45; }
+  to   { opacity: 1; }
 }
 
 .error {
@@ -16,346 +54,603 @@
   left: 50%;
   transform: translate(-50%, -50%);
   padding: 1rem 1.5rem;
-  border: 1px solid #ff4d6d;
+  border: 1px solid var(--red);
   border-radius: var(--radius);
   background: hsl(348 100% 50% / 0.15);
   font-size: 0.875rem;
   letter-spacing: 0.05em;
 }
 
-.scoreboard {
+.key {
+  display: inline-block;
+  padding: 0.05rem 0.32rem;
+  border: 1px solid var(--edge);
+  border-radius: 3px;
+  background: hsl(220 30% 100% / 0.06);
+  font-size: 0.58rem;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+}
+
+/* ── top bar ──────────────────────────────────────────────────── */
+
+.topBar {
   position: absolute;
-  top: 1rem;
-  left: 1rem;
-  display: flex;
+  top: var(--pad);
+  left: 50%;
+  transform: translateX(-50%);
+  display: grid;
+  grid-template-columns: 7.5rem minmax(11rem, 16rem) 7.5rem;
   align-items: center;
   gap: 0.75rem;
-  padding: 0.6rem 0.9rem;
-  border: 1px solid var(--border);
+  padding: 0.5rem 0.85rem;
+  border: 1px solid var(--edge);
   border-radius: var(--radius);
-  background: hsl(var(--background-hsl) / 0.7);
-  backdrop-filter: blur(6px);
+  background: var(--scrim);
+  backdrop-filter: blur(8px);
 }
 
-.team {
+.teamBlock {
   display: flex;
   align-items: center;
-  gap: 0.4rem;
-  font-size: 0.75rem;
-  letter-spacing: 0.12em;
+  gap: 0.55rem;
+  padding: 0.15rem 0.35rem;
+  border-radius: var(--radius-sm);
 }
 
+.teamBlockRight {
+  justify-content: flex-end;
+}
+
+/* Your own side gets an underline, not a box — a box competes with the score. */
 .isYou {
-  outline: 1px solid hsl(var(--accent-hsl) / 0.7);
-  outline-offset: 3px;
+  box-shadow: inset 0 -2px 0 hsl(var(--accent-hsl) / 0.85);
 }
 
-.dot {
-  width: 0.5rem;
-  height: 0.5rem;
-  border-radius: 999px;
-}
-
-.red  { color: #ff2d6f; background: #ff2d6f; }
-.blue { color: #22d3ee; background: #22d3ee; }
-
-.teamName {
-  color: var(--muted-foreground);
-}
-
-.score {
-  font-size: 1rem;
+.teamTag {
+  font-size: 0.62rem;
   font-weight: 700;
-  min-width: 1.4rem;
-  text-align: right;
+  letter-spacing: 0.22em;
 }
 
-.scoreboardDivider {
-  color: var(--muted-foreground);
+.teamTag[data-team='red']  { color: var(--red); }
+.teamTag[data-team='blue'] { color: var(--blue); }
+
+.teamScore {
+  font-size: 1.45rem;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
 }
 
-.healthContainer {
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  width: 13rem;
-  padding: 0.6rem 0.9rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: hsl(var(--background-hsl) / 0.7);
-  backdrop-filter: blur(6px);
-  display: flex;
-  flex-direction: column;
-  gap: 0.35rem;
-}
-
-.healthHeader {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.65rem;
-  letter-spacing: 0.12em;
-}
-
-.healthLabel {
-  color: var(--muted-foreground);
-}
-
-.healthValue {
-  font-weight: 700;
-  color: var(--foreground);
-}
-
-.healthBar {
-  width: 100%;
-  height: 0.45rem;
-  border-radius: 999px;
-  background: hsl(var(--foreground-hsl) / 0.15);
-  overflow: hidden;
-}
-
-.healthFill {
-  height: 100%;
-  border-radius: 999px;
-  transition: width 0.25s ease-out, background 0.3s ease;
-}
-
-.fullHp {
-  background: linear-gradient(90deg, #10b981, #34d399);
-}
-
-.warnHp {
-  background: linear-gradient(90deg, #f59e0b, #fbbf24);
-}
-
-.criticalHp {
-  background: linear-gradient(90deg, #ef4444, #f87171);
-  animation: hp-pulse 0.8s infinite alternate;
-}
-
-@keyframes hp-pulse {
-  from { opacity: 0.7; }
-  to   { opacity: 1; }
-}
-
-.crosshair {
-  position: absolute;
-  top: 48%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  width: 3.5rem;
-  height: 3.5rem;
-  pointer-events: none;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: transform 0.2s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-}
-
-.centerDot {
-  width: 0.35rem;
-  height: 0.35rem;
-  border-radius: 999px;
-  background: rgba(255, 255, 255, 0.85);
-  box-shadow: 0 0 8px rgba(255, 255, 255, 0.8);
-}
-
-.reticleRing {
-  position: absolute;
-  inset: 0.3rem;
-  border: 1px dashed rgba(255, 255, 255, 0.4);
-  border-radius: 999px;
-  transition: border-color 0.2s ease, transform 0.2s ease;
-}
-
-.reticleBracket {
-  position: absolute;
-  width: 0.5rem;
-  height: 0.5rem;
-  border-color: rgba(255, 255, 255, 0.6);
-  border-style: solid;
-  transition: all 0.25s ease-out;
-}
-
-.bracketTopLeft {
-  top: 0;
-  left: 0;
-  border-width: 2px 0 0 2px;
-}
-
-.bracketTopRight {
-  top: 0;
-  right: 0;
-  border-width: 2px 2px 0 0;
-}
-
-.bracketBottomLeft {
-  bottom: 0;
-  left: 0;
-  border-width: 0 0 2px 2px;
-}
-
-.bracketBottomRight {
-  bottom: 0;
-  right: 0;
-  border-width: 0 2px 2px 0;
-}
-
-.isLocked {
-  transform: translate(-50%, -50%) scale(1.15);
-}
-
-.isLocked .reticleRing {
-  border-color: #ff2d6f;
-  border-style: solid;
-  animation: lock-spin 4s linear infinite;
-  box-shadow: 0 0 12px rgba(255, 45, 111, 0.6);
-}
-
-.isLocked .reticleBracket {
-  border-color: #ff2d6f;
-}
-
-.isLocked .bracketTopLeft { top: 0.2rem; left: 0.2rem; }
-.isLocked .bracketTopRight { top: 0.2rem; right: 0.2rem; }
-.isLocked .bracketBottomLeft { bottom: 0.2rem; left: 0.2rem; }
-.isLocked .bracketBottomRight { bottom: 0.2rem; right: 0.2rem; }
-
-@keyframes lock-spin {
-  from { transform: rotate(0deg); }
-  to   { transform: rotate(360deg); }
-}
-
-.lockBadge {
-  position: absolute;
-  top: 4.2rem;
-  left: 50%;
-  transform: translateX(-50%);
-  white-space: nowrap;
+.centre {
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 0.15rem;
-  padding: 0.35rem 0.75rem;
-  border-radius: var(--radius);
-  background: hsl(var(--background-hsl) / 0.85);
-  border: 1px solid currentColor;
-  backdrop-filter: blur(6px);
-  animation: badge-pop 0.2s ease-out;
+  gap: 0.3rem;
 }
 
-@keyframes badge-pop {
-  from { opacity: 0; transform: translate(-50%, -4px) scale(0.9); }
-  to   { opacity: 1; transform: translate(-50%, 0) scale(1); }
-}
-
-.lockIcon {
-  font-size: 0.55rem;
-  letter-spacing: 0.2em;
+.clock {
+  font-size: 1.05rem;
   font-weight: 700;
-}
-
-.lockTarget {
-  font-size: 0.7rem;
-  letter-spacing: 0.12em;
-  font-weight: 700;
-}
-
-.status {
-  position: absolute;
-  top: 1rem;
-  left: 50%;
-  transform: translateX(-50%);
-  padding: 0.6rem 1.2rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: hsl(var(--background-hsl) / 0.7);
-  backdrop-filter: blur(6px);
-  font-size: 0.875rem;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  font-variant-numeric: tabular-nums;
 }
 
 .countdown {
-  font-size: 1.4rem;
+  font-size: 1.6rem;
   font-weight: 900;
   color: var(--accent);
 }
 
-.zones {
-  position: absolute;
-  top: 4.5rem;
-  left: 50%;
-  transform: translateX(-50%);
-  display: flex;
-  gap: 0.5rem;
+.over {
+  color: var(--accent);
 }
 
-.zone {
-  padding: 0.4rem 0.6rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: hsl(var(--background-hsl) / 0.7);
-  backdrop-filter: blur(6px);
-}
-
-.zoneName {
-  display: block;
-  font-size: 0.6rem;
-  letter-spacing: 0.18em;
-  color: var(--muted-foreground);
-  text-align: center;
-  margin-bottom: 0.25rem;
-}
-
-.zoneBar {
-  width: 4.5rem;
-  height: 0.35rem;
+/* Both teams' progress toward the target, growing from the middle outward. */
+.scoreTrack {
+  position: relative;
+  width: 100%;
+  height: 0.3rem;
   border-radius: 999px;
-  background: hsl(var(--foreground-hsl) / 0.15);
+  background: hsl(220 30% 100% / 0.1);
   overflow: hidden;
 }
 
-.zoneFill {
+.scoreBarRed,
+.scoreBarBlue {
+  position: absolute;
+  top: 0;
   height: 100%;
-  border-radius: 999px;
-  transition: width 0.2s linear;
+  max-width: 50%;
+  transition: width 0.3s ease-out;
 }
 
-.flags {
+.scoreBarRed {
+  right: 50%;
+  background: linear-gradient(270deg, var(--red), hsl(340 100% 72%));
+  border-radius: 999px 0 0 999px;
+}
+
+.scoreBarBlue {
+  left: 50%;
+  background: linear-gradient(90deg, var(--blue), hsl(190 90% 75%));
+  border-radius: 0 999px 999px 0;
+}
+
+.target {
+  font-size: 0.53rem;
+  letter-spacing: 0.2em;
+  color: var(--dim);
+}
+
+/* ── control point pips ───────────────────────────────────────── */
+
+.pips {
   position: absolute;
-  top: 7.5rem;
+  top: calc(var(--pad) + 4.6rem);
   left: 50%;
   transform: translateX(-50%);
   display: flex;
-  gap: 1.5rem;
-  font-size: 0.7rem;
-  letter-spacing: 0.1em;
-  text-transform: uppercase;
+  gap: 0.45rem;
 }
 
-.roster {
+.pip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.22rem;
+  width: 3.6rem;
+}
+
+.pipBody {
+  position: relative;
+  width: 1.65rem;
+  height: 1.65rem;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-sm);
+  background: var(--scrim);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+}
+
+/* The meter fills bottom-up, so a point being taken drains visibly. */
+.pipFill {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  width: 100%;
+  opacity: 0.5;
+  transition: height 0.25s linear;
+}
+
+.pipGlyph {
+  position: relative;
+  font-size: 0.68rem;
+  font-weight: 800;
+  letter-spacing: 0;
+}
+
+.pipContested .pipBody {
+  animation: contest-flash 0.7s steps(2, end) infinite;
+}
+
+@keyframes contest-flash {
+  from { box-shadow: 0 0 0 1px hsl(45 100% 60% / 0.9); }
+  to   { box-shadow: 0 0 0 1px hsl(45 100% 60% / 0.1); }
+}
+
+.pipName {
+  font-size: 0.46rem;
+  letter-spacing: 0.08em;
+  color: var(--dim);
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  max-width: 100%;
+}
+
+/* ── reticle ──────────────────────────────────────────────────── */
+
+.reticle {
+  position: absolute;
+  top: 47%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  width: 7.5rem;
+  height: 7.5rem;
+  pointer-events: none;
+}
+
+.reticleArt {
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+}
+
+.reticleRing {
+  fill: none;
+  stroke: hsl(210 60% 88% / 0.22);
+  stroke-width: 1;
+}
+
+/*
+ * The acquisition meter IS the ring: `pathLength=100` lets the dash array be
+ * read straight off a percentage, so the sweep needs no arc maths and no
+ * per-frame path rebuild.
+ */
+.reticleMeter {
+  fill: none;
+  stroke: #ffd34d;
+  stroke-width: 2.5;
+  stroke-linecap: round;
+  transform: rotate(-90deg);
+  transform-origin: 60px 60px;
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+.reticleTick {
+  stroke: hsl(210 60% 88% / 0.55);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+.reticleDot {
+  fill: hsl(0 0% 100% / 0.9);
+}
+
+.isTracking .reticleMeter {
+  opacity: 1;
+}
+
+.isTracking .reticleRing {
+  stroke: hsl(45 100% 60% / 0.4);
+}
+
+.isLocked .reticleRing {
+  stroke: var(--red);
+  stroke-width: 1.6;
+}
+
+.isLocked .reticleTick {
+  stroke: var(--red);
+}
+
+.isLocked .reticleArt {
+  animation: lock-snap 0.18s cubic-bezier(0.2, 1.4, 0.4, 1);
+}
+
+@keyframes lock-snap {
+  from { transform: scale(1.28); }
+  to   { transform: scale(1); }
+}
+
+/*
+ * Above the reticle, not below it: in chase view the ship's own nose occupies
+ * everything under the crosshair, and a target callout printed across your own
+ * hull is unreadable at exactly the moment it matters.
+ */
+.lockLabel {
+  position: absolute;
+  bottom: 100%;
+  left: 50%;
+  transform: translateX(-50%);
+  margin-bottom: 0.45rem;
+  white-space: nowrap;
+  font-size: 0.6rem;
+  letter-spacing: 0.16em;
+  font-weight: 700;
+}
+
+.lockTracking {
+  color: #ffd34d;
+}
+
+.lockLocked {
+  color: var(--red);
+  animation: critical-pulse 0.55s ease-in-out infinite alternate;
+}
+
+/* ── pilot block ──────────────────────────────────────────────── */
+
+.pilot {
+  position: absolute;
+  left: var(--pad);
+  bottom: calc(var(--pad) + 1.8rem);
+  width: 15rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  background: var(--scrim);
+  backdrop-filter: blur(8px);
+}
+
+.pilotHead {
+  display: flex;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.pilotLabel {
+  flex: 1;
+  font-size: 0.55rem;
+  letter-spacing: 0.22em;
+  color: var(--dim);
+}
+
+.pilotValue {
+  font-size: 1.15rem;
+  font-weight: 800;
+  line-height: 1;
+  font-variant-numeric: tabular-nums;
+}
+
+.pilotValueCritical {
+  color: var(--red);
+}
+
+.pilotKd {
+  font-size: 0.6rem;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+  font-variant-numeric: tabular-nums;
+}
+
+.pilotKd i {
+  font-style: normal;
+  opacity: 0.5;
+  margin: 0 0.1rem;
+}
+
+.gauge {
+  width: 100%;
+  height: 0.45rem;
+  border-radius: 999px;
+  background: hsl(220 30% 100% / 0.11);
+  overflow: hidden;
+}
+
+.gaugeThin {
+  height: 0.28rem;
+}
+
+.gaugeFill,
+.boostFill {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.2s ease-out, background 0.3s ease;
+}
+
+.hpFull     { background: linear-gradient(90deg, #10b981, #34d399); }
+.hpWarn     { background: linear-gradient(90deg, #f59e0b, #fbbf24); }
+.hpCritical { background: linear-gradient(90deg, #ef4444, #f87171); }
+
+.boostFill {
+  background: linear-gradient(90deg, hsl(var(--primary-hsl)), var(--blue));
+}
+
+.carrying {
+  margin-top: 0.2rem;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  animation: critical-pulse 0.9s ease-in-out infinite alternate;
+}
+
+/* ── weapons ──────────────────────────────────────────────────── */
+
+.weapons {
+  position: absolute;
+  right: var(--pad);
+  bottom: calc(var(--pad) + 1.8rem);
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-end;
+}
+
+.weapon {
+  width: 8.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.28rem;
+  padding: 0.55rem 0.7rem;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius);
+  background: var(--scrim);
+  backdrop-filter: blur(8px);
+  opacity: 0.62;
+  transition: opacity 0.15s ease, border-color 0.15s ease;
+}
+
+/* Ready is the loud state; charging and lock-blocked both recede. */
+.weaponReady {
+  opacity: 1;
+  border-color: hsl(210 60% 80% / 0.38);
+}
+
+.weaponBlocked {
+  opacity: 0.5;
+}
+
+.weaponHead {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.weaponSlot {
+  font-size: 0.5rem;
+  letter-spacing: 0.2em;
+  color: var(--dim);
+}
+
+.weaponName {
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.weaponBar {
+  width: 100%;
+  height: 0.22rem;
+  border-radius: 999px;
+  background: hsl(220 30% 100% / 0.11);
+  overflow: hidden;
+}
+
+.weaponCharge {
+  height: 100%;
+  border-radius: 999px;
+  transition: width 0.1s linear;
+}
+
+.weaponNote {
+  font-size: 0.48rem;
+  letter-spacing: 0.13em;
+  color: var(--dim);
+}
+
+.weaponBlocked .weaponNote {
+  color: #ffd34d;
+}
+
+/* ── objective cores ──────────────────────────────────────────── */
+
+.cores {
+  position: absolute;
+  left: var(--pad);
+  top: var(--pad);
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+}
+
+.core {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.28rem 0.55rem;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-sm);
+  background: var(--scrim);
+  backdrop-filter: blur(6px);
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+}
+
+.coreGlyph {
+  font-size: 0.7rem;
+  line-height: 1;
+}
+
+.coreAlert {
+  animation: critical-pulse 0.8s ease-in-out infinite alternate;
+}
+
+/* ── kill feed ────────────────────────────────────────────────── */
+
+.killFeed {
+  position: absolute;
+  right: var(--pad);
+  top: var(--pad);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  align-items: flex-end;
+}
+
+.killRow {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.25rem 0.55rem;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-sm);
+  background: var(--scrim);
+  backdrop-filter: blur(6px);
+  font-size: 0.55rem;
+  letter-spacing: 0.08em;
+  animation: feed-in 0.2s ease-out;
+}
+
+@keyframes feed-in {
+  from { opacity: 0; transform: translateX(10px); }
+  to   { opacity: 1; transform: translateX(0); }
+}
+
+.killWeapon {
+  color: var(--dim);
+  font-size: 0.48rem;
+  letter-spacing: 0.14em;
+}
+
+.killVictim {
+  color: var(--dim);
+  text-decoration: line-through;
+}
+
+/* ── scoreboard ───────────────────────────────────────────────── */
+
+.board {
   position: absolute;
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
+  min-width: 22rem;
+  padding: 1.25rem 1.5rem;
+  border: 1px solid var(--edge);
+  border-radius: var(--radius-lg);
+  background: hsl(228 40% 5% / 0.82);
+  backdrop-filter: blur(12px);
+}
+
+.boardTitle {
+  margin: 0 0 0.9rem;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.32em;
+  text-align: center;
+  color: var(--dim);
+}
+
+.boardCols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 2rem;
+}
+
+.boardCol {
   display: flex;
-  gap: 2.5rem;
-  padding: 1.25rem 1.75rem;
-  border: 1px solid var(--border);
-  border-radius: var(--radius);
-  background: hsl(var(--background-hsl) / 0.8);
-  backdrop-filter: blur(8px);
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
-.rosterTitle {
-  font-size: 0.65rem;
+.boardTeam {
+  font-size: 0.6rem;
+  font-weight: 700;
   letter-spacing: 0.2em;
-  text-transform: uppercase;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--edge);
 }
 
-.rosterList {
-  margin: 0.5rem 0 0;
+.boardTeam[data-team='red']  { color: var(--red); }
+.boardTeam[data-team='blue'] { color: var(--blue); }
+
+.boardList {
+  margin: 0;
   padding: 0;
   list-style: none;
   display: flex;
@@ -363,37 +658,58 @@
   gap: 0.3rem;
 }
 
-.rosterName {
-  font-size: 0.8rem;
-  color: var(--foreground);
+.boardRow {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 0.72rem;
+}
+
+.boardName {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.boardKd {
+  color: var(--dim);
+  font-size: 0.62rem;
+  font-variant-numeric: tabular-nums;
 }
 
 .botTag {
   font-style: normal;
-  color: var(--muted-foreground);
+  font-size: 0.55rem;
+  letter-spacing: 0.1em;
+  color: var(--dim);
 }
+
+/* ── toasts ───────────────────────────────────────────────────── */
 
 .toasts {
   position: absolute;
-  bottom: 3.25rem;
+  bottom: 5.5rem;
   left: 50%;
   transform: translateX(-50%);
   display: flex;
   flex-direction: column;
-  gap: 0.4rem;
+  gap: 0.35rem;
   align-items: center;
 }
 
 .toast {
-  padding: 0.4rem 0.9rem;
-  border: 1px solid hsl(var(--accent-hsl) / 0.5);
+  padding: 0.35rem 0.9rem;
+  border: 1px solid hsl(var(--accent-hsl) / 0.45);
   border-radius: 999px;
-  background: hsl(var(--background-hsl) / 0.8);
+  background: var(--scrim);
+  backdrop-filter: blur(6px);
   font-family: var(--font-mono);
-  font-size: 0.7rem;
-  letter-spacing: 0.12em;
+  font-size: 0.62rem;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--accent);
+  cursor: pointer;
   animation: toast-in 0.18s ease-out;
 }
 
@@ -402,13 +718,37 @@
   to   { opacity: 1; transform: translateY(0); }
 }
 
+/* ── footer ───────────────────────────────────────────────────── */
+
 .footer {
   position: absolute;
-  bottom: 1rem;
+  bottom: calc(var(--pad) * 0.5);
   left: 50%;
   transform: translateX(-50%);
-  font-size: 0.65rem;
-  letter-spacing: 0.12em;
-  color: var(--muted-foreground);
-  white-space: nowrap;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 0.75rem;
+  font-size: 0.55rem;
+  letter-spacing: 0.1em;
+  color: var(--dim);
+}
+
+.footer span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+/* Below this the corner blocks start colliding with the reticle. */
+@media (max-width: 720px) {
+  .pilot,
+  .weapons {
+    bottom: calc(var(--pad) + 2.6rem);
+  }
+
+  .pilot   { width: 11rem; }
+  .weapon  { width: 6.6rem; }
+  .pipName { display: none; }
+  .footer  { display: none; }
 }

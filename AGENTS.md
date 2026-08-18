@@ -33,12 +33,22 @@ bun run dev:probe --level flats             # full state snapshot, one JSON obje
 bun run dev:scenario straight-line          # deterministic scripted run + summary
 bun run dev:scenario hard-corner --json --out /tmp/t.json
 bun run dev:shot /tmp/a.png --step 300 --overlay colliders,wheels
+bun run dev:shot /tmp/b.png --level battle --at 0,3,-190   # frame a spot directly
 bun run dev:console --seconds 5             # errors, frame times, WebGL state
 bun run dev:eval -e '__dev.probe().ship.up'
 ```
 
-Requires `bunx playwright install chromium` once. First run against a cold
-server takes ~30 s; against a warm one, ~6 s.
+`--level battle` targets `/battle` rather than `/levels/<name>`. `--at x,y,z[,yaw]`
+teleports before framing, which on a 600-unit deck beats driving there.
+
+Requires `bunx playwright install chromium` once. In a sandbox that already has
+a chromium of a different build, set `CHROMIUM_PATH=/path/to/chrome` instead of
+re-downloading one. First run against a cold server takes ~30 s; against a warm
+one, ~6 s.
+
+The battle scene also installs `window.__devBattle` in dev — `probe()`,
+`place(id, x, y, z)` and `face(x, z)` — because the generic harness speaks
+vehicle-and-track and cannot place an enemy or read a lock meter.
 
 A **scenario** is a JSON input timeline in `public/scenarios/`. It runs with
 rendering disabled, so ~12 sim seconds complete in ~20–40 ms — and because the

@@ -1,7 +1,7 @@
 import { useBattleStore } from '@/hooks/use-battle-store'
 import { NetBodyInterpolator, NetworkClock } from '../interpolation-network'
 import type { BattleTeam } from './arena'
-import type { BattleEvent, BattleSnapshot, BattleStatus } from './sim'
+import type { Beam, BattleEvent, BattleSnapshot, BattleStatus } from './sim'
 import type { ShipId } from '@/lib/ship/registry'
 
 
@@ -18,7 +18,7 @@ const DEFAULT_PORT = 9003
 type ServerMessage =
   | { type: 'queued'; status: BattleStatus } |
   { type: 'joined'; playerId: string; name: string; team: BattleTeam; shipId: ShipId; status: BattleStatus } |
-  { type: 'roster'; players: Array<{ id: string; name: string; team: BattleTeam; isBot: boolean; shipId: ShipId }> } |
+  { type: 'roster'; players: Array<{ id: string; name: string; team: BattleTeam; isBot: boolean; shipId: ShipId; kills?: number; deaths?: number }> } |
   { type: 'state' } & BattleSnapshot |
   { type: 'events'; list: BattleEvent[] } |
   { type: 'error'; message: string }
@@ -35,7 +35,7 @@ export type NetFlag = {
   pose: Float64Array;
 }
 
-export type NetBolt = { x: number; y: number; z: number; team: BattleTeam }
+export type NetMissile = { id: number; x: number; y: number; z: number; vx: number; vy: number; vz: number; team: BattleTeam }
 
 /**
  * The battle transport: WebSocket to the authoritative server + the render-side
@@ -46,7 +46,15 @@ export type NetBolt = { x: number; y: number; z: number; team: BattleTeam }
  * from it each rendered frame. React only ever sees the slim HUD state in
  * `useBattleStore` — remote ship *positions* never trigger a React commit.
  */
-type CType = { steer: number; throttle: boolean; brake: boolean; boost: boolean; fire: boolean; resetSeq: number }
+type CType = {
+  steer:          number;
+  throttle:       boolean;
+  brake:          boolean;
+  boost:          boolean;
+  fire:           boolean;
+  fireSecondary?: boolean;
+  resetSeq:       number;
+}
 
 export class BattleTransport {
   readonly clock = new NetworkClock()
@@ -54,18 +62,20 @@ export class BattleTransport {
   private ws:       WebSocket | null = null
   private playerId: string | null = null
   private input = {
-    steer:    0,
-    throttle: false,
-    brake:    false,
-    boost:    false,
-    fire:     false,
-    resetSeq: 0,
-    dirty:    false,
+    steer:         0,
+    throttle:      false,
+    brake:         false,
+    boost:         false,
+    fire:          false,
+    fireSecondary: false,
+    resetSeq:      0,
+    dirty:         false,
   }
 
-  private frames: NetPlayer[] = []
-  private flags:  Map<BattleTeam, NetFlag> = new Map()
-  private bolts:  NetBolt[] = []
+  private frames:   NetPlayer[] = []
+  private flags:    Map<BattleTeam, NetFlag> = new Map()
+  private beams:    Beam[] = []
+  private missiles: NetMissile[] = []
   private statusTally = 0
 
   /** Most recent snapshot poses, keyed by player id — scene reads these per frame. */
@@ -77,8 +87,12 @@ export class BattleTransport {
     return this.flags.get(team)
   }
 
-  boltsOf (): readonly NetBolt[] {
-    return this.bolts
+  beamsOf (): readonly Beam[] {
+    return this.beams
+  }
+
+  missilesOf (): readonly NetMissile[] {
+    return this.missiles
   }
 
   localId (): string | null {
@@ -119,7 +133,14 @@ export class BattleTransport {
         break
       }
       case 'roster':
-        s.setRoster(msg.players)
+        s.setRoster(msg.players.map(p => ({
+          id:     p.id,
+          name:   p.name,
+          team:   p.team,
+          isBot:  p.isBot,
+          kills:  p.kills ?? 0,
+          deaths: p.deaths ?? 0,
+        })))
         break
       case 'state':
         this.applySnapshot(msg)
@@ -163,7 +184,8 @@ export class BattleTransport {
       nf.pose.set([ fl.x, fl.y, fl.z, 0, 0, 0, 1 ])
     }
 
-    this.bolts = snap.bolts.map(b => ({ ...b }))
+    this.beams    = snap.beams.map(b => ({ ...b }))
+    this.missiles = snap.missiles.map(m => ({ id: m.id, x: m.x, y: m.y, z: m.z, vx: m.vx, vy: m.vy, vz: m.vz, team: m.team }))
 
     if (this.statusTally % 30 === 0)
       useBattleStore.getState().setChrome({
@@ -171,7 +193,9 @@ export class BattleTransport {
         countdown: snap.countdown,
         timeLeft:  snap.timeLeft,
         scores:    snap.scores,
-        zones:     snap.zones,
+        // The wire carries zone ids, not display names; the HUD falls back to
+        // the id until the arena is resolved client-side.
+        zones:     snap.zones.map(z => ({ ...z, name: z.id, short: z.id.slice(0, 2).toUpperCase() })),
         flags:     snap.flags.map(fl => ({ team: fl.team, state: fl.state, carrierId: fl.carrierId })),
       })
   }
@@ -179,21 +203,22 @@ export class BattleTransport {
   /** Feed one game-frame's worth of input; matches the 60 Hz sim cadence. */
   sendInput (): void {
     if (this.input.dirty && this.ws && this.ws.readyState === WebSocket.OPEN) {
-      const { steer, throttle, brake, boost, fire, resetSeq } = this.input
-      this.ws.send(JSON.stringify({ type: 'input', steer, throttle, brake, boost, fire, resetSeq }))
+      const { steer, throttle, brake, boost, fire, fireSecondary, resetSeq } = this.input
+      this.ws.send(JSON.stringify({ type: 'input', steer, throttle, brake, boost, fire, fireSecondary, resetSeq }))
       this.input.dirty = false
     }
   }
 
   /** Copies the live control surface into the pending packet (once per tick). */
   setControls (c: CType): void {
-    this.input.steer    = c.steer
-    this.input.throttle = c.throttle
-    this.input.brake    = c.brake
-    this.input.boost    = c.boost
-    this.input.fire     = c.fire
-    this.input.resetSeq = c.resetSeq
-    this.input.dirty    = true
+    this.input.steer         = c.steer
+    this.input.throttle      = c.throttle
+    this.input.brake         = c.brake
+    this.input.boost         = c.boost
+    this.input.fire          = c.fire
+    this.input.fireSecondary = Boolean(c.fireSecondary)
+    this.input.resetSeq      = c.resetSeq
+    this.input.dirty         = true
   }
 
   leave (): void {
@@ -201,9 +226,10 @@ export class BattleTransport {
   }
 
   teardown (): void {
-    this.ws     = null
-    this.frames = []
-    this.bolts  = []
+    this.ws       = null
+    this.frames   = []
+    this.beams    = []
+    this.missiles = []
     this.flags.clear()
     useBattleStore.getState().resetSession()
   }

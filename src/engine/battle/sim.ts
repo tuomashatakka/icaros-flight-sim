@@ -10,147 +10,78 @@ import { DEFAULT_TUNING } from '../state'
 import { apexArena } from './arena'
 import type { ArenaTransform, BattleArena, BattleTeam, ControlPointDef } from './arena'
 import { botInput } from './bot'
+import {
+  DEFAULT_LOADOUT,
+  LOCK,
+  WEAPONS,
+  canFire,
+  createLockState
+} from './weapons'
+import type { Loadout, LockPhase, LockState, WeaponId, WeaponSpec } from './weapons'
 
 
-export type BattleStatus = 'lobby' | 'countdown' | 'live' | 'finished'
+// Re-exported so `./sim` stays the single import site for the whole model.
+export type {
+  Beam,
+  BattleConfig,
+  BattleEvent,
+  BattleFlag,
+  BattleFlagState,
+  BattleInput,
+  BattlePlayer,
+  BattleSnapshot,
+  BattleStatus,
+  BattleZone,
+  Missile,
+  WeaponSlot
+} from './types'
 
-export type BattleInput = {
-  steer:    number;
-  throttle: boolean;
-  brake:    boolean;
-  boost:    boolean;
-  fire:     boolean;
-  reverse?: boolean;
-  strafe?:  number;
-  resetSeq: number;
+import type {
+  Beam,
+  BattleConfig,
+  BattleEvent,
+  BattleFlag,
+  BattleInput,
+  BattlePlayer,
+  BattleSnapshot,
+  BattleStatus,
+  BattleZone,
+  Missile,
+  WeaponSlot
+} from './types'
+
+
+export const NEUTRAL_INPUT: BattleInput = {
+  steer:         0,
+  throttle:      false,
+  brake:         false,
+  boost:         false,
+  fire:          false,
+  fireSecondary: false,
+  reverse:       false,
+  strafe:        0,
+  resetSeq:      0,
 }
 
-export const NEUTRAL_INPUT: BattleInput = { steer: 0, throttle: false, brake: false, boost: false, fire: false, reverse: false, strafe: 0, resetSeq: 0 }
-
-export type BattlePlayer = {
-  id:           string;
-  name:         string;
-  team:         BattleTeam;
-  shipId:       ShipId;
-  isBot:        boolean;
-  health:       number;
-  maxHealth:    number;
-  chassis:      import('@dimforge/rapier3d-compat').RigidBody;
-  controller:   import('@dimforge/rapier3d-compat').DynamicRayCastVehicleController;
-  sim:          import('../sim/vehicle-step').HovercraftState;
-  controls:     BattleInput;
-  boostMeter:   number;
-  stun:         number;
-  fireCooldown: number;
-  carriedFlag:  BattleTeam | null;
-  respawnIndex: number;
-  lastResetSeq: number;
-}
-
-export type BattleFlagState = 'home' | 'carried' | 'dropped'
-
-export type BattleFlag = {
-  team:      BattleTeam;
-  state:     BattleFlagState;
-  carrierId: string | null;
-  position:  [number, number, number];
-  returnIn:  number;
-
-  // Grace period after a drop before ANYONE can re-pick it — stops the stunned
-  //  carrier instantly re-catching the flag that just landed at their feet.
-  noPickup: number;
-}
-
-export type BattleZone = {
-  def:        ControlPointDef;
-  owner:      BattleTeam | null;
-  progress:   number; // 0..1 ownership toward `owner`; 1 = fully captured
-  scoreAccum: number;
-}
-
-export type Bolt = {
-  shooterId: string;
-  team:      BattleTeam;
-  position:  [number, number, number];
-  velocity:  [number, number, number];
-  life:      number;
-
-  /** Locked-on target on the first tick; null = no lock (checks all enemies). */
-  targetId: string | null;
-}
-
-export type BattleSnapshot = {
-  tick:      number;
-  status:    BattleStatus;
-  countdown: number;
-  timeLeft:  number;
-  scores:    Record<BattleTeam, number>;
-  players:   Array<{
-    id:        string;
-    team:      BattleTeam;
-    name:      string;
-    shipId:    ShipId;
-    health:    number;
-    maxHealth: number;
-    x:         number;
-    y:         number;
-    z:         number;
-    qx:        number;
-    qy:        number;
-    qz:        number;
-    qw:        number;
-    boost:     number;
-    stun:      number;
-    spin:      number; // weapon cooldown ratio 0..1
-  }>;
-  zones: Array<{ id: string; owner: BattleTeam | null; progress: number }>;
-  flags: Array<{
-    team:      BattleTeam;
-    state:     BattleFlagState;
-    carrierId: string | null;
-    x:         number;
-    y:         number;
-    z:         number;
-  }>;
-  bolts: Array<{ x: number; y: number; z: number; team: BattleTeam }>;
-}
-
-export type BattleEvent =
-  | { type: 'fire'; id: string; x: number; y: number; z: number; team: BattleTeam } |
-  { type: 'hit'; target: string; hitBy: string } |
-  { type: 'tag'; target: string; hitBy: string } |
-  { type: 'flagTaken'; team: BattleTeam; by: string } |
-  { type: 'flagDropped'; team: BattleTeam; x: number; z: number } |
-  { type: 'flagReturned'; team: BattleTeam } |
-  { type: 'flagScored'; team: BattleTeam; by: string; score: number } |
-  { type: 'zoneChange'; id: string; owner: BattleTeam | null } |
-  { type: 'matchStart' } |
-  { type: 'matchEnd'; scores: Record<BattleTeam, number> }
-
-export type BattleConfig = {
-  matchTime:        number;
-  scoreTarget:      number;
-  captureBonus:     number;
-  zoneScore:        number;
-  stunDuration:     number;
-  contactSpeed:     number;
-  flagPickupRadius: number;
-  baseRadius:       number;
-  bolt:             { cooldown: number; speed: number; life: number; hitRadius: number };
-  homingRate:       number;
-}
-
+/**
+ * Scoring is tuned so no single point can carry a match.
+ *
+ * Five zones ticking +1 every `zonePeriod` (6 s) means holding one is 10/min —
+ * short of 60 inside the 5-minute clock — while three is 30/min and all five
+ * is 50/min, i.e. a rout ends in about 70 seconds. At the old 25/4 s a team
+ * that took the central spire and nothing else simply won, which is why bot
+ * matches ended with four of the five points still neutral.
+ */
 export const DEFAULT_BATTLE_CONFIG: BattleConfig = {
-  matchTime:        120,
-  scoreTarget:      10,
-  captureBonus:     3,
+  matchTime:        300,
+  scoreTarget:      60,
+  captureBonus:     8,
   zoneScore:        1,
-  stunDuration:     0.8,
+  stunDuration:     0.7,
   contactSpeed:     26,
-  flagPickupRadius: 6,
+  flagPickupRadius: 7,
   baseRadius:       18,
-  bolt:             { cooldown: 1.5, speed: 95, life: 2.0, hitRadius: 3.0 },
-  homingRate:       3.2,
+  hullRadius:       2.6,
 }
 
 export const SPAWN_LIFT = 1
@@ -160,8 +91,10 @@ export const SPAWN_LIFT = 1
 const _fwd      = new Vector3()
 const _toTarget = new Vector3()
 const _tmp3     = new Vector3()
-const _boltVel  = new Vector3()
+const _dir      = new Vector3()
+const _origin   = new Vector3()
 const _tmpQuat  = new Quaternion()
+const UP        = new Vector3(0, 1, 0)
 
 function mulberry32 (seed: number): () => number {
   let a = seed >>> 0
@@ -174,29 +107,42 @@ function mulberry32 (seed: number): () => number {
   }
 }
 
+/** Ray filter: arena geometry only. Ships never occlude a shot at another ship. */
+function isArena (collider: import('@dimforge/rapier3d-compat').Collider): boolean {
+  const body = collider.parent()
+  return !(body?.userData as { isVehicle?: boolean } | undefined)?.isVehicle
+}
+
 function distSq2D (ax: number, az: number, bx: number, bz: number): number {
   const dx = ax - bx
   const dz = az - bz
   return dx * dx + dz * dz
 }
 
+/** Muzzle height above the chassis origin — beams leave the nose, not the skirt. */
+const MUZZLE_Y = 0.45
+const MUZZLE_Z = 2.6
+
 /**
  * The headless battle sim.
  *
- * One Rapier world, N hovercraft (humans + bots), three control zones, two
- * flags. Stepped at 1/60; the server is the ONLY writer of input, so scoring
- * and capture are authoritative by construction. Node-safe: imports only
- * `three` + rapier, never zustand or the browser. Deterministic within the
+ * One Rapier world, N hovercraft (humans + bots), five control zones, two
+ * objectives. Stepped at 1/60; the server is the ONLY writer of input, so
+ * scoring and capture are authoritative by construction. Node-safe: imports
+ * only `three` + rapier, never zustand or the browser. Deterministic within the
  * process (seeded rng, no timers), so battle rules are unit-testable.
  */
+type FunctionReturnType = { player: BattlePlayer | null; cos: number; visible: boolean }
+
 export class BattleSim {
   readonly arena:   BattleArena
   readonly config:  BattleConfig
   readonly players: BattlePlayer[] = []
 
-  readonly flags: BattleFlag[]
-  readonly zones: BattleZone[]
-  readonly bolts: Bolt[] = []
+  readonly flags:    BattleFlag[]
+  readonly zones:    BattleZone[]
+  readonly beams:    Beam[] = []
+  readonly missiles: Missile[] = []
 
   status:    BattleStatus = 'lobby'
   countdown: number = 0
@@ -208,14 +154,19 @@ export class BattleSim {
   private tickNo:     number = 0
   private idSeq:      number = 0
   private botSeq:     number = 0
+  private shotSeq:    number = 0
   private rng:        () => number
   private matchEnded: boolean = false
+
+  /** One reusable ray — line-of-sight runs per player AND per missile per tick. */
+  private ray: import('@dimforge/rapier3d-compat').Ray
 
   private constructor (arena: BattleArena, config: BattleConfig, physics: Physics) {
     this.arena   = arena
     this.config  = config
     this.physics = physics
     this.rng     = mulberry32(1337)
+    this.ray     = new physics.RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })
 
     this.flags  = ([ 'red', 'blue' ] as BattleTeam[]).map(team => ({
       team,
@@ -230,6 +181,8 @@ export class BattleSim {
       def,
       owner:      null,
       progress:   0,
+      capturing:  null,
+      contested:  false,
       scoreAccum: 0,
     }))
 
@@ -256,14 +209,14 @@ export class BattleSim {
     return lane[player.respawnIndex % lane.length]
   }
 
-  addPlayer (name: string, team: BattleTeam, shipId: ShipId): BattlePlayer {
-    const player = this.buildShell(`p${this.idSeq++}`, name, team, shipId, false)
+  addPlayer (name: string, team: BattleTeam, shipId: ShipId, loadout: Loadout = DEFAULT_LOADOUT): BattlePlayer {
+    const player = this.buildShell(`p${this.idSeq++}`, name, team, shipId, false, loadout)
     this.players.push(player)
     return player
   }
 
-  addBot (team: BattleTeam): BattlePlayer {
-    const player = this.buildShell(`bot:${this.botSeq++}`, `Bot ${this.botSeq}`, team, 'ag-systems', true)
+  addBot (team: BattleTeam, loadout: Loadout = DEFAULT_LOADOUT): BattlePlayer {
+    const player = this.buildShell(`bot:${this.botSeq++}`, `Bot ${this.botSeq}`, team, 'ag-systems', true, loadout)
     this.players.push(player)
     return player
   }
@@ -287,10 +240,16 @@ export class BattleSim {
     name: string,
     team: BattleTeam,
     shipId: ShipId,
-    isBot: boolean
+    isBot: boolean,
+    loadout: Loadout
   ): BattlePlayer {
-    const at  = this.arena.spawns[team][0]
-    const rig = createHovercraft(this.physics.world, at)
+    // Start each arrival on the NEXT lane of its team's spawn. Everyone used to
+    // take lane 0, so a three-strong team materialised inside one another and
+    // spent the first second of the match shoving itself apart.
+    const lanes = this.arena.spawns[team]
+    const seat  = this.players.filter(p => p.team === team).length
+    const at    = lanes[seat % lanes.length]
+    const rig   = createHovercraft(this.physics.world, at)
     return {
       id,
       name,
@@ -305,10 +264,14 @@ export class BattleSim {
       controls:     { ...NEUTRAL_INPUT },
       boostMeter:   1,
       stun:         0,
-      fireCooldown: 0,
+      loadout:      { ...loadout },
+      cooldown:     { primary: 0, secondary: 0 },
+      lock:         createLockState(),
       carriedFlag:  null,
-      respawnIndex: 0,
+      respawnIndex: seat,
       lastResetSeq: 0,
+      kills:        0,
+      deaths:       0,
     }
   }
 
@@ -321,6 +284,12 @@ export class BattleSim {
     const player = this.getPlayer(id)
     if (player && !player.isBot)
       player.controls = input
+  }
+
+  setLoadout (id: string, loadout: Partial<Loadout>): void {
+    const player = this.getPlayer(id)
+    if (player)
+      player.loadout = { ...player.loadout, ...loadout }
   }
 
   start (countdown = 3): void {
@@ -360,16 +329,20 @@ export class BattleSim {
     const allowDrive = live
 
     for (const player of this.players) {
-      let controls = player.controls
+      // Bots write their decision back onto the player: the fire pass below
+      // reads `player.controls`, so a bot trigger held only in a local would
+      // silently never fire.
       if (player.isBot)
-        controls = botInput(this, player, this.tickNo, this.rng, dt)
+        player.controls = botInput(this, player, this.tickNo, this.rng, dt)
 
+      let controls = player.controls
       if (player.stun > 0) {
         player.stun = Math.max(0, player.stun - dt)
         controls = { ...NEUTRAL_INPUT, resetSeq: controls.resetSeq }
       }
 
-      player.fireCooldown = Math.max(0, player.fireCooldown - dt)
+      player.cooldown.primary   = Math.max(0, player.cooldown.primary - dt)
+      player.cooldown.secondary = Math.max(0, player.cooldown.secondary - dt)
 
       let resetRequested = false
       if (controls.resetSeq !== player.lastResetSeq) {
@@ -396,21 +369,37 @@ export class BattleSim {
       if (stepOut.respawned) {
         player.respawnIndex++
         player.stun = 0
+        player.lock = createLockState()
         this.returnCarriedFlag(player)
       }
-
-      if (live && controls.fire && player.fireCooldown <= 0)
-        this.fireWeapon(player)
     }
 
     this.physics.world.step()
+
+    // Locks resolve AFTER the world step so the cone test uses this tick's
+    // poses — testing against last tick's made a lock lag visibly behind the
+    // reticle at speed.
+    for (const player of this.players)
+      this.stepLock(player, dt)
+
+    if (live)
+      for (const player of this.players) {
+        if (player.stun > 0)
+          continue
+        if (player.controls.fire)
+          this.tryFire(player, 'primary')
+        if (player.controls.fireSecondary)
+          this.tryFire(player, 'secondary')
+      }
+
+    this.ageBeams(dt)
 
     if (!live) {
       this.integrateCarriedFlags()
       return
     }
 
-    this.stepBolts(dt)
+    this.stepMissiles(dt)
     this.stepContactTags()
     this.stepZones(dt)
     this.stepFlags(dt)
@@ -419,34 +408,161 @@ export class BattleSim {
     this.checkEnd()
   }
 
-  private fireWeapon (player: BattlePlayer): void {
-    const { bolt }      = this.config
-    player.fireCooldown = bolt.cooldown
+  // --- targeting ------------------------------------------------------------
 
-    const q    = player.chassis.rotation()
+  /** Ship-forward unit vector, written into `out`. */
+  private forwardOf (player: BattlePlayer, out: Vector3): Vector3 {
+    const q = player.chassis.rotation()
     _tmpQuat.set(q.x, q.y, q.z, q.w)
-    _fwd.set(0, 0, 1).applyQuaternion(_tmpQuat)
-    _boltVel.copy(_fwd).multiplyScalar(bolt.speed)
-
-    const boltPos: [number, number, number] = [
-      player.chassis.translation().x + _fwd.x * 2.5,
-      player.chassis.translation().y + 0.2,
-      player.chassis.translation().z + _fwd.z * 2.5,
-    ]
-
-    const t = player.chassis.translation()
-    this.bolts.push({
-      shooterId: player.id,
-      team:      player.team,
-      position:  boltPos,
-      velocity:  [ _boltVel.x, _boltVel.y, _boltVel.z ],
-      life:      bolt.life,
-      targetId:  this.nearestEnemy(player)?.id ?? null,
-    })
-
-    this.events.push({ type: 'fire', id: player.id, x: t.x, y: t.y, z: t.z, team: player.team })
+    return out.set(0, 0, 1).applyQuaternion(_tmpQuat)
   }
 
+  /** Muzzle position in world space, written into `out`. */
+  private muzzleOf (player: BattlePlayer, out: Vector3): Vector3 {
+    const t = player.chassis.translation()
+    this.forwardOf(player, _tmp3)
+    return out.set(t.x + _tmp3.x * MUZZLE_Z, t.y + MUZZLE_Y + _tmp3.y * MUZZLE_Z, t.z + _tmp3.z * MUZZLE_Z)
+  }
+
+  /**
+   * Distance to the first piece of ARENA between two points, or Infinity.
+   *
+   * Vehicles are skipped by the predicate: this answers "is a mesa in the way",
+   * which is the question both the lock and the beams need. Without it every
+   * plateau would be transparent to weapons and the level's cover would be
+   * decoration.
+   */
+  private staticBlockerAt (from: Vector3, dir: Vector3, maxToi: number): number {
+    const ray    = this.ray
+    ray.origin.x = from.x
+    ray.origin.y = from.y
+    ray.origin.z = from.z
+    ray.dir.x    = dir.x
+    ray.dir.y    = dir.y
+    ray.dir.z    = dir.z
+
+    const hit = this.physics.world.castRay(ray, maxToi, true, undefined, undefined, undefined, undefined, isArena)
+    return hit ? hit.timeOfImpact : Number.POSITIVE_INFINITY
+  }
+
+  /** True when nothing solid stands between the two ships. */
+  hasLineOfSight (from: BattlePlayer, to: BattlePlayer): boolean {
+    this.muzzleOf(from, _origin)
+
+    const t = to.chassis.translation()
+    _dir.set(t.x - _origin.x, t.y + 0.5 - _origin.y, t.z - _origin.z)
+
+    const dist = _dir.length()
+    if (dist < 1e-3)
+      return true
+    _dir.multiplyScalar(1 / dist)
+    return this.staticBlockerAt(_origin, _dir, dist) >= dist
+  }
+
+  /**
+   * Advance one ship's lock meter.
+   *
+   * The meter only fills while the target sits inside the tight `acquireCos`
+   * cone AND is visible; drifting into the wider hold ring stalls it, and
+   * leaving that ring (or breaking line of sight) drains it. A completed lock
+   * gets `keepLocked` seconds of slack so a bank or a passing pylon does not
+   * throw away a lock the player earned.
+   */
+  private stepLock (player: BattlePlayer, dt: number): void {
+    const lock = player.lock
+    if (this.status !== 'live') {
+      lock.targetId = null
+      lock.progress = 0
+      lock.phase    = 'idle'
+      lock.slip     = 0
+      return
+    }
+
+    const best = this.bestLockCandidate(player)
+
+    // Switching targets is a hard reset: a lock is earned per target, and
+    // carrying progress across would let a player sweep the crosshair over a
+    // crowd and snap onto whoever happened to be last.
+    if (best.player && lock.targetId !== best.player.id && lock.phase !== 'locked') {
+      lock.targetId = best.player.id
+      lock.progress = 0
+      lock.slip     = 0
+    }
+
+    const current = lock.targetId ? this.getPlayer(lock.targetId) : undefined
+    if (!current || current.team === player.team) {
+      lock.targetId = best.player?.id ?? null
+      lock.progress = 0
+      lock.phase    = 'idle'
+      lock.slip     = 0
+      return
+    }
+
+    const onTarget  = best.player?.id === current.id
+    const inAcquire = onTarget && best.cos >= LOCK.acquireCos && best.visible
+    const inHold    = onTarget && best.cos >= LOCK.holdCos && best.visible
+
+    if (inAcquire) {
+      lock.slip     = 0
+      lock.progress = Math.min(1, lock.progress + dt / LOCK.time)
+    }
+    else {
+      lock.slip += dt
+      if (lock.slip > LOCK.slipGrace && !inHold)
+        lock.progress = Math.max(0, lock.progress - dt * LOCK.decay)
+    }
+
+    if (lock.progress >= 1) {
+      if (lock.phase !== 'locked') {
+        lock.phase = 'locked'
+        this.events.push({ type: 'lock', id: player.id, target: current.id })
+      }
+      // A finished lock only breaks after the target has been off-cone for
+      // longer than the grace window.
+      if (!inHold && lock.slip > LOCK.keepLocked) {
+        lock.progress = 0
+        lock.phase    = 'tracking'
+      }
+    }
+    else
+      lock.phase = lock.progress > 0 ? 'tracking' : 'idle'
+  }
+
+  /** The enemy nearest the crosshair: smallest angular error, then distance. */
+  private bestLockCandidate (player: BattlePlayer): FunctionReturnType {
+    this.forwardOf(player, _fwd)
+    this.muzzleOf(player, _origin)
+
+    let best: BattlePlayer | null = null
+    let bestCos                   = -1
+    let bestVisible               = false
+
+    for (const other of this.players) {
+      if (other.team === player.team || other.id === player.id)
+        continue
+
+      const t = other.chassis.translation()
+      _toTarget.set(t.x - _origin.x, t.y + 0.5 - _origin.y, t.z - _origin.z)
+
+      const dist = _toTarget.length()
+      if (dist > LOCK.range || dist < 1e-3)
+        continue
+
+      _toTarget.multiplyScalar(1 / dist)
+
+      const cos = _fwd.dot(_toTarget)
+      if (cos < LOCK.holdCos || cos <= bestCos)
+        continue
+
+      bestCos = cos
+      best    = other
+      bestVisible = this.staticBlockerAt(_origin, _toTarget, dist) >= dist
+    }
+
+    return { player: best, cos: bestCos, visible: bestVisible }
+  }
+
+  /** Kept for the bots and the older call sites; ignores facing entirely. */
   nearestEnemy (player: BattlePlayer): BattlePlayer | null {
     let best: BattlePlayer | null = null
     let bestD                     = Number.POSITIVE_INFINITY
@@ -463,76 +579,266 @@ export class BattleSim {
     return best
   }
 
-  private stepBolts (dt: number): void {
-    const { bolt, homingRate } = this.config
+  // --- weapons --------------------------------------------------------------
 
-    for (let i = this.bolts.length - 1; i >= 0; i--) {
-      const b = this.bolts[i]
-      b.life -= dt
+  private tryFire (player: BattlePlayer, slot: WeaponSlot): void {
+    const spec = WEAPONS[player.loadout[slot]]
+    if (!canFire(spec, player.cooldown[slot], player.lock))
+      return
 
-      const target = b.targetId ? this.getPlayer(b.targetId) : null
+    player.cooldown[slot] = spec.cooldown
+
+    const t = player.chassis.translation()
+    this.events.push({ type: 'fire', id: player.id, weapon: spec.id, x: t.x, y: t.y, z: t.z, team: player.team })
+
+    if (spec.kind === 'beam')
+      this.fireBeam(player, spec)
+    else
+      this.launchMissiles(player, spec)
+  }
+
+  /**
+   * Resolve a hitscan shot.
+   *
+   * The shot is a ray, so there is nothing to lead and nothing to dodge once
+   * the trigger is down — which is exactly why beam weapons are the ones that
+   * do NOT need a lock. Arena geometry stops the ray before any ship behind it.
+   */
+  private fireBeam (player: BattlePlayer, spec: WeaponSpec): void {
+    this.muzzleOf(player, _origin)
+    this.forwardOf(player, _dir)
+
+    // A completed lock bends the muzzle onto the target, so a locked rail shot
+    // rewards the wind-up instead of still demanding pixel aim.
+    if (spec.needsLock && player.lock.phase === 'locked') {
+      const target = this.getPlayer(player.lock.targetId ?? '')
       if (target) {
-        const tt   = target.chassis.translation()
-        _toTarget.set(tt.x - b.position[0], tt.y - b.position[1], tt.z - b.position[2])
+        const t = target.chassis.translation()
+        _dir.set(t.x - _origin.x, t.y + 0.5 - _origin.y, t.z - _origin.z).normalize()
+      }
+    }
 
-        const mag = _toTarget.length()
-        if (mag > 1e-3)
+    const range   = spec.range
+    const blocker = this.staticBlockerAt(_origin, _dir, range)
+    const reach   = Math.min(range, blocker)
+    const radius  = this.config.hullRadius + (spec.beamWidth ?? 0.1)
+
+    // Every enemy whose centre is within `radius` of the ray, nearest first.
+    const hits: Array<{ p: BattlePlayer; t: number }> = []
+    for (const other of this.players) {
+      if (other.team === player.team)
+        continue
+
+      const t = other.chassis.translation()
+      _toTarget.set(t.x - _origin.x, t.y + 0.5 - _origin.y, t.z - _origin.z)
+
+      const along = _toTarget.dot(_dir)
+      if (along < 0 || along > reach)
+        continue
+
+      const perpSq = _toTarget.lengthSq() - along * along
+      if (perpSq <= radius * radius)
+        hits.push({ p: other, t: along })
+    }
+    hits.sort((a, b) => a.t - b.t)
+
+    const struck = spec.pierce ? hits : hits.slice(0, 1)
+    const end    = struck.length && !spec.pierce ? struck[0].t : reach
+
+    this.beams.push({
+      id:        this.shotSeq++,
+      shooterId: player.id,
+      team:      player.team,
+      weapon:    spec.id,
+      from:      [ _origin.x, _origin.y, _origin.z ],
+      to:        [ _origin.x + _dir.x * end, _origin.y + _dir.y * end, _origin.z + _dir.z * end ],
+      life:      spec.beamLife ?? 0.1,
+      hit:       struck.length > 0,
+    })
+
+    for (const { p } of struck)
+      this.applyDamage(p, player.id, spec.damage, spec.id)
+  }
+
+  private launchMissiles (player: BattlePlayer, spec: WeaponSpec): void {
+    this.muzzleOf(player, _origin)
+    this.forwardOf(player, _dir)
+
+    const targetId = player.lock.phase === 'locked' ? player.lock.targetId : null
+    const speed    = spec.speed ?? 240
+    const spread   = spec.spread ?? 0
+
+    for (let i = 0; i < spec.count; i++) {
+      // Deterministic fan: index-derived, never `rng`, so a replay of the same
+      // inputs produces the same salvo.
+      const angle = spec.count > 1 ? (i / (spec.count - 1) - 0.5) * 2 * spread : 0
+      const lift  = spec.count > 1 ? (i % 2 === 0 ? 1 : -1) * spread * 0.4 : 0
+
+      _tmp3.copy(_dir)
+      _tmp3.applyAxisAngle(UP, angle)
+      _tmp3.y += lift
+      _tmp3.normalize()
+
+      this.missiles.push({
+        id:        this.shotSeq++,
+        shooterId: player.id,
+        team:      player.team,
+        weapon:    spec.id,
+        position:  [ _origin.x, _origin.y, _origin.z ],
+        velocity:  [ _tmp3.x * speed, _tmp3.y * speed, _tmp3.z * speed ],
+        life:      spec.life ?? 3.5,
+        targetId,
+      })
+    }
+  }
+
+  private ageBeams (dt: number): void {
+    for (let i = this.beams.length - 1; i >= 0; i--) {
+      this.beams[i].life -= dt
+      if (this.beams[i].life <= 0)
+        this.beams.splice(i, 1)
+    }
+  }
+
+  /**
+   * Fly the guided warheads.
+   *
+   * They travel at 255–300 u/s against a 55 u/s hull, so a missile crosses the
+   * arena in about two seconds and cannot be outrun — dodging one means putting
+   * a mesa between you and it, which the static raycast below honours.
+   */
+  private stepMissiles (dt: number): void {
+    const { hullRadius } = this.config
+
+    for (let i = this.missiles.length - 1; i >= 0; i--) {
+      const m    = this.missiles[i]
+      const spec = WEAPONS[m.weapon]
+      m.life -= dt
+
+      const target = m.targetId ? this.getPlayer(m.targetId) : null
+      if (target) {
+        const tt = target.chassis.translation()
+        _toTarget.set(tt.x - m.position[0], tt.y + 0.5 - m.position[1], tt.z - m.position[2])
+        if (_toTarget.lengthSq() > 1e-6) {
           _toTarget.normalize()
-        b.velocity[0] += _toTarget.x * homingRate * bolt.speed * dt
-        b.velocity[1] += _toTarget.y * homingRate * bolt.speed * dt
-        b.velocity[2] += _toTarget.z * homingRate * bolt.speed * dt
+          _tmp3.set(m.velocity[0], m.velocity[1], m.velocity[2])
+
+          const speed = _tmp3.length()
+          _tmp3.multiplyScalar(1 / Math.max(speed, 1e-6))
+
+          // Rotate the heading toward the target by at most turnRate*dt. A
+          // straight lerp would let the missile slow down mid-turn; keeping it
+          // a rotation means the speed stays whatever the rack launched at.
+          const maxTurn = (spec.turnRate ?? 4) * dt
+          const cos     = Math.max(-1, Math.min(1, _tmp3.dot(_toTarget)))
+          const angle   = Math.acos(cos)
+          if (angle > 1e-4) {
+            const t = Math.min(1, maxTurn / angle)
+            _tmp3.lerp(_toTarget, t).normalize()
+          }
+          m.velocity[0] = _tmp3.x * speed
+          m.velocity[1] = _tmp3.y * speed
+          m.velocity[2] = _tmp3.z * speed
+        }
       }
 
-      b.position[0] += b.velocity[0] * dt
-      b.position[1] += b.velocity[1] * dt
-      b.position[2] += b.velocity[2] * dt
+      const stepX   = m.velocity[0] * dt
+      const stepY   = m.velocity[1] * dt
+      const stepZ   = m.velocity[2] * dt
+      const stepLen = Math.hypot(stepX, stepY, stepZ)
 
-      const travelledSq = b.position[0] * b.position[0] + b.position[1] * b.position[1] + b.position[2] * b.position[2]
-      let dead = b.life <= 0 || travelledSq > bolt.speed * bolt.speed * bolt.life * bolt.life * 4
+      // Sweep, don't teleport: at 300 u/s a missile covers 5 units per tick and
+      // would tunnel straight through a mesa wall on a naive position add.
+      let dead = m.life <= 0
+      if (!dead && stepLen > 1e-5) {
+        _origin.set(m.position[0], m.position[1], m.position[2])
+        _dir.set(stepX / stepLen, stepY / stepLen, stepZ / stepLen)
 
-      let hitPlayer: BattlePlayer | null = null
+        const blocker = this.staticBlockerAt(_origin, _dir, stepLen)
+        if (blocker <= stepLen) {
+          m.position[0] += _dir.x * blocker
+          m.position[1] += _dir.y * blocker
+          m.position[2] += _dir.z * blocker
+          this.detonate(m, spec)
+          dead = true
+        }
+        else {
+          m.position[0] += stepX
+          m.position[1] += stepY
+          m.position[2] += stepZ
+        }
+      }
+
       if (!dead) {
-        const candidates = target ? [ target ] : this.players.filter(p => p.team !== b.team)
-        for (const p of candidates) {
+        const reach = hullRadius + (spec.blastRadius ?? 4)
+        for (const p of this.players) {
+          if (p.team === m.team)
+            continue
+
           const tt = p.chassis.translation()
-          if (distSq2D(b.position[0], b.position[2], tt.x, tt.z) < bolt.hitRadius * bolt.hitRadius) {
-            hitPlayer = p
+          const dx = tt.x - m.position[0]
+          const dy = tt.y + 0.5 - m.position[1]
+          const dz = tt.z - m.position[2]
+          if (dx * dx + dy * dy + dz * dz <= reach * reach) {
+            this.detonate(m, spec)
+            dead = true
             break
           }
         }
       }
 
-      if (hitPlayer) {
-        dead = true
-        this.applyHit(hitPlayer, b.shooterId, 'hit')
-      }
-
       if (dead)
-        this.bolts.splice(i, 1)
+        this.missiles.splice(i, 1)
     }
   }
 
-  private applyHit (target: BattlePlayer, hitBy: string, kind: 'hit' | 'tag'): void {
-    const damage  = kind === 'hit' ? 35 : 15
+  /** Splash everything hostile inside the blast radius. */
+  private detonate (m: Missile, spec: WeaponSpec): void {
+    const reach = this.config.hullRadius + (spec.blastRadius ?? 4)
+    for (const p of this.players) {
+      if (p.team === m.team)
+        continue
+
+      const t  = p.chassis.translation()
+      const dx = t.x - m.position[0]
+      const dy = t.y + 0.5 - m.position[1]
+      const dz = t.z - m.position[2]
+      if (dx * dx + dy * dy + dz * dz <= reach * reach)
+        this.applyDamage(p, m.shooterId, spec.damage, spec.id)
+    }
+  }
+
+  private applyDamage (target: BattlePlayer, hitBy: string, damage: number, weapon: WeaponId): void {
     target.health = Math.max(0, target.health - damage)
     target.stun   = Math.max(target.stun, this.config.stunDuration)
 
-    this.events.push({ type: kind, target: target.id, hitBy })
+    this.events.push({ type: 'hit', target: target.id, hitBy, weapon, damage })
 
     if (target.carriedFlag)
       this.dropFlag(target.carriedFlag, target)
 
-    if (target.health <= 0) {
-      target.health       = target.maxHealth
-      target.respawnIndex++
-      target.stun   = 0
+    if (target.health <= 0)
+      this.kill(target, hitBy, weapon)
+  }
 
-      const spawnAt = this.spawnFor(target)
-      target.chassis.setTranslation({ x: spawnAt.position[0], y: spawnAt.position[1] + 1, z: spawnAt.position[2] }, true)
-      target.chassis.setLinvel({ x: 0, y: 0, z: 0 }, true)
-      target.chassis.setAngvel({ x: 0, y: 0, z: 0 }, true)
-      this.returnCarriedFlag(target)
-    }
+  private kill (target: BattlePlayer, hitBy: string, weapon: WeaponId | null): void {
+    target.health = target.maxHealth
+    target.respawnIndex++
+    target.stun   = 0
+    target.deaths++
+    target.lock   = createLockState()
+
+    const killer = this.getPlayer(hitBy)
+    if (killer && killer.id !== target.id)
+      killer.kills++
+
+    this.events.push({ type: 'kill', target: target.id, hitBy, weapon })
+
+    const spawnAt = this.spawnFor(target)
+    target.chassis.setTranslation({ x: spawnAt.position[0], y: spawnAt.position[1] + 1, z: spawnAt.position[2] }, true)
+    target.chassis.setLinvel({ x: 0, y: 0, z: 0 }, true)
+    target.chassis.setAngvel({ x: 0, y: 0, z: 0 }, true)
+    this.returnCarriedFlag(target)
   }
 
   private stepContactTags (): void {
@@ -561,72 +867,118 @@ export class BattleSim {
         if (rel < contactSpeed)
           continue
 
-        // The one carrying a flag gets tagged; if neither carries, the hit
-        // registers as contact only (ships already repel via rapier).
+        // The one carrying an objective gets tagged; if neither carries, the
+        // hit registers as contact only (ships already repel via rapier).
         const carrier = a.carriedFlag ? a : b.carriedFlag ? b : null
-        if (carrier)
-          this.applyHit(carrier, carrier === a ? b.id : a.id, 'tag')
+        if (carrier) {
+          const by       = carrier === a ? b.id : a.id
+          carrier.health = Math.max(0, carrier.health - 15)
+          carrier.stun   = Math.max(carrier.stun, this.config.stunDuration)
+          this.events.push({ type: 'tag', target: carrier.id, hitBy: by })
+          if (carrier.carriedFlag)
+            this.dropFlag(carrier.carriedFlag, carrier)
+          if (carrier.health <= 0)
+            this.kill(carrier, by, null)
+        }
       }
     }
   }
 
+  // --- control points -------------------------------------------------------
+
+  /**
+   * Domination rules.
+   *
+   * A point fills SLOWLY, and only for the team that outnumbers the other
+   * inside the circle — a bigger lead fills it faster. Once full it is sticky:
+   * with no enemy inside the circle nothing decays, so a captured point stays
+   * yours until somebody physically drives into it. An intruder first has to
+   * drain the holder's meter to zero (which neutralises the point) before their
+   * own capture can start.
+   */
   private stepZones (dt: number): void {
+    const { captureTime, contestDrain, zonePeriod } = this.arena
+
     for (const zone of this.zones) {
-      const { position, radius } = zone.def
-      const present              = new Map<BattleTeam, number>()
+      const { position, radius }               = zone.def
+      const counts: Record<BattleTeam, number> = { red: 0, blue: 0 }
+
       for (const p of this.players) {
         const t = p.chassis.translation()
-        if (distSq2D(t.x, t.z, position[0], position[2]) <= (radius + 1) * (radius + 1))
-          present.set(p.team, (present.get(p.team) ?? 0) + 1)
+        if (distSq2D(t.x, t.z, position[0], position[2]) <= radius * radius)
+          counts[p.team]++
       }
 
-      // Dominant = strictly more ships present. A tie leaves the incumbent
-      // holding — otherwise a lone defender stalemates a full attack.
-      let dominant: BattleTeam | null = null
-      if (present.size === 1)
-        dominant = present.keys().next().value as BattleTeam
-      else if (present.size === 2) {
-        const [ a, b ] = [ ...present.entries() ]
-        if (a[1] > b[1])
-          dominant = a[0]
-        else if (b[1] > a[1])
-          dominant = b[0]
-        else if (zone.owner === a[0] || zone.owner === b[0])
-          dominant = zone.owner
-      }
+      const lead                        = counts.red - counts.blue
+      const dominant: BattleTeam | null = lead > 0 ? 'red' : lead < 0 ? 'blue' : null
+      const margin                      = Math.abs(lead)
 
-      if (dominant)
-        if (dominant === zone.owner)
-          zone.progress = Math.min(1, zone.progress + dt / this.arena.captureTime); else {
-          zone.progress -= dt / this.arena.captureTime
-          if (zone.progress <= 0) {
-            const flipTo  = dominant
-            zone.owner    = flipTo
-            zone.progress = 0
-            this.events.push({ type: 'zoneChange', id: zone.def.id, owner: flipTo })
+      // Each extra body past the first is worth another 45%, capped at 2.5×, so
+      // stacking a point helps without making a 4-stack instantaneous.
+      const rate     = dominant ? Math.min(2.5, 1 + (margin - 1) * 0.45) : 0
+      const occupied = counts.red + counts.blue > 0
+
+      zone.contested = counts.red > 0 && counts.blue > 0
+
+      if (zone.owner === null) {
+        if (dominant) {
+          if (zone.capturing !== dominant) {
+            zone.capturing = dominant
+            zone.progress  = 0
           }
-        } else {
-        zone.progress -= dt / this.arena.decayTime
+          zone.progress += dt / captureTime * rate
+          if (zone.progress >= 1) {
+            zone.owner     = dominant
+            zone.progress  = 1
+            zone.capturing = null
+            this.events.push({ type: 'zoneChange', id: zone.def.id, owner: dominant })
+          }
+        }
+        else if (!occupied && zone.progress > 0) {
+          // An abandoned part-capture bleeds back, but far slower than it filled.
+          zone.progress = Math.max(0, zone.progress - dt / (captureTime * 3))
+          if (zone.progress === 0)
+            zone.capturing = null
+        }
+        continue
+      }
+
+      const enemy = zone.owner === 'red' ? 'blue' : 'red'
+      if (counts[enemy] === 0) {
+        // Sticky: held, unattended, and going nowhere.
+        zone.progress  = 1
+        zone.capturing = null
+        zone.contested = false
+      }
+      else if (dominant === enemy) {
+        zone.capturing = enemy
+        zone.progress -= dt / contestDrain * rate
         if (zone.progress <= 0) {
-          if (zone.owner !== null)
-            this.events.push({ type: 'zoneChange', id: zone.def.id, owner: null })
           zone.owner    = null
           zone.progress = 0
+          this.events.push({ type: 'zoneChange', id: zone.def.id, owner: null })
         }
       }
+      else if (dominant === zone.owner)
+        zone.progress = Math.min(1, zone.progress + dt / contestDrain * rate)
+      // A dead tie freezes the meter: neither side is winning the point.
 
-      // Scoring: a fully-captured zone ticks +1 every zonePeriod.
+      // Scoring: a fully-held zone ticks for its owner.
       if (zone.owner && zone.progress >= 1) {
         zone.scoreAccum += dt
-        while (zone.scoreAccum >= this.arena.zonePeriod) {
-          zone.scoreAccum -= this.arena.zonePeriod
+        while (zone.scoreAccum >= zonePeriod) {
+          zone.scoreAccum -= zonePeriod
           this.scores[zone.owner] += this.config.zoneScore
           if (this.scores[zone.owner] >= this.config.scoreTarget)
             this.endMatch()
         }
       }
+      else
+        zone.scoreAccum = 0
     }
   }
+
+  // --- objectives -----------------------------------------------------------
 
   private stepFlags (dt: number): void {
     const { flagPickupRadius } = this.config
@@ -685,9 +1037,9 @@ export class BattleSim {
       }
 
       const t       = carrier.chassis.translation()
-      flag.position = [ t.x, t.y + 1.4, t.z ]
+      flag.position = [ t.x, t.y + 1.8, t.z ]
 
-      // Captured: enemy flag sitting on the carrier's OWN base scores.
+      // Captured: enemy objective sitting on the carrier's OWN base scores.
       if (carrier.team !== flag.team) {
         const base = this.arena.bases[carrier.team].position
         if (distSq2D(t.x, t.z, base[0], base[2]) <= this.config.baseRadius * this.config.baseRadius) {
@@ -711,7 +1063,7 @@ export class BattleSim {
     const t             = carrier.chassis.translation()
     flag.state          = 'dropped'
     flag.carrierId      = null
-    flag.position       = [ t.x, t.y + 0.5, t.z ]
+    flag.position       = [ t.x, t.y + 0.9, t.z ]
     flag.returnIn       = this.arena.flagReturnTime
     flag.noPickup       = 1.2
     carrier.carriedFlag = null
@@ -764,25 +1116,37 @@ export class BattleSim {
         const t = p.chassis.translation()
         const q = p.chassis.rotation()
         return {
-          id:        p.id,
-          team:      p.team,
-          name:      p.name,
-          shipId:    p.shipId,
-          health:    p.health,
-          maxHealth: p.maxHealth,
-          x:         t.x,
-          y:         t.y,
-          z:         t.z,
-          qx:        q.x,
-          qy:        q.y,
-          qz:        q.z,
-          qw:        q.w,
-          boost:     p.boostMeter,
-          stun:      p.stun,
-          spin:      p.fireCooldown / this.config.bolt.cooldown,
+          id:          p.id,
+          team:        p.team,
+          name:        p.name,
+          shipId:      p.shipId,
+          health:      p.health,
+          maxHealth:   p.maxHealth,
+          x:           t.x,
+          y:           t.y,
+          z:           t.z,
+          qx:          q.x,
+          qy:          q.y,
+          qz:          q.z,
+          qw:          q.w,
+          boost:       p.boostMeter,
+          stun:        p.stun,
+          kills:       p.kills,
+          deaths:      p.deaths,
+          primaryCd:   p.cooldown.primary / WEAPONS[p.loadout.primary].cooldown,
+          secondaryCd: p.cooldown.secondary / WEAPONS[p.loadout.secondary].cooldown,
+          lockPhase:   p.lock.phase,
+          lockTarget:  p.lock.targetId,
+          lockMeter:   p.lock.progress,
         }
       }),
-      zones: this.zones.map(z => ({ id: z.def.id, owner: z.owner, progress: z.progress })),
+      zones: this.zones.map(z => ({
+        id:        z.def.id,
+        owner:     z.owner,
+        progress:  z.progress,
+        capturing: z.capturing,
+        contested: z.contested,
+      })),
       flags: this.flags.map(f => ({
         team:      f.team,
         state:     f.state,
@@ -791,7 +1155,18 @@ export class BattleSim {
         y:         f.position[1],
         z:         f.position[2],
       })),
-      bolts: this.bolts.map(b => ({ x: b.position[0], y: b.position[1], z: b.position[2], team: b.team })),
+      beams:    this.beams.map(b => ({ ...b, from: [ ...b.from ] as [number, number, number], to: [ ...b.to ] as [number, number, number]})),
+      missiles: this.missiles.map(m => ({
+        id:     m.id,
+        x:      m.position[0],
+        y:      m.position[1],
+        z:      m.position[2],
+        vx:     m.velocity[0],
+        vy:     m.velocity[1],
+        vz:     m.velocity[2],
+        team:   m.team,
+        weapon: m.weapon,
+      })),
     }
   }
 }

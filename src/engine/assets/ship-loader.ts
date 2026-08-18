@@ -8,6 +8,8 @@ import type { ShipConfig } from '@/lib/ship/materials'
 import type { ShipId } from '@/lib/ship/registry'
 import { createAfterburner, deriveNozzles } from '../fx/afterburner'
 import type { Afterburner } from '../fx/afterburner'
+import { createCannons, deriveHardpoints } from '@/lib/ship/cannons'
+import type { Cannons } from '@/lib/ship/cannons'
 
 // `blankTexManager` rewrites every image URL the FBX asks for to a 1x1 GIF —
 // the WipEout scans carry baked absolute Windows paths that would otherwise 404.
@@ -84,6 +86,9 @@ export type ShipInstance = {
    */
   burner: Afterburner;
 
+  /** Bolt-on hardpoint barrels, driven by the loadout half of the config. */
+  cannons: Cannons;
+
   /** Re-apply livery without rebuilding — palette/colour/roughness edits. */
   applyConfig(config: ShipConfig): void;
   dispose(): void;
@@ -140,6 +145,9 @@ export async function loadShip (shipId: ShipId, targetSize: number): Promise<Shi
 
   const inner = new THREE.Group()
   inner.scale.setScalar(fit.scale)
+  // Hull-shape deform multiplies the FIT scale on this group, never on `root`:
+  // the sim writes root.position/quaternion every frame and a scale set there
+  // survives exactly one tick.
   if (preset.modelRotation)
     model.rotation.set(preset.modelRotation[0], preset.modelRotation[1], preset.modelRotation[2])
 
@@ -160,17 +168,39 @@ export async function loadShip (shipId: ShipId, targetSize: number): Promise<Shi
   const burner = createAfterburner()
   root.add(burner.group)
 
+  const cannons = createCannons()
+  root.add(cannons.group)
+
   // Nozzles are derived from `inner` (post-fit, post-rotation) so they land in
   // root-local units and survive any future change to the fit maths.
   let nozzleSpread = -1
+  let shapeKey     = ''
+  let gunKey       = ''
 
   return {
     root,
     burner,
+    cannons,
     applyConfig (config) {
       applyShipConfig(model, config)
-      // Re-deriving walks every vertex, so only redo it when the spread moved.
-      if (config.nozzleSpread !== nozzleSpread) {
+
+      // Deform first: nozzles and hardpoints are both measured off the fitted
+      // hull, so re-deriving them before the new scale is in place pins them to
+      // the OLD silhouette and they drift out of the hull as the sliders move.
+      const nextShape = `${config.bodyWidth}|${config.bodyHeight}|${config.bodyLength}`
+      const reshaped  = nextShape !== shapeKey
+      if (reshaped) {
+        shapeKey = nextShape
+        inner.scale.set(
+          fit.scale * config.bodyWidth,
+          fit.scale * config.bodyHeight,
+          fit.scale * config.bodyLength
+        )
+        inner.updateMatrixWorld(true)
+      }
+
+      // Re-deriving walks every vertex, so only redo it when something moved.
+      if (reshaped || config.nozzleSpread !== nozzleSpread) {
         nozzleSpread = config.nozzleSpread
         burner.setNozzles(deriveNozzles(inner, nozzleSpread))
       }
@@ -179,9 +209,20 @@ export async function loadShip (shipId: ShipId, targetSize: number): Promise<Shi
         burnIntensity: config.burnIntensity,
         burnLength:    config.burnLength,
       })
+
+      cannons.setWeapon(config.primaryWeapon)
+      cannons.setVisible(config.gunsVisible)
+
+      const nextGuns = `${config.gunSpread}|${reshaped}|${shapeKey}`
+      if (nextGuns !== gunKey) {
+        gunKey = nextGuns
+        cannons.setMounts(deriveHardpoints(inner, config.gunSpread))
+      }
+      cannons.setScale(config.gunScale)
     },
     dispose () {
       burner.dispose()
+      cannons.dispose()
       root.removeFromParent()
       // Free only what this instance owns. Templates stay cached, and their
       // textures were cloned per instance above.
