@@ -2,9 +2,11 @@ import * as THREE from 'three'
 import type { App, AppModule } from 'threejs-scene'
 import { defineModule } from 'threejs-scene'
 import { apexArena, BATTLE_TEAMS, TEAM_COLORS } from '../battle/arena'
+import type { Scenery } from '../battle/scenery'
 import type { BattleTeam } from '../battle/arena'
-import { BattleSim } from '../battle/sim'
+import { AIM_MAX, BattleSim } from '../battle/sim'
 import type { BattlePlayer } from '../battle/sim'
+import type { BattleEvent } from '../battle/types'
 import { WEAPONS } from '../battle/weapons'
 import type { Loadout } from '../battle/weapons'
 import {
@@ -13,7 +15,8 @@ import {
   buildMissilePool,
   buildNameplate,
   buildObjective,
-  buildZoneVisual
+  buildZoneVisual,
+  buildExplosionPool
 } from '../battle/visuals'
 import type { CaretMarker, Nameplate, ObjectiveVisual, ZoneVisual } from '../battle/visuals'
 import { calculateActionHash, verifyActionHash } from '../battle/hash'
@@ -22,7 +25,10 @@ import { BodyInterpolator } from '../interpolation'
 import { useBattleStore } from '@/hooks/use-battle-store'
 import { IDLE_LOCK } from '@/hooks/use-battle-store'
 import type { ShipId } from '@/lib/ship/registry'
+import { vehicleConfig } from '@/lib/utils'
 import { mountBaseScene } from './base'
+import { createBattlePost } from '../battle/post'
+import type { CameraRig } from '../camera/rig'
 
 
 export type BattleState = {
@@ -44,6 +50,10 @@ export const initialBattleState = (): BattleState => ({
 /** Beams and missiles both cap out well under these; the pools never grow. */
 const BEAM_POOL    = 48
 const MISSILE_POOL = 64
+
+// Smaller than the beam pool on purpose: bursts last under a second, so even a
+// four-on-four scrap never has more than a handful alive at once.
+const BLAST_POOL   = 24
 
 /**
  * Opponent hull.
@@ -163,11 +173,17 @@ export async function mountBattle (
   // Start immediately so driving controls are live on arrival.
   sim.start(0)
 
+  const post = createBattlePost()
+
+  // Built inside `buildGeometry`, ticked from `onFrame`: the sky panels and the
+  // debris drift need a clock, and nothing else in the arena does.
+  let scenery: Scenery | null = null
+
   let firePrimary   = false
   let fireSecondary = false
 
   const onKeyDown = (e: KeyboardEvent) => {
-    if (e.code === 'Space' || e.code === 'KeyF') {
+    if (e.code === 'Space') {
       firePrimary = true
       e.preventDefault()
     }
@@ -177,7 +193,7 @@ export async function mountBattle (
     }
   }
   const onKeyUp = (e: KeyboardEvent) => {
-    if (e.code === 'Space' || e.code === 'KeyF')
+    if (e.code === 'Space')
       firePrimary = false
     else if (e.code === 'KeyX')
       fireSecondary = false
@@ -218,6 +234,7 @@ export async function mountBattle (
 
   const beamPool    = buildBeamPool(BEAM_POOL)
   const missilePool = buildMissilePool(MISSILE_POOL)
+  const blastPool   = buildExplosionPool(BLAST_POOL)
 
   const opponents = new Map<string, Opponent>()
   const shipRoot  = new THREE.Group()
@@ -267,6 +284,65 @@ export async function mountBattle (
     opponents.delete(id)
   }
 
+  /**
+   * Put a burst on a player, by id.
+   *
+   * Events carry ids rather than coordinates, and the body is authoritative
+   * anyway — a position baked into the event would be a tick stale by the time
+   * the render phase drew it.
+   */
+  function burstAt (id: string, colour: THREE.ColorRepresentation, scale: number) {
+    const player = sim.getPlayer(id)
+    if (!player)
+      return
+
+    const t = player.chassis.translation()
+    blastPool.spawn({ x: t.x, y: t.y + 0.6, z: t.z }, colour, scale)
+  }
+
+  /**
+   * Turn a sim event into camera shake and a frame flash.
+   *
+   * Keyed off the local player on purpose: a kill across the map should not
+   * punch your camera. `rig.shake` decays on its own from a seeded jitter, so
+   * this only ever kicks it and never has to wind it back down.
+   */
+  function reactTo (e: BattleEvent, rig: CameraRig) {
+    switch (e.type) {
+      case 'fire':
+        if (e.id === localPlayer.id)
+          rig.shake(WEAPONS[e.weapon].needsLock ? 0.5 : 0.22)
+        break
+      case 'hit':
+        burstAt(e.target, TEAM_COLORS[sim.getPlayer(e.hitBy)?.team ?? 'red'], 1.1)
+        if (e.target === localPlayer.id) {
+          rig.shake(0.7)
+          post.pulse(0.55, '#ff5470')
+        }
+        else if (e.hitBy === localPlayer.id)
+          post.pulse(0.16, '#9fe8ff')
+        break
+      case 'kill':
+        burstAt(e.target, '#ffd28a', 4.2)
+        if (e.target === localPlayer.id) {
+          rig.shake(1.6)
+          post.pulse(1.1, '#ff2d6f')
+        }
+        else if (e.hitBy === localPlayer.id)
+          post.pulse(0.4, '#b7f34a')
+        break
+      case 'lock':
+        if (e.id === localPlayer.id)
+          post.pulse(0.22, '#22d3ee')
+        break
+      case 'flagScored':
+        post.pulse(0.5, TEAM_COLORS[e.team])
+        break
+      default:
+        break
+    }
+  }
+
   const app = await mountBaseScene<BattleState>({
     canvas,
     initialState:            initialBattleState(),
@@ -275,12 +351,17 @@ export async function mountBattle (
     colliders:               arena.colliders,
     colliderOffset:          arena.colliderOffset,
     useDefaultVehicleModule: false,
+    // The sim owns the trim so it survives the netcode round-trip; the hull and
+    // camera just mirror whatever elevation it settled on.
+    aimPitchSource:          () => localPlayer.aimAngle / AIM_MAX,
     // The deck's diagonal is ~850 units; the race rig's 400 far plane would
     // clip the far wall clean off.
     cameraFar:               1600,
     buildGeometry:           ctx => {
-      arena.buildVisual(ctx)
+      scenery = arena.buildVisual(ctx)
     },
+    post: post.options,
+
     gameModuleFactory: (physics, _isVehicleCollider, _telemetry, controls, vehicleRef, rig) => {
       const localInterpolator = new BodyInterpolator(localPlayer.chassis)
       physics.interpolators.push(localInterpolator)
@@ -322,6 +403,7 @@ export async function mountBattle (
             fireSecondary: fireSecondary,
             reverse:       controls.reverse,
             strafe:        controls.strafe,
+            aimPitch:      controls.pitch,
             resetSeq:      state.resetSeq,
           })
 
@@ -349,6 +431,8 @@ export async function mountBattle (
           else
             store.setLockOn(IDLE_LOCK)
 
+          store.setAimPitch(localPlayer.aimAngle / AIM_MAX)
+
           store.setPilot({
             health:    localPlayer.health,
             maxHealth: localPlayer.maxHealth,
@@ -365,10 +449,14 @@ export async function mountBattle (
             { id: secondarySpec.id, cooldown: localPlayer.cooldown.secondary / secondarySpec.cooldown, needsLock: secondarySpec.needsLock }
           )
 
+          // Battle disables the default vehicle module, which is the only thing
+          // that ever writes `telemetry.shake` — so the base `impact` module has
+          // been idling since the mode was built. Drive the rig directly.
           if (events.length) {
             const names = nameOf()
             for (const e of events) {
               store.applyEvent(e, names)
+              reactTo(e, rig)
 
               const localSnapshot = {
                 scores:      snap.scores,
@@ -436,13 +524,20 @@ export async function mountBattle (
               ctx.scene.add(objective.group)
           for (const zone of zoneVisuals)
             ctx.scene.add(zone.group)
-          ctx.scene.add(shipRoot, overlays, beamPool.group, missilePool.group)
+          ctx.scene.add(shipRoot, overlays, beamPool.group, missilePool.group, blastPool.group)
         },
       }),
     ],
 
     onFrame: frame => {
       const elapsed = frame.elapsed
+
+      // Motion blur rides ground speed rather than the boost flag, so coasting
+      // fast still streaks and tapping boost from a standstill does not.
+      const lv = localPlayer.chassis.linvel()
+      post.setSpeed(Math.hypot(lv.x, lv.z) / vehicleConfig.maxSpeed)
+      scenery?.update(elapsed)
+      blastPool.update(frame.delta)
 
       // --- opponents ---
       for (const p of sim.players) {
@@ -525,6 +620,7 @@ export async function mountBattle (
         zone.dispose()
       beamPool.dispose()
       missilePool.dispose()
+      blastPool.dispose()
       sim.dispose()
     },
   })

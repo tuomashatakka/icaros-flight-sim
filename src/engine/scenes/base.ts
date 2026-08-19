@@ -3,6 +3,7 @@ import { createApp, createSeededRng, defineModule } from 'threejs-scene'
 import type { App, AppModule, FrameContext } from 'threejs-scene'
 import { standardLighting } from 'threejs-scene/modules/lighting'
 import { postProcessing } from 'threejs-scene/modules/post'
+import type { PostProcessingOptions } from 'threejs-scene/modules/post'
 import { useCameraView } from '@/hooks/use-camera-view'
 import { initRapier } from '../rapier'
 import { createSimClock } from '../clock'
@@ -40,10 +41,25 @@ function resolveSeed (defaultSeed = SEED): number {
   return defaultSeed
 }
 
+// Reused so the render phase stays allocation-free; the rig only reads it.
+const _pan            = { panX: 0, panY: 0, pitch: 0 }
 const _shipPosition   = new THREE.Vector3()
 const _shipQuaternion = new THREE.Quaternion()
 
+/**
+ * Visual nose swing from the R/F aim axis, radians (~18 deg).
+ *
+ * Bounded low on purpose: the hull is still visibly hovering flat above the
+ * track, so past this the nose reads as detached from the vehicle rather than
+ * aimed. Nothing here reaches the physics — the surface-alignment `setAngvel`
+ * in `vehicle.ts` owns the ship's actual attitude and never sees this value.
+ */
+const MAX_AIM_PITCH = 0.31
+
 type AppContext<TState extends object> = Parameters<AppModule<TState>['build']>[0]
+
+/** The slice of the post module a scene is allowed to fill in. */
+export type ScenePost = Pick<PostProcessingOptions, 'depth' | 'effects' | 'onFrame' | 'onResize'>
 
 export type BaseSceneConfig<TState extends object> = {
   canvas:                   HTMLCanvasElement;
@@ -56,6 +72,25 @@ export type BaseSceneConfig<TState extends object> = {
   colliders?:               readonly BoxCollider[];
   colliderOffset?:          readonly [number, number, number];
   useDefaultVehicleModule?: boolean;
+
+  /**
+   * Normalised vertical aim, -1..1, if the scene owns it.
+   *
+   * Race leaves this unset and gets the spring: `controls.pitch` falls to 0 on
+   * release and the nose returns to level. Battle integrates a trim inside the
+   * sim and reports it here, so the hull and camera keep showing the elevation
+   * the guns are actually holding.
+   */
+  aimPitchSource?: () => number;
+
+  /**
+   * Extra post passes and their per-frame uniform hooks.
+   *
+   * `bloom` stays a separate field because it is the composer's own, built
+   * before anything here. Everything in this slot lands between the bloom and
+   * the OutputPass, which is what keeps the grade in linear HDR.
+   */
+  post?: ScenePost;
 
   /** Camera far plane. Defaults to the race rig's 400. */
   cameraFar?:         number;
@@ -95,6 +130,8 @@ export async function mountBaseScene<TState extends object> (
     colliders,
     colliderOffset,
     useDefaultVehicleModule = true,
+    aimPitchSource,
+    post,
     buildGeometry,
     gameModuleFactory,
     hudModuleFactory,
@@ -137,6 +174,7 @@ export async function mountBaseScene<TState extends object> (
 
   let skipRender                                                          = false
   let devFrame: ((position: THREE.Vector3, delta: number) => void) | null = null
+  let hullAimPitch                                                        = 0
   let lastViewSeq                                                         = controls.viewSeq
 
   useCameraView.getState().setView(rig.view())
@@ -224,9 +262,15 @@ export async function mountBaseScene<TState extends object> (
 
     postProcessing<TState>({
       bloom,
-      effects: ctx => {
+      depth:    post?.depth,
+      onFrame:  post?.onFrame,
+      onResize: post?.onResize,
+      effects:  ctx => {
+        // The composer is captured here rather than in `build` because this is
+        // the only callback the module hands it out from, and `renderFrame`
+        // needs it to draw at all.
         composer = ctx.composer
-        return []
+        return post?.effects?.(ctx) ?? []
       },
     })
   )
@@ -256,10 +300,21 @@ export async function mountBaseScene<TState extends object> (
 
     const interpolator = vehicle.current?.interpolator
     if (interpolator) {
+      // Race passes nothing and gets the spring off the raw held axis; battle
+      // reports its integrated trim. Either way the hull is eased rather than
+      // snapped, because the sim's trim steps at 60 Hz and the render does not.
+      const aimNorm = aimPitchSource ? aimPitchSource() : controls.pitch
+      hullAimPitch += (aimNorm * MAX_AIM_PITCH - hullAimPitch) *
+        (1 - Math.exp(-9 * frame.delta))
+      shipVisual.current?.setAimPitch(hullAimPitch)
+
       interpolator.sample(clock.alpha(), _shipPosition, _shipQuaternion)
       shipRoot.position.copy(_shipPosition)
       shipRoot.quaternion.copy(_shipQuaternion)
-      rig.drive(frame.delta, _shipPosition, _shipQuaternion, controls)
+      _pan.panX  = controls.panX
+      _pan.panY  = controls.panY
+      _pan.pitch = aimNorm
+      rig.drive(frame.delta, _shipPosition, _shipQuaternion, _pan)
       sun.current?.follow(_shipPosition)
 
       const blend = rig.blend()

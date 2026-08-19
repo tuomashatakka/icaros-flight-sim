@@ -1,4 +1,6 @@
 import * as THREE from 'three'
+import { buildScenery, createDeckTexture } from './scenery'
+import type { Scenery } from './scenery'
 import type { SceneContext } from 'threejs-scene'
 import type { BoxCollider } from '@/lib/track/build-track'
 
@@ -100,7 +102,7 @@ export type BattleArena = {
   zonePeriod:     number; // seconds of ownership per +1 score tick
   flagReturnTime: number; // seconds a dropped objective waits before returning home
 
-  buildVisual(ctx: SceneContext): void;
+  buildVisual(ctx: SceneContext): Scenery;
 }
 
 // --- Apex Basin dimensions --------------------------------------------------
@@ -119,6 +121,17 @@ const FOG: [string, number, number] = [ '#0d1120', 340, 1500 ]
 
 /** Deck half-extent, exported so the client scene can size its own floor to match. */
 export const ARENA_HALF = HALF
+
+/**
+ * Where the key light reads as coming FROM, in world space.
+ *
+ * Distinct from `sunModule`'s DirectionalLight, which chases the ship to keep
+ * the shadow frustum useful and so has no stable sky position. The god-ray pass
+ * and the visible sun disc both anchor here instead, low on the horizon behind
+ * the blue end of the deck so the shafts rake across the mesas rather than
+ * pouring straight down.
+ */
+export const SUN_ANCHOR: [number, number, number] = [ -430, 300, 1150 ]
 
 const spawn = (x: number, z: number, yawPi: boolean): ArenaTransform => ({ position: [ x, 0, z ], quaternion: yawPi ? [ 0, 1, 0, 0 ] : [ 0, 0, 0, 1 ]})
 
@@ -415,7 +428,7 @@ export function apexArena (): BattleArena {
     flagReturnTime: 8,
 
     buildVisual (ctx) {
-      buildApexVisual(ctx, plateaus, bases)
+      return buildApexVisual(ctx, plateaus, bases)
     },
   }
 }
@@ -438,11 +451,16 @@ function buildApexVisual (
   ctx: SceneContext,
   plateaus: PlateauDef[],
   bases: BattleArena['bases']
-): void {
+): Scenery {
   const scene = ctx.scene
   const rng   = mulberry32(0xa9e5)
 
-  const deckMat       = new THREE.MeshStandardMaterial({ color: '#14151f', metalness: 0.15, roughness: 0.92 })
+  const deckMat       = new THREE.MeshStandardMaterial({
+    color:     '#14151f',
+    map:       createDeckTexture(),
+    metalness: 0.22,
+    roughness: 0.86,
+  })
   const floor         = new THREE.Mesh(new THREE.PlaneGeometry(HALF * 2, HALF * 2), deckMat)
   floor.rotation.x    = -Math.PI / 2
   floor.receiveShadow = true
@@ -525,6 +543,8 @@ function buildApexVisual (
   }
 
   scene.fog = new THREE.Fog(FOG[0], FOG[1], FOG[2])
+
+  return buildScenery(scene, rng, { half: HALF, wallIn: WALL_IN, sunAnchor: SUN_ANCHOR })
 }
 
 function buildPlateauMeshes (scene: THREE.Object3D, plateaus: PlateauDef[]): void {
@@ -621,39 +641,4 @@ function buildPerimeter (scene: THREE.Object3D, rng: () => number): void {
     stripe.rotation.y = rot
     scene.add(stripe)
   }
-
-  // Skyline: towers sitting OUTSIDE the wall. They are decoration only — the
-  // wall is what stops you — so they carry no collider.
-  const towerMat = new THREE.MeshStandardMaterial({ color: '#10131d', metalness: 0.45, roughness: 0.55 })
-  const litMat   = new THREE.MeshBasicMaterial({ color: '#5a6bff', transparent: true, opacity: 0.5 })
-  const towers   = new THREE.Group()
-
-  for (let ring = 0; ring < 3; ring++) {
-    const dist  = HALF + 26 + ring * 46
-    const count = 34 + ring * 8
-    for (let i = 0; i < count; i++) {
-      const angle = i / count * Math.PI * 2 + rng() * 0.06
-      // Project the circle onto a square so the towers hug the wall line.
-      const cs    = Math.cos(angle)
-      const sn    = Math.sin(angle)
-      const scale = 1 / Math.max(Math.abs(cs), Math.abs(sn))
-      const x     = cs * scale * dist + (rng() - 0.5) * 22
-      const z     = sn * scale * dist + (rng() - 0.5) * 22
-      const h     = 40 + rng() * (150 + ring * 70)
-      const w     = 12 + rng() * 22
-
-      const tower = new THREE.Mesh(new THREE.BoxGeometry(w, h, w * (0.7 + rng() * 0.7)), towerMat)
-      tower.position.set(x, h / 2, z)
-      tower.rotation.y = rng() * Math.PI
-      towers.add(tower)
-
-      if (rng() > 0.45) {
-        const cap = new THREE.Mesh(new THREE.PlaneGeometry(w * 0.7, 1.6), litMat)
-        cap.position.set(x, h - 6 - rng() * 20, z + w * 0.5 + 0.2)
-        towers.add(cap)
-      }
-    }
-  }
-
-  scene.add(towers)
 }

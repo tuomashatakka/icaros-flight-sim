@@ -66,19 +66,22 @@ export const IDLE_LOCK: LockOnState = {
 }
 
 export type BattleSessionState = {
-  status:           BattleStatus | 'idle' | 'connecting' | 'queued' | 'error';
-  error:            string | null;
-  playerId:         string | null;
-  myName:           string | null;
-  myTeam:           BattleTeam | null;
-  myShip:           string | null;
-  myHealth:         number;
-  maxHealth:        number;
-  myBoost:          number;
-  myKills:          number;
-  myDeaths:         number;
-  carrying:         BattleTeam | null;
-  lockOn:           LockOnState;
+  status:    BattleStatus | 'idle' | 'connecting' | 'queued' | 'error';
+  error:     string | null;
+  playerId:  string | null;
+  myName:    string | null;
+  myTeam:    BattleTeam | null;
+  myShip:    string | null;
+  myHealth:  number;
+  maxHealth: number;
+  myBoost:   number;
+  myKills:   number;
+  myDeaths:  number;
+  carrying:  BattleTeam | null;
+  lockOn:    LockOnState;
+
+  /** Normalised R/F vertical aim, -1..1. Drives where the reticle sits. */
+  aimPitch:         number;
   primary:          WeaponView | null;
   secondary:        WeaponView | null;
   countdown:        number;
@@ -109,6 +112,7 @@ const initial: BattleSessionState = {
   myDeaths:         0,
   carrying:         null,
   lockOn:           IDLE_LOCK,
+  aimPitch:         0,
   primary:          null,
   secondary:        null,
   countdown:        0,
@@ -157,6 +161,7 @@ export const useBattleStore = create<BattleSessionState & {
     carrying:  BattleTeam | null;
   }) => void;
   setLockOn:       (lock: LockOnState) => void;
+  setAimPitch:     (aim: number) => void;
   setWeapons:      (primary: WeaponView, secondary: WeaponView) => void;
   setVerification: (v: { tick: number; hash: string; matched: boolean }) => void;
   applyEvent:      (e: import('@/engine/battle/sim').BattleEvent, names?: Map<string, string>) => void;
@@ -177,6 +182,13 @@ export const useBattleStore = create<BattleSessionState & {
       Math.abs(prev.progress - next.progress) < 0.02 &&
       Math.abs(prev.distance - next.distance) < 2
     return same ? {} : { lockOn: { ...next, progress: q(next.progress, 50), distance: Math.round(next.distance) }}
+  }),
+
+  // Quantised for the same reason the lock meter is: the trim integrates every
+  // tick, and a React commit per 0.6 mrad of aim is 60 renders a second.
+  setAimPitch: aim => set(state => {
+    const next = q(aim, 100)
+    return next === state.aimPitch ? {} : { aimPitch: next }
   }),
 
   setWeapons: (primary, secondary) => set(state => {

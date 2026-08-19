@@ -78,6 +78,7 @@ page ran before it, so `runScenario` explicitly resets, before the timeline:
 - the race store (`resetRace()`) — lap, next checkpoint, respawn target
 - telemetry — `boostMeter` especially, which drains and never refills
 - the publish module's zone-escalation accumulator
+- `controls.pitch`, the R/F aim axis
 
 Everything is restored afterwards, so running a scenario mid-race is safe.
 
@@ -94,6 +95,27 @@ These are the constraints that are expensive to rediscover.
 modules read state. Modules never write state. Sim *outputs* go the other way
 through `src/engine/modules/publish.ts`, throttled to 15 Hz — writing telemetry
 into zustand at 60 Hz costs 60 React commits a second.
+
+**Controls.** `Q/E` and the arrows turn, `A/D` strafe, `R/F` walk the vertical
+aim, `Backspace` respawns. `R` used to be respawn and `F` used to be battle's
+fire-primary; both moved. `controls.pitch` is a raw held axis and each mode owns
+its own policy — race springs it back to level in the render phase, battle
+integrates it into `BattlePlayer.aimAngle` inside the sim so the trim holds, is
+deterministic, and survives the netcode. In battle it feeds `BattleSim.aimOf`,
+which is what lock acquisition and both weapons aim along; `forwardOf` stays the
+true hull facing and is what the muzzle position uses.
+
+**Post-processing extends through `BaseSceneConfig.postEffects`.** Battle's chain
+lives in `src/engine/battle/post.ts`. Two traps it documents: nothing may sample
+the composer's shared depth texture (it is attached to both render targets, so
+binding it while writing renders the frame black with no error — this is why
+there is no motion blur), and `createGodRaysPass` without a dedicated occlusion
+buffer treats every emissive in the arena as a light source.
+
+**Additive geometry the camera can enter will wash the frame.** Commit `07cff7e`
+found it with the zone beacons; a horizon-glow cylinder around the deck hit it
+again at arena scale. If it surrounds the play area it belongs in the sky shader,
+not in the scene graph.
 
 **Module order in `race.ts` is load-bearing.** `postProcessing` must be last:
 the last-mounted module with a render hook wins, and it owns the composer. The

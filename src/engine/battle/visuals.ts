@@ -619,3 +619,111 @@ export function buildNameplate (): Nameplate {
     },
   }
 }
+
+/** A pooled burst. `spawn` starts one; `update` ages every live burst. */
+export type ExplosionPool = {
+  group: THREE.Group;
+  spawn(position: { x: number; y: number; z: number }, colour: THREE.ColorRepresentation, scale: number): void;
+  update(delta: number): void;
+  dispose(): void;
+}
+
+/**
+ * Hit and kill bursts.
+ *
+ * The battle had no impact VFX at all: `hit` and `kill` events drove the DOM
+ * kill feed and nothing in the world, so a ship simply stopped existing. Pooled
+ * like the beams — a fixed ring reused in order, never allocated mid-match, so
+ * a busy fight cannot stutter on a GC.
+ *
+ * Both parts are additive with `depthWrite: false` and stay small. A burst is
+ * the one moment the camera is guaranteed to be looking, and a big additive
+ * sphere near the lens is how you wash out the frame (see 07cff7e).
+ */
+export function buildExplosionPool (size: number): ExplosionPool {
+  const group = new THREE.Group()
+  const items: Array<{
+    root:      THREE.Group;
+    core:      THREE.Mesh;
+    ring:      THREE.Mesh;
+    coreMat:   THREE.MeshBasicMaterial;
+    ringMat:   THREE.MeshBasicMaterial;
+    life:      number;
+    span:      number;
+    baseScale: number;
+  }> = []
+
+  const coreGeo = new THREE.IcosahedronGeometry(1, 1)
+  const ringGeo = new THREE.RingGeometry(0.72, 1, 40)
+
+  for (let i = 0; i < size; i++) {
+    const coreMat = new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false })
+    const ringMat = new THREE.MeshBasicMaterial({ transparent: true, blending: THREE.AdditiveBlending, depthWrite: false, toneMapped: false, side: THREE.DoubleSide })
+
+    const root      = new THREE.Group()
+    const core      = new THREE.Mesh(coreGeo, coreMat)
+    const ring      = new THREE.Mesh(ringGeo, ringMat)
+    ring.rotation.x = -Math.PI / 2
+    root.add(core, ring)
+    root.visible     = false
+    root.renderOrder = 850
+    group.add(root)
+
+    items.push({ root, core, ring, coreMat, ringMat, life: 0, span: 1, baseScale: 1 })
+  }
+
+  let next = 0
+
+  return {
+    group,
+
+    spawn (position, colour, scale) {
+      // Round-robin rather than first-free: the oldest burst is the one worth
+      // stealing, and scanning for a free slot is the only per-event cost here.
+      const item = items[next]
+      next = (next + 1) % items.length
+
+      item.coreMat.color.set(colour)
+      item.ringMat.color.set(colour)
+      item.root.position.set(position.x, position.y, position.z)
+      item.root.visible = true
+      item.life         = 0
+      item.span         = 0.45 + scale * 0.25
+      item.baseScale    = scale
+    },
+
+    update (delta) {
+      for (const item of items) {
+        if (!item.root.visible)
+          continue
+
+        item.life += delta
+
+        const t = item.life / item.span
+        if (t >= 1) {
+          item.root.visible = false
+          continue
+        }
+
+        // Core punches out fast and fades; the ring keeps expanding past it, so
+        // the burst reads as a shockwave rather than a puff.
+        const fade = 1 - t
+        item.core.scale.setScalar(item.baseScale * (0.4 + t * 1.6))
+        item.coreMat.opacity = fade * fade * 0.9
+
+        item.ring.scale.setScalar(item.baseScale * (0.6 + t * 5.5))
+        item.ringMat.opacity = fade * 0.5
+      }
+    },
+
+    dispose () {
+      coreGeo.dispose()
+      ringGeo.dispose()
+      for (const item of items) {
+        item.coreMat.dispose()
+        item.ringMat.dispose()
+      }
+      group.removeFromParent()
+    },
+  }
+}

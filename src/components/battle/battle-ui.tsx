@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect } from 'react'
+import type { CSSProperties } from 'react'
 import { useBattleStore } from '@/hooks/use-battle-store'
 import type { BattleZoneView } from '@/hooks/use-battle-store'
 import { TEAM_COLORS } from '@/engine/battle/arena'
@@ -86,6 +87,7 @@ export function BattleUI () {
   const toasts      = useBattleStore(s => s.toasts)
   const killFeed    = useBattleStore(s => s.killFeed)
   const clear       = useBattleStore(s => s.clearToast)
+  const aimPitch    = useBattleStore(s => s.aimPitch)
   const myTeam      = useBattleStore(s => s.myTeam)
   const myHealth    = useBattleStore(s => s.myHealth)
   const maxHealth   = useBattleStore(s => s.maxHealth)
@@ -158,7 +160,9 @@ export function BattleUI () {
 
     {/* ── reticle ───────────────────────────────────────────────── */}
     { live &&
-      <div className={ cx(styles.reticle, tracking && styles.isTracking, locked && styles.isLocked) }>
+      <div
+        className={ cx(styles.reticle, tracking && styles.isTracking, locked && styles.isLocked) }
+        style={{ '--aim': aimPitch } as CSSProperties}>
         <svg viewBox="0 0 120 120" className={ styles.reticleArt } aria-hidden>
           <circle className={ styles.reticleRing } cx="60" cy="60" r="34" />
 
@@ -303,15 +307,21 @@ export function BattleUI () {
       </span>
 
       <span>
-        <kbd className={ styles.key }>A/D</kbd>
+        <kbd className={ styles.key }>Q/E</kbd>
         {' '}
         turn
       </span>
 
       <span>
-        <kbd className={ styles.key }>Q/E</kbd>
+        <kbd className={ styles.key }>A/D</kbd>
         {' '}
         strafe
+      </span>
+
+      <span>
+        <kbd className={ styles.key }>R/F</kbd>
+        {' '}
+        aim
       </span>
 
       <span>
@@ -339,7 +349,7 @@ export function BattleUI () {
       </span>
 
       <span>
-        <kbd className={ styles.key }>R</kbd>
+        <kbd className={ styles.key }>⌫</kbd>
         {' '}
         respawn
       </span>

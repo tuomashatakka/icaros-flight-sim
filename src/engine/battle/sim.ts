@@ -60,8 +60,14 @@ export const NEUTRAL_INPUT: BattleInput = {
   fireSecondary: false,
   reverse:       false,
   strafe:        0,
+  aimPitch:      0,
   resetSeq:      0,
 }
+
+/** Vertical aim travel, radians/sec, and its clamp. */
+const AIM_RATE = 0.62
+
+export const AIM_MAX = 0.35
 
 /**
  * Scoring is tuned so no single point can carry a match.
@@ -93,6 +99,8 @@ const _toTarget = new Vector3()
 const _tmp3     = new Vector3()
 const _dir      = new Vector3()
 const _origin   = new Vector3()
+const _aimAxis  = new Vector3()
+const _aimQuat  = new Quaternion()
 const _tmpQuat  = new Quaternion()
 const UP        = new Vector3(0, 1, 0)
 
@@ -267,6 +275,7 @@ export class BattleSim {
       loadout:      { ...loadout },
       cooldown:     { primary: 0, secondary: 0 },
       lock:         createLockState(),
+      aimAngle:     0,
       carriedFlag:  null,
       respawnIndex: seat,
       lastResetSeq: 0,
@@ -350,6 +359,15 @@ export class BattleSim {
         resetRequested = true
       }
 
+      // Integrated from the held axis, not assigned from it: the aim is a trim
+      // wheel, so it keeps climbing while R is down and holds when released.
+      // A respawn puts you somewhere new facing something else — the old
+      // elevation is meaningless there, so it goes back to level.
+      if (resetRequested)
+        player.aimAngle = 0
+      else if (controls.aimPitch)
+        player.aimAngle = Math.max(-AIM_MAX, Math.min(AIM_MAX, player.aimAngle + controls.aimPitch * AIM_RATE * dt))
+
       const stepOut  = stepHovercraft({
         chassis:     player.chassis,
         controller:  player.controller,
@@ -415,6 +433,29 @@ export class BattleSim {
     const q = player.chassis.rotation()
     _tmpQuat.set(q.x, q.y, q.z, q.w)
     return out.set(0, 0, 1).applyQuaternion(_tmpQuat)
+  }
+
+  /**
+   * The aim vector: ship-forward tipped by the player's vertical trim.
+   *
+   * Kept separate from `forwardOf` rather than folded into it, because the
+   * muzzle position and the hull's own facing still want the true forward —
+   * only what the guns and the lock cone point AT should move.
+   */
+  private aimOf (player: BattlePlayer, out: Vector3): Vector3 {
+    this.forwardOf(player, out)
+    if (!player.aimAngle)
+      return out
+
+    // Rotate about the ship's own lateral axis so the trim stays relative to
+    // the hull as it banks, instead of drifting when the ship rolls.
+    const q = player.chassis.rotation()
+    _tmpQuat.set(q.x, q.y, q.z, q.w)
+    _aimAxis.set(1, 0, 0).applyQuaternion(_tmpQuat)
+    // Negative: +X here is the ship's LEFT (forward is +Z), so a positive
+    // rotation about it drops the nose.
+    _aimQuat.setFromAxisAngle(_aimAxis, -player.aimAngle)
+    return out.applyQuaternion(_aimQuat).normalize()
   }
 
   /** Muzzle position in world space, written into `out`. */
@@ -530,7 +571,7 @@ export class BattleSim {
 
   /** The enemy nearest the crosshair: smallest angular error, then distance. */
   private bestLockCandidate (player: BattlePlayer): FunctionReturnType {
-    this.forwardOf(player, _fwd)
+    this.aimOf(player, _fwd)
     this.muzzleOf(player, _origin)
 
     let best: BattlePlayer | null = null
@@ -606,7 +647,7 @@ export class BattleSim {
    */
   private fireBeam (player: BattlePlayer, spec: WeaponSpec): void {
     this.muzzleOf(player, _origin)
-    this.forwardOf(player, _dir)
+    this.aimOf(player, _dir)
 
     // A completed lock bends the muzzle onto the target, so a locked rail shot
     // rewards the wind-up instead of still demanding pixel aim.
@@ -662,7 +703,7 @@ export class BattleSim {
 
   private launchMissiles (player: BattlePlayer, spec: WeaponSpec): void {
     this.muzzleOf(player, _origin)
-    this.forwardOf(player, _dir)
+    this.aimOf(player, _dir)
 
     const targetId = player.lock.phase === 'locked' ? player.lock.targetId : null
     const speed    = spec.speed ?? 240

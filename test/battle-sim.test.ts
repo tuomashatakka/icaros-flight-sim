@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BattleSim, DEFAULT_BATTLE_CONFIG, NEUTRAL_INPUT } from '@/engine/battle/sim'
+import { AIM_MAX, BattleSim, DEFAULT_BATTLE_CONFIG, NEUTRAL_INPUT } from '@/engine/battle/sim'
 import type { BattleConfig, BattlePlayer } from '@/engine/battle/sim'
 import { apexArena, onPlateau, plateauColliders, rampFeet } from '@/engine/battle/arena'
 import { LOCK, WEAPONS } from '@/engine/battle/weapons'
@@ -41,8 +41,8 @@ const at = (sim: BattleSim, playerId: string, x: number, z: number, y = 1) => {
 
 /** Point `shooter` straight at `target`, on the XZ plane. Ship-forward is +z. */
 function aimAt (shooter: BattlePlayer, target: BattlePlayer) {
-  const s = shooter.chassis.translation()
-  const t = target.chassis.translation()
+  const s   = shooter.chassis.translation()
+  const t   = target.chassis.translation()
   const yaw = Math.atan2(t.x - s.x, t.z - s.z)
   shooter.chassis.setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }, true)
 }
@@ -61,8 +61,8 @@ const zoneOf = (sim: BattleSim, id: string) => sim.zones.find(z => z.def.id === 
  * ridges, in front of the spawn line — is clear of every plateau, ramp and
  * cover block.
  */
-const LANE_Z = -230
-const SPIRE  = ARENA.controlPoints.find(c => c.id === 'spire')!
+const LANE_Z         = -230
+const SPIRE          = ARENA.controlPoints.find(c => c.id === 'spire')!
 const BLUE_FLAG_REST = ARENA.bases.blue.flagRest
 const RED_BASE       = ARENA.bases.red.position
 
@@ -113,7 +113,7 @@ describe('arena geometry', () => {
 
     // One wall per side, each reaching high enough that a ramp launch cannot
     // clear it, and each closing its whole side.
-    for (const [ axis, sign ] of [ [ 0, 1 ], [ 0, -1 ], [ 2, 1 ], [ 2, -1 ] ] as Array<[0 | 2, 1 | -1]>) {
+    for (const [ axis, sign ] of [[ 0, 1 ], [ 0, -1 ], [ 2, 1 ], [ 2, -1 ]] as Array<[0 | 2, 1 | -1]>) {
       const wall = tall.find(c => Math.sign(c.position[axis]) === sign && Math.abs(c.position[axis]) > ARENA.half - 20)
       expect(wall, `wall on axis ${axis} sign ${sign}`).toBeTruthy()
       expect(wall!.position[1] + wall!.args[1]).toBeGreaterThan(40)
@@ -124,7 +124,7 @@ describe('arena geometry', () => {
 
 describe('battle sim boot', () => {
   it('spawns both hovercraft and keeps them stable on the deck', async () => {
-    const sim = await makeSim()
+    const sim  = await makeSim()
     const red  = sim.addPlayer('Paco', 'red', 'icaras')
     const blue = sim.addPlayer('Rico', 'blue', 'icaras')
     sim.start(0)
@@ -136,7 +136,7 @@ describe('battle sim boot', () => {
       const pos = p.chassis.translation()
       expect(Number.isFinite(pos.x)).toBe(true)
       expect(pos.y).toBeGreaterThan(-5) // never fell through the deck
-      expect(pos.y).toBeLessThan(20)    // never launched into orbit
+      expect(pos.y).toBeLessThan(20) // never launched into orbit
     }
   })
 
@@ -144,8 +144,10 @@ describe('battle sim boot', () => {
     const a = await makeSim()
     const b = await makeSim()
     for (const sim of [ a, b ]) {
-      for (let i = 0; i < 2; i++) sim.addBot('red')
-      for (let i = 0; i < 2; i++) sim.addBot('blue')
+      for (let i = 0; i < 2; i++)
+        sim.addBot('red')
+      for (let i = 0; i < 2; i++)
+        sim.addBot('blue')
       sim.start(0)
     }
     for (let i = 0; i < 1200; i++) {
@@ -174,6 +176,7 @@ describe('battle sim boot', () => {
       hold(sim, p.id, { throttle: true })
       sim.step(STEP)
       sim.drainEvents()
+
       const pos = p.chassis.translation()
       reachedTop = onPlateau(mesa, pos.x, pos.z) && pos.y > mesa.height - 2
     }
@@ -246,6 +249,7 @@ describe('lock-on', () => {
     const { sim, me, enemy } = await rig(120)
 
     holdAim(sim, me, enemy, Math.round(LOCK.time * 60 * 0.7))
+
     const peak = me.lock.progress
     expect(peak).toBeGreaterThan(0.3)
 
@@ -286,6 +290,105 @@ describe('lock-on', () => {
   })
 })
 
+describe('vertical aim', () => {
+  /** Park a stationary enemy `elevationDeg` above the shooter's own eye line. */
+  async function elevated (elevationDeg: number, dist = 120) {
+    const sim   = await makeSim()
+    const me    = sim.addPlayer('Me', 'red', 'icaras')
+    const enemy = sim.addPlayer('Them', 'blue', 'icaras')
+    sim.start(0)
+
+    at(sim, me.id, -dist / 2, LANE_Z, 1)
+    at(sim, enemy.id, dist / 2, LANE_Z, 1 + dist * Math.tan(elevationDeg * Math.PI / 180))
+    return { sim, me, enemy }
+  }
+
+  /**
+   * Pin the shooter's yaw AND the target's altitude every tick.
+   *
+   * Same reason as `holdAim` above, plus one more: a target parked in mid-air
+   * falls, and a lock that dies because the enemy hit the deck reads as "the
+   * aim did not reach" rather than "the test did not hold it there".
+   */
+  function hover (sim: BattleSim, me: BattlePlayer, enemy: BattlePlayer, ticks: number, aimPitch = 0) {
+    const yaw  = 90 * Math.PI / 180
+    const rest = enemy.chassis.translation()
+    for (let i = 0; i < ticks; i++) {
+      me.chassis.setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }, true)
+      me.chassis.setAngvel({ x: 0, y: 0, z: 0 }, true)
+      enemy.chassis.setTranslation(rest, true)
+      enemy.chassis.setLinvel({ x: 0, y: 0, z: 0 }, true)
+      hold(sim, me.id, { aimPitch })
+      sim.step(STEP)
+      sim.drainEvents()
+    }
+  }
+
+  it('trims upward while R is held and stops at the clamp', async () => {
+    const { sim, me, enemy } = await elevated(18)
+
+    hover(sim, me, enemy, 12, 1)
+
+    const partway = me.aimAngle
+    expect(partway).toBeGreaterThan(0)
+    expect(partway).toBeLessThan(AIM_MAX)
+
+    hover(sim, me, enemy, 120, 1)
+    expect(me.aimAngle).toBeCloseTo(AIM_MAX, 5)
+  })
+
+  it('holds the trim where you leave it instead of springing back', async () => {
+    const { sim, me, enemy } = await elevated(18)
+
+    hover(sim, me, enemy, 20, 1)
+
+    const held = me.aimAngle
+
+    hover(sim, me, enemy, 60, 0)
+    expect(me.aimAngle).toBeCloseTo(held, 6)
+  })
+
+  it('cannot reach a target 18° overhead until the aim is raised', async () => {
+    const { sim, me, enemy } = await elevated(18)
+
+    // Level: the target sits outside even the hold ring, so nothing acquires.
+    hover(sim, me, enemy, Math.round(LOCK.time * 60 * 1.6), 0)
+    expect(me.lock.phase).toBe('idle')
+    expect(me.lock.progress).toBeLessThan(0.05)
+  })
+
+  it('acquires that same target once R walks the aim up to it', async () => {
+    const { sim, me, enemy } = await elevated(18)
+
+    hover(sim, me, enemy, Math.round(LOCK.time * 60 * 1.6) + 40, 1)
+    expect(me.lock.phase).toBe('locked')
+    expect(me.lock.targetId).toBe(enemy.id)
+  })
+
+  it('sends a free-aim beam above the horizon when trimmed up', async () => {
+    const { sim, me, enemy } = await elevated(18)
+
+    hover(sim, me, enemy, 60, 1)
+    hold(sim, me.id, { aimPitch: 1, fire: true })
+    step(sim, 2)
+
+    const shot = sim.beams.find(b => b.shooterId === me.id)
+    expect(shot).toBeDefined()
+    expect(shot!.to[1]).toBeGreaterThan(shot!.from[1])
+  })
+
+  it('drops the trim back to level on respawn', async () => {
+    const { sim, me, enemy } = await elevated(18)
+
+    hover(sim, me, enemy, 60, 1)
+    expect(me.aimAngle).toBeGreaterThan(0)
+
+    hold(sim, me.id, { resetSeq: 1 })
+    step(sim, 2)
+    expect(me.aimAngle).toBe(0)
+  })
+})
+
 describe('weapons', () => {
   it('a beam weapon is hitscan and needs no lock', async () => {
     const sim   = await makeSim()
@@ -300,6 +403,7 @@ describe('weapons', () => {
     const before = enemy.health
     hold(sim, me.id, { fire: true })
     sim.step(STEP)
+
     const events = sim.drainEvents()
 
     // One tick: the shot has already resolved 80 m away.
@@ -388,8 +492,8 @@ describe('weapons', () => {
   })
 
   it('respects the per-slot cooldown', async () => {
-    const sim   = await makeSim()
-    const me    = sim.addPlayer('Me', 'red', 'icaras', { primary: 'lance', secondary: 'hornet' })
+    const sim = await makeSim()
+    const me  = sim.addPlayer('Me', 'red', 'icaras', { primary: 'lance', secondary: 'hornet' })
     sim.addPlayer('Them', 'blue', 'icaras')
     sim.start(0)
 
@@ -459,7 +563,7 @@ describe('control points', () => {
   })
 
   it('freezes on an even contest and resolves for whoever brings more bodies', async () => {
-    const sim = await makeSim()
+    const sim  = await makeSim()
     const red  = sim.addPlayer('Paco', 'red', 'icaras')
     const blue = sim.addPlayer('Otis', 'blue', 'icaras')
     sim.start(0)
@@ -490,12 +594,14 @@ describe('objectives', () => {
     sim.start(0)
 
     at(sim, red.id, BLUE_FLAG_REST[0] + 2, BLUE_FLAG_REST[2] + 1)
+
     let events = step(sim, 5)
     expect(events.some(e => e.type === 'flagTaken' && e.by === red.id)).toBe(true)
     expect(red.carriedFlag).toBe('blue')
 
     at(sim, red.id, RED_BASE[0], RED_BASE[2])
     events = step(sim, 5)
+
     const scored = events.find(e => e.type === 'flagScored')
     expect(scored && scored.by === red.id).toBe(true)
     expect(sim.scores.red).toBeGreaterThanOrEqual(DEFAULT_BATTLE_CONFIG.captureBonus)
@@ -519,6 +625,7 @@ describe('objectives', () => {
 
     hold(sim, blue.id, { fire: true })
     sim.step(STEP)
+
     const events = sim.drainEvents()
 
     expect(events.some(e => e.type === 'hit' && e.target === red.id)).toBe(true)
@@ -597,15 +704,15 @@ describe('match lifecycle', () => {
 describe('action hash verification', () => {
   it('calculates deterministic action hashes and verifies matching actions', () => {
     const action = {
-      tick: 12,
-      type: 'FIRE_BOLT',
+      tick:    12,
+      type:    'FIRE_BOLT',
       payload: { shooterId: 'p1', team: 'red' },
-      hash: '',
+      hash:    '',
     }
     const stateSnapshot = { scores: { red: 1, blue: 0 }, status: 'live' }
 
     const localHash = calculateActionHash(action.type, action.tick, action.payload, stateSnapshot)
-    action.hash = localHash
+    action.hash     = localHash
 
     const result = verifyActionHash(action, stateSnapshot)
     expect(result.matched).toBe(true)
@@ -614,10 +721,10 @@ describe('action hash verification', () => {
 
   it('flags hash mismatch when server action hash differs from local state', () => {
     const action = {
-      tick: 12,
-      type: 'FIRE_BOLT',
+      tick:    12,
+      type:    'FIRE_BOLT',
       payload: { shooterId: 'p1', team: 'red' },
-      hash: 'badhash123',
+      hash:    'badhash123',
     }
     const stateSnapshot = { scores: { red: 1, blue: 0 }, status: 'live' }
 

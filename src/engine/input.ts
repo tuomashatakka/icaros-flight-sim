@@ -21,6 +21,15 @@ export type Controls = {
   strafe:  number;
 
   /**
+   * -1 (aim down, F) .. 1 (aim up, R). Held, not edge-counted.
+   *
+   * Deliberately a raw axis rather than an angle: race eases it back to level
+   * because it is a *look*, battle integrates it into a trim that stays put
+   * because it is an *aim*. Baking either policy in here would deny the other.
+   */
+  pitch: number;
+
+  /**
    * Monotonic respawn counter, NOT a boolean.
    *
    * The sim runs 0..MAX_SUB_STEPS times per real frame, so a held key read as a
@@ -49,6 +58,7 @@ export function createControls (): Controls {
     boost:    false,
     reverse:  false,
     strafe:   0,
+    pitch:    0,
     resetSeq: 0,
     viewSeq:  0,
     panX:     0,
@@ -56,8 +66,8 @@ export function createControls (): Controls {
   }
 }
 
-const isLeft     = (key: string) => key === 'ArrowLeft' || key.toLowerCase() === 'a'
-const isRight    = (key: string) => key === 'ArrowRight' || key.toLowerCase() === 'd'
+const isLeft     = (key: string) => key === 'ArrowLeft' || key.toLowerCase() === 'q'
+const isRight    = (key: string) => key === 'ArrowRight' || key.toLowerCase() === 'e'
 const isThrottle = (key: string) => key === 'ArrowUp' || key.toLowerCase() === 'w'
 const isBrake    = (key: string) => key === 'ArrowDown' || key.toLowerCase() === 's'
 const clampSteer = (value: number) => Math.max(-1, Math.min(1, value))
@@ -71,6 +81,7 @@ const clampSteer = (value: number) => Math.max(-1, Math.min(1, value))
 export function attachControls (target: HTMLElement, controls: Controls): () => void {
   const pressed       = new Set<'left' | 'right'>()
   const strafePressed = new Set<'strafeLeft' | 'strafeRight'>()
+  const pitchPressed  = new Set<'pitchUp' | 'pitchDown'>()
   let keyboardSteer = 0
   let pointerSteer  = 0
 
@@ -92,6 +103,12 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
     controls.strafe = sLeft === sRight ? 0 : sRight ? -1 : 1
   }
 
+  const refreshPitch = () => {
+    const up       = pitchPressed.has('pitchUp')
+    const down     = pitchPressed.has('pitchDown')
+    controls.pitch = up === down ? 0 : up ? 1 : -1
+  }
+
   const onKeyDown = (event: KeyboardEvent) => {
     const k = event.key.toLowerCase()
     if (isLeft(event.key)) {
@@ -103,13 +120,22 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
       refreshKeyboardSteer()
     }
 
-    if (k === 'q') {
+    if (k === 'a') {
       strafePressed.add('strafeLeft')
       refreshStrafe()
     }
-    else if (k === 'e') {
+    else if (k === 'd') {
       strafePressed.add('strafeRight')
       refreshStrafe()
+    }
+
+    if (k === 'r') {
+      pitchPressed.add('pitchUp')
+      refreshPitch()
+    }
+    else if (k === 'f') {
+      pitchPressed.add('pitchDown')
+      refreshPitch()
     }
 
     if (isThrottle(event.key))
@@ -120,8 +146,12 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
     }
     else if (event.key === 'Shift')
       controls.boost = true
-    else if (k === 'r' && !event.repeat)
+    else if (event.key === 'Backspace' && !event.repeat) {
+      // Backspace is the browser's back gesture on some platforms; respawning
+      // must not navigate out of the race.
+      event.preventDefault()
       controls.resetSeq++
+    }
     else if (k === 'c' && !event.repeat)
       controls.viewSeq++
   }
@@ -137,13 +167,22 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
       refreshKeyboardSteer()
     }
 
-    if (k === 'q') {
+    if (k === 'a') {
       strafePressed.delete('strafeLeft')
       refreshStrafe()
     }
-    else if (k === 'e') {
+    else if (k === 'd') {
       strafePressed.delete('strafeRight')
       refreshStrafe()
+    }
+
+    if (k === 'r') {
+      pitchPressed.delete('pitchUp')
+      refreshPitch()
+    }
+    else if (k === 'f') {
+      pitchPressed.delete('pitchDown')
+      refreshPitch()
     }
 
     if (isThrottle(event.key))
@@ -160,6 +199,7 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
   const onBlur = () => {
     pressed.clear()
     strafePressed.clear()
+    pitchPressed.clear()
     keyboardSteer = 0
     pointerSteer = 0
     controls.throttle = false
@@ -167,6 +207,7 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
     controls.boost    = false
     controls.reverse  = false
     controls.strafe   = 0
+    controls.pitch    = 0
     controls.steer    = 0
     controls.panX     = 0
     controls.panY     = 0

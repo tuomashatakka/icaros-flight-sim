@@ -47,6 +47,13 @@ type Station = {
   panYaw:   number;
   panPitch: number;
 
+  /**
+   * Maximum camera swing from the R/F aim axis, radians. Larger in the cockpit
+   * because there the camera IS the sight — in chase the hull already shows
+   * where the nose points, so the camera only needs to hint.
+   */
+  aimPitch: number;
+
   /** Impact shake multiplier — a shake that reads well from outside is far too much in a seat. */
   shakeScale: number;
 }
@@ -70,6 +77,7 @@ const CHASE: Station = {
   hullBlend:       0,
   panYaw:          0.10,
   panPitch:        0.06,
+  aimPitch:        0.16,
   shakeScale:      1,
 }
 
@@ -90,6 +98,7 @@ const COCKPIT: Station = {
   hullBlend:       1,
   panYaw:          0.34,
   panPitch:        0.20,
+  aimPitch:        0.30,
   shakeScale:      0.35,
 }
 
@@ -118,7 +127,7 @@ const lerp       = THREE.MathUtils.lerp
 const smoothstep = (t: number) => t * t * (3 - 2 * t)
 
 /** Look-around input, -1..1 on each axis. Structurally satisfied by `Controls`. */
-export type CameraPan = { panX: number; panY: number }
+export type CameraPan = { panX: number; panY: number; pitch?: number }
 
 export type CameraRig = {
   camera: THREE.PerspectiveCamera;
@@ -174,6 +183,7 @@ export function createCameraRig (rng: SeededRng, far = 400): CameraRig {
   // Eased pan, so a flicked mouse does not snap the view.
   let panX = 0
   let panY = 0
+  let aim  = 0
 
   /** Last applied shake, subtracted before the next update so it never feeds back. */
   const lastShake = new THREE.Vector3()
@@ -302,12 +312,18 @@ export function createCameraRig (rng: SeededRng, far = 400): CameraRig {
       const k = 1 - Math.pow(2, -realDelta / PAN_HALF_LIFE)
       panX += (pan.panX - panX) * k
       panY += (pan.panY - panY) * k
+      // Eased here rather than by the caller so the aim swing decays on the same
+      // curve as the pointer pan — two half-lives on one euler read as a jerk.
+      aim += ((pan.pitch ?? 0) - aim) * k
 
       const panYaw   = lerp(CHASE.panYaw, COCKPIT.panYaw, e)
       const panPitch = lerp(CHASE.panPitch, COCKPIT.panPitch, e)
+      const aimSwing = lerp(CHASE.aimPitch, COCKPIT.aimPitch, e)
 
-      // +Y is a left turn, so a rightward pointer yaws negative.
-      _panEuler.set(-panY * panPitch, -panX * panYaw, 0)
+      // +Y is a left turn, so a rightward pointer yaws negative. A positive
+      // rotation about the camera's own X tips its -Z view axis upward, which is
+      // why the aim term adds where the pointer term subtracts.
+      _panEuler.set(-panY * panPitch + aim * aimSwing, -panX * panYaw, 0)
       _panQuat.setFromEuler(_panEuler)
       rig.camera.quaternion.multiply(_panQuat)
     },

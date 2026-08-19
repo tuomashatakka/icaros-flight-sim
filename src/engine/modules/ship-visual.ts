@@ -16,6 +16,17 @@ const VISUAL_LIFT = 0.5
 export type ShipVisualHandle = {
 
   /**
+   * Tip the hull's nose, radians, positive = up.
+   *
+   * Applied to the loaded model, NOT to `shipRoot`: the render phase writes the
+   * root's pose straight from the interpolator and the HUD and camera anchor off
+   * it, so pitching the root would drag the whole cockpit with it. This is a
+   * pointing gesture, not a physical attitude — the upright control in
+   * `vehicle.ts` never sees it.
+   */
+  setAimPitch(radians: number): void;
+
+  /**
    * Show or hide the exterior hull. Called from the render phase as the camera
    * seats itself — at full cockpit the hull encloses the camera, so what you
    * would otherwise see is the inside of its back faces.
@@ -48,6 +59,10 @@ export function shipVisualModule (
   // model into view for a frame.
   let hullVisible = true
 
+  // Survives a hull swap: reapplied in `swapTo` so changing ship mid-hold does
+  // not silently snap the nose back to level.
+  let aimPitch = 0
+
   async function swapTo (config: ShipConfig) {
     const mine = ++generation
     const next = await loadShip(config.shipId, SHIP_TARGET_SIZE)
@@ -61,6 +76,8 @@ export function shipVisualModule (
     next.applyConfig(config)
     next.root.position.y = VISUAL_LIFT
     next.root.visible    = hullVisible
+    // Negative: a +X rotation swings +Z (forward) toward -Y, i.e. nose DOWN.
+    next.root.rotation.x = -aimPitch
     shipRoot.add(next.root)
 
     // Cache the glow materials once instead of traversing the hull every frame,
@@ -92,6 +109,12 @@ export function shipVisualModule (
             hullVisible = visible
             if (instance)
               instance.root.visible = visible
+          },
+
+          setAimPitch (radians) {
+            aimPitch = radians
+            if (instance)
+              instance.root.rotation.x = -radians
           },
         }
     },

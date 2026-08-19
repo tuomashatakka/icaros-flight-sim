@@ -30,7 +30,14 @@ export type BattleInput = {
   fireSecondary?: boolean;
   reverse?:       boolean;
   strafe?:        number;
-  resetSeq:       number;
+
+  /**
+   * R/F vertical aim axis, -1..1. Held, not an angle — the sim integrates it
+   * into `BattlePlayer.aimAngle` so the trim survives a netcode round-trip and
+   * a replay reproduces it from the input stream alone.
+   */
+  aimPitch?: number;
+  resetSeq:  number;
 }
 
 
@@ -54,7 +61,16 @@ export type BattlePlayer = {
   cooldown: Record<WeaponSlot, number>;
 
   /** Live target acquisition. Owned by the sim, mirrored into the HUD. */
-  lock:         LockState;
+  lock: LockState;
+
+  /**
+   * Accumulated vertical aim, radians, positive = up.
+   *
+   * A trim rather than a spring: it stays where you leave it, because the point
+   * of it is holding an elevation on a plateau opponent while you manoeuvre.
+   * Zeroed on respawn.
+   */
+  aimAngle:     number;
   carriedFlag:  BattleTeam | null;
   respawnIndex: number;
   lastResetSeq: number;

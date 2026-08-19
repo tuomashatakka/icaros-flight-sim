@@ -53,6 +53,7 @@ type CType = {
   boost:          boolean;
   fire:           boolean;
   fireSecondary?: boolean;
+  aimPitch?:      number;
   resetSeq:       number;
 }
 
@@ -68,6 +69,7 @@ export class BattleTransport {
     boost:         false,
     fire:          false,
     fireSecondary: false,
+    aimPitch:      0,
     resetSeq:      0,
     dirty:         false,
   }
@@ -203,8 +205,8 @@ export class BattleTransport {
   /** Feed one game-frame's worth of input; matches the 60 Hz sim cadence. */
   sendInput (): void {
     if (this.input.dirty && this.ws && this.ws.readyState === WebSocket.OPEN) {
-      const { steer, throttle, brake, boost, fire, fireSecondary, resetSeq } = this.input
-      this.ws.send(JSON.stringify({ type: 'input', steer, throttle, brake, boost, fire, fireSecondary, resetSeq }))
+      const { steer, throttle, brake, boost, fire, fireSecondary, aimPitch, resetSeq } = this.input
+      this.ws.send(JSON.stringify({ type: 'input', steer, throttle, brake, boost, fire, fireSecondary, aimPitch, resetSeq }))
       this.input.dirty = false
     }
   }
@@ -217,6 +219,7 @@ export class BattleTransport {
     this.input.boost         = c.boost
     this.input.fire          = c.fire
     this.input.fireSecondary = Boolean(c.fireSecondary)
+    this.input.aimPitch      = c.aimPitch ?? 0
     this.input.resetSeq      = c.resetSeq
     this.input.dirty         = true
   }

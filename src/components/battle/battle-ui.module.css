@@ -258,7 +258,11 @@
   position: absolute;
   top: 47%;
   left: 50%;
-  transform: translate(-50%, -50%);
+  /* --aim is the R/F vertical trim, written from the store. Composed into the
+     centring transform rather than nudging `top`, so it animates on the
+     compositor instead of relaying out the overlay every tick. */
+  transform: translate(-50%, calc(-50% - var(--aim, 0) * 34vh));
+  transition: transform 90ms linear;
   width: 7.5rem;
   height: 7.5rem;
   pointer-events: none;

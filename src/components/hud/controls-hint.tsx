@@ -19,8 +19,18 @@ export function ControlsHint () {
     </p>
 
     <p>
+      <kbd>Q E</kbd>
+      Turn
+    </p>
+
+    <p>
       <kbd>A D</kbd>
-      Steer
+      Strafe
+    </p>
+
+    <p>
+      <kbd>R F</kbd>
+      Aim
     </p>
 
     <p>
@@ -34,7 +44,7 @@ export function ControlsHint () {
     </p>
 
     <p>
-      <kbd>R</kbd>
+      <kbd>⌫</kbd>
       Respawn
     </p>
   </div>
