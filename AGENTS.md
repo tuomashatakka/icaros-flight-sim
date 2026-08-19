@@ -36,6 +36,7 @@ bun run dev:shot /tmp/a.png --step 300 --overlay colliders,wheels
 bun run dev:shot /tmp/b.png --level battle --at 0,3,-190   # frame a spot directly
 bun run dev:console --seconds 5             # errors, frame times, WebGL state
 bun run dev:eval -e '__dev.probe().ship.up'
+bun run dev:shot /tmp/t.png --level battle --query touch=1,post=low
 ```
 
 `--level battle` targets `/battle` rather than `/levels/<name>`. `--at x,y,z[,yaw]`
@@ -104,6 +105,16 @@ integrates it into `BattlePlayer.aimAngle` inside the sim so the trim holds, is
 deterministic, and survives the netcode. In battle it feeds `BattleSim.aimOf`,
 which is what lock acquisition and both weapons aim along; `forwardOf` stays the
 true hull facing and is what the muzzle position uses.
+
+**Touch is a third path onto the same `Controls` object.** `TouchControls`
+(`src/components/hud/touch-controls.tsx`) renders twin sticks and writes into
+`activeControls()` with native listeners and direct style writes — never React
+state, because a `useState` per pointermove re-renders the HUD at thumb rate,
+which is the cost `input.ts`'s header describes tearing out. Weapon triggers
+live on `Controls` (`fire`, `fireSecondary`) rather than in `battle.ts` so keys,
+mouse and touch agree. The component stamps `html[data-touch]`, which is what
+hides the keyboard legends and offsets the bottom HUD panels by `--touch-band`;
+`?touch=1` forces it on in dev, and `dev-cli --query touch=1` reaches it.
 
 **Post-processing extends through `BaseSceneConfig.postEffects`.** Battle's chain
 lives in `src/engine/battle/post.ts`. Two traps it documents: nothing may sample

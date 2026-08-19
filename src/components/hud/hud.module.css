@@ -63,6 +63,13 @@
   color: hsl(var(--holo-cyan-hsl) / 0.75);
 }
 
+/* A key legend on a device with no keys is just clutter — and it sits exactly
+   where the aim stick wants to be. Keyed off the root flag `TouchControls`
+   stamps, so it follows the same decision the overlay made. */
+:global(html[data-touch]) .controls {
+  display: none;
+}
+
 .controls p {
   margin: 0;
 }

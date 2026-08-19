@@ -21,6 +21,17 @@ export type Controls = {
   strafe:  number;
 
   /**
+   * Weapon triggers. Meaningless in race, which simply never reads them.
+   *
+   * They live here rather than in `battle.ts` — where they were two closure
+   * variables bound to keydown — because a control surface with three input
+   * paths (keys, mouse buttons, touch) needs one place they all agree on. A
+   * touch button cannot reach a closure.
+   */
+  fire:          boolean;
+  fireSecondary: boolean;
+
+  /**
    * -1 (aim down, F) .. 1 (aim up, R). Held, not edge-counted.
    *
    * Deliberately a raw axis rather than an angle: race eases it back to level
@@ -52,17 +63,19 @@ export type Controls = {
 
 export function createControls (): Controls {
   return {
-    steer:    0,
-    throttle: false,
-    brake:    false,
-    boost:    false,
-    reverse:  false,
-    strafe:   0,
-    pitch:    0,
-    resetSeq: 0,
-    viewSeq:  0,
-    panX:     0,
-    panY:     0,
+    steer:         0,
+    throttle:      false,
+    brake:         false,
+    boost:         false,
+    reverse:       false,
+    strafe:        0,
+    pitch:         0,
+    fire:          false,
+    fireSecondary: false,
+    resetSeq:      0,
+    viewSeq:       0,
+    panX:          0,
+    panY:          0,
   }
 }
 
@@ -78,7 +91,37 @@ const clampSteer = (value: number) => Math.max(-1, Math.min(1, value))
  * @param target - The canvas; it is the drag surface and gets pointer capture.
  * @returns A detach function — call it from the app's dispose chain.
  */
+/**
+ * The control surface of the scene currently mounted, or null.
+ *
+ * A deliberate module-level handle rather than a store. The on-screen touch
+ * controls are DOM that lives outside the scene, and they have to write the
+ * same mutable object the keyboard writes — routing them through zustand is
+ * exactly the pattern this module's header describes tearing out, because it
+ * re-renders the tree on every thumb movement.
+ */
+let active: Controls | null = null
+
+export function activeControls (): Controls | null {
+  return active
+}
+
+/**
+ * True while the on-screen sticks are mounted.
+ *
+ * Canvas drag-steering and a virtual stick both want the same finger, so the
+ * pointer path ignores touch input while the sticks are up. Mouse and pen still
+ * work, which is what keeps the overlay testable on a desktop.
+ */
+let touchOverlay = false
+
+export function setTouchOverlayActive (value: boolean): void {
+  touchOverlay = value
+}
+
 export function attachControls (target: HTMLElement, controls: Controls): () => void {
+  active = controls
+
   const pressed       = new Set<'left' | 'right'>()
   const strafePressed = new Set<'strafeLeft' | 'strafeRight'>()
   const pitchPressed  = new Set<'pitchUp' | 'pitchDown'>()
@@ -109,7 +152,26 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
     controls.pitch = up === down ? 0 : up ? 1 : -1
   }
 
+  /**
+   * True while the keystroke belongs to a form field.
+   *
+   * These listeners are on `window`, so without this every letter typed into a
+   * field also drives the ship — and Space, which now calls `preventDefault` to
+   * stop the page scrolling mid-fight, could not be typed at all.
+   */
+  const isEditing = (event: KeyboardEvent) => {
+    const node = event.target as HTMLElement | null
+    if (!node)
+      return false
+
+    const tag = node.tagName
+    return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || node.isContentEditable
+  }
+
   const onKeyDown = (event: KeyboardEvent) => {
+    if (isEditing(event))
+      return
+
     const k = event.key.toLowerCase()
     if (isLeft(event.key)) {
       pressed.add('left')
@@ -138,6 +200,15 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
       refreshPitch()
     }
 
+    if (event.code === 'Space') {
+      // The page scrolls on Space otherwise, and a scrolled canvas puts the
+      // whole HUD off screen mid-fight.
+      event.preventDefault()
+      controls.fire = true
+    }
+    else if (k === 'x')
+      controls.fireSecondary = true
+
     if (isThrottle(event.key))
       controls.throttle = true
     else if (isBrake(event.key)) {
@@ -157,6 +228,9 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
   }
 
   const onKeyUp = (event: KeyboardEvent) => {
+    if (isEditing(event))
+      return
+
     const k = event.key.toLowerCase()
     if (isLeft(event.key)) {
       pressed.delete('left')
@@ -185,6 +259,11 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
       refreshPitch()
     }
 
+    if (event.code === 'Space')
+      controls.fire = false
+    else if (k === 'x')
+      controls.fireSecondary = false
+
     if (isThrottle(event.key))
       controls.throttle = false
     else if (isBrake(event.key)) {
@@ -202,15 +281,17 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
     pitchPressed.clear()
     keyboardSteer = 0
     pointerSteer = 0
-    controls.throttle = false
-    controls.brake    = false
-    controls.boost    = false
-    controls.reverse  = false
-    controls.strafe   = 0
-    controls.pitch    = 0
-    controls.steer    = 0
-    controls.panX     = 0
-    controls.panY     = 0
+    controls.throttle      = false
+    controls.brake         = false
+    controls.boost         = false
+    controls.reverse       = false
+    controls.strafe        = 0
+    controls.pitch         = 0
+    controls.fire          = false
+    controls.fireSecondary = false
+    controls.steer         = 0
+    controls.panX          = 0
+    controls.panY          = 0
   }
 
   // Drag steering is ABSOLUTE from the press point and recenters on release,
@@ -221,7 +302,7 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
   let pointerStartX            = 0
 
   const onPointerDown = (event: PointerEvent) => {
-    if (pointerId !== null)
+    if (pointerId !== null || touchOverlay && event.pointerType === 'touch')
       return
     pointerId = event.pointerId
     pointerStartX = event.clientX
@@ -277,6 +358,8 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
   target.addEventListener('pointerleave', onPointerLeave)
 
   return () => {
+    if (active === controls)
+      active = null
     window.removeEventListener('keydown', onKeyDown)
     window.removeEventListener('keyup', onKeyUp)
     window.removeEventListener('blur', onBlur)

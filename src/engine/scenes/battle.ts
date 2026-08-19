@@ -27,6 +27,7 @@ import { IDLE_LOCK } from '@/hooks/use-battle-store'
 import type { ShipId } from '@/lib/ship/registry'
 import { vehicleConfig } from '@/lib/utils'
 import { mountBaseScene } from './base'
+import { activeControls } from '../input'
 import { createBattlePost } from '../battle/post'
 import type { CameraRig } from '../camera/rig'
 
@@ -179,43 +180,26 @@ export async function mountBattle (
   // debris drift need a clock, and nothing else in the arena does.
   let scenery: Scenery | null = null
 
-  let firePrimary   = false
-  let fireSecondary = false
-
-  const onKeyDown = (e: KeyboardEvent) => {
-    if (e.code === 'Space') {
-      firePrimary = true
-      e.preventDefault()
-    }
-    else if (e.code === 'KeyX') {
-      fireSecondary = true
-      e.preventDefault()
-    }
-  }
-  const onKeyUp = (e: KeyboardEvent) => {
-    if (e.code === 'Space')
-      firePrimary = false
-    else if (e.code === 'KeyX')
-      fireSecondary = false
-  }
-
-  // Mouse: left drag already steers, so the triggers ride the OTHER two buttons.
-  const onPointerDown = (e: PointerEvent) => {
+  // Triggers themselves live on the shared `Controls` surface (`input.ts`), so
+  // keyboard, mouse and the on-screen touch buttons all drive one set of flags.
+  // Only the mouse binding is scene-local, because left-drag already steers and
+  // the other two buttons are meaningless outside a match.
+  // `activeControls()` rather than a captured reference: these listeners are
+  // installed before `mountBaseScene` has built the control surface, and they
+  // only ever run long after it has.
+  const setTrigger = (e: PointerEvent, down: boolean) => {
+    const c = activeControls()
+    if (!c)
+      return
     if (e.button === 2)
-      fireSecondary = true
+      c.fireSecondary = down
     else if (e.button === 1)
-      firePrimary = true
+      c.fire = down
   }
-  const onPointerUp = (e: PointerEvent) => {
-    if (e.button === 2)
-      fireSecondary = false
-    else if (e.button === 1)
-      firePrimary = false
-  }
+  const onPointerDown = (e: PointerEvent) => setTrigger(e, true)
+  const onPointerUp   = (e: PointerEvent) => setTrigger(e, false)
   const onContextMenu = (e: Event) => e.preventDefault()
 
-  document.addEventListener('keydown', onKeyDown)
-  document.addEventListener('keyup', onKeyUp)
   canvas.addEventListener('pointerdown', onPointerDown)
   canvas.addEventListener('pointerup', onPointerUp)
   canvas.addEventListener('contextmenu', onContextMenu)
@@ -399,8 +383,8 @@ export async function mountBattle (
             throttle:      state.throttle,
             brake:         state.brake,
             boost:         state.boost,
-            fire:          firePrimary,
-            fireSecondary: fireSecondary,
+            fire:          controls.fire,
+            fireSecondary: controls.fireSecondary,
             reverse:       controls.reverse,
             strafe:        controls.strafe,
             aimPitch:      controls.pitch,
@@ -606,8 +590,6 @@ export async function mountBattle (
     },
 
     onDispose: () => {
-      document.removeEventListener('keydown', onKeyDown)
-      document.removeEventListener('keyup', onKeyUp)
       canvas.removeEventListener('pointerdown', onPointerDown)
       canvas.removeEventListener('pointerup', onPointerUp)
       canvas.removeEventListener('contextmenu', onContextMenu)

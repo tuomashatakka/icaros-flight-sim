@@ -3,6 +3,7 @@
 import { TuningPanel } from '@/components/tuning-panel'
 import { BackToMenu } from './back-to-menu'
 import { ControlsHint } from './controls-hint'
+import { TouchControls } from './touch-controls'
 import { Countdown } from './countdown'
 import { CrashFlash } from './crash-flash'
 import { FinishCard } from './finish-card'
@@ -26,5 +27,6 @@ export function GameUI () {
     <FinishCard />
     <CrashFlash />
     <ControlsHint />
+    <TouchControls />
   </div>
 }

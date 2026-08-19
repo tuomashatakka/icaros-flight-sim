@@ -8,6 +8,7 @@ import { TEAM_COLORS } from '@/engine/battle/arena'
 import type { BattleTeam } from '@/engine/battle/arena'
 import { WEAPONS } from '@/engine/battle/weapons'
 import type { WeaponId } from '@/engine/battle/weapons'
+import { TouchControls } from '@/components/hud/touch-controls'
 import styles from './battle-ui.module.css'
 
 
@@ -354,5 +355,7 @@ export function BattleUI () {
         respawn
       </span>
     </footer>
+
+    { live && <TouchControls mode="battle" /> }
   </div>
 }

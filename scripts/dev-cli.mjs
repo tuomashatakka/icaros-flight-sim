@@ -121,6 +121,15 @@ function buildUrl (args, extra = {}) {
     query.set('overlay', String(args.overlay))
   if (args.nohud)
     query.set('nohud', '1')
+  // Generic passthrough for the dev-only URL overrides the app reads directly
+  // (`?touch=1`, `?post=low`, `?tuning=`), so the CLI does not need a flag per
+  // knob. `--query a=1,b=2`.
+  if (args.query)
+    for (const pair of String(args.query).split(','))
+      if (pair.includes('=')) {
+        const [ key, value ] = pair.split('=')
+        query.set(key, value)
+      }
   for (const [ key, value ] of Object.entries(extra))
     query.set(key, String(value))
 
@@ -242,7 +251,7 @@ const commands = {
   async shot (args) {
     const target = args._[0]
     if (!target)
-      fail('usage: dev-cli shot <out.png> [--step N] [--at x,y,z[,yaw]] [--overlay a,b] [--size WxH]')
+      fail('usage: dev-cli shot <out.png> [--step N] [--at x,y,z[,yaw]] [--overlay a,b] [--size WxH] [--query k=v]')
 
     const path = resolve(target)
     await mkdir(dirname(path), { recursive: true })
@@ -271,7 +280,13 @@ const commands = {
       // The sim is deterministic; the camera's real-time damping is not. Without
       // this the same command produces visibly different framing each run.
       await page.evaluate(() => window.__dev.snapCamera())
-      await page.screenshot({ path })
+      // `animations: 'disabled'` is not cosmetic. The battle HUD carries several
+      // `infinite` CSS animations (a contested zone flashes, low health pulses),
+      // and a plain screenshot waits for them to settle — which they never do,
+      // so the call just times out once a match goes live. Cancelling them also
+      // makes the capture deterministic, which is the whole point of pausing
+      // and snapping the camera above.
+      await page.screenshot({ path, animations: 'disabled' })
       return result
     }, { urlExtra: args.nohud ? {} : {}})
 

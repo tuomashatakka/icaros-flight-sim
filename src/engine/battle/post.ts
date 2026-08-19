@@ -26,6 +26,14 @@
  * area. Raising the threshold to 0.97 narrowed it and did not fix it. The sky
  * shader draws its own sun bloom and halo, which is where that light reads from
  * now; wiring real shafts back in means rendering an occlusion pass first.
+ *
+ * `createDof` is gone too, and that one is a plain cost/benefit call. BokehPass
+ * renders the whole scene a SECOND time to build its depth buffer, so on a
+ * 600x600 deck with an instanced skyline it roughly doubles the frame's draw
+ * cost — and it has to be tuned so gently (the chase camera sits 9 units off the
+ * hull, which a real aperture would smear into mush) that the result is barely
+ * visible. It also pushed a single frame past `dev-cli shot`'s timeout once a
+ * match went live, which costs more than the effect was worth.
  */
 
 import * as THREE from 'three'
@@ -33,16 +41,15 @@ import type { Pass } from 'three/addons/postprocessing/Pass.js'
 import type { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 import type { EffectContext, GradePass } from 'threejs-scene/modules/post'
 import { createCinematicLUT, createGradePass } from 'threejs-scene/modules/post'
-import { createAnamorphic, createChromaticAberration, createDof, createLUT, createRadialBlur } from 'threejs-scene/modules/post/webgl'
+import { createAnamorphic, createChromaticAberration, createLUT, createRadialBlur } from 'threejs-scene/modules/post/webgl'
 import type { ScenePost } from '../scenes/base'
 
 
 export type PostQuality = 'high' | 'low'
 
 /**
- * The deck is 600x600 behind a 1600 far plane, and UnrealBloom is already five
- * passes before any of this. `low` keeps the three cheap colour passes — which
- * carry most of the look — and drops the two that resolve geometry.
+ * `low` keeps the per-pixel colour passes — LUT, aberration, grade — which carry
+ * most of the look for one texture read each, and drops the two multi-tap ones.
  */
 export function resolveQuality (): PostQuality {
   if (typeof window === 'undefined')
@@ -101,11 +108,9 @@ export function createBattlePost (quality: PostQuality = resolveQuality()): Batt
         const passes: Pass[] = []
 
         // Horizontal streaks off the beams and engine glow — the single effect
-        // that most reads as "lens", and cheap enough to keep at both tiers.
-        passes.push(createAnamorphic({ threshold: 0.72, scale: 2.4, tint: new THREE.Color('#8fb4ff') }))
-
+        // that most reads as "lens". Multi-tap, so it is what `low` drops.
         if (heavy)
-          passes.push(createDof(ctx, { focus: 34, aperture: 0.000015, maxblur: 0.004 }))
+          passes.push(createAnamorphic({ threshold: 0.72, scale: 2.4, tint: new THREE.Color('#8fb4ff') }))
 
         // Speed cue, toggled rather than dialled to zero: the shader normalises
         // by its accumulated weight, so `uWeight: 0` divides into a black frame

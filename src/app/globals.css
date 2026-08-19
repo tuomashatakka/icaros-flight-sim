@@ -87,6 +87,22 @@ canvas {
   touch-action: none;
 }
 
+/*
+ * `TouchControls` stamps `data-touch` on the root when it mounts. The band is
+ * the vertical space the on-screen sticks claim along the bottom edge; every
+ * HUD that anchors to that edge offsets by it, so there is one number to change
+ * rather than a magic inset per panel.
+ */
+html[data-touch] {
+  --touch-band: 10rem;
+}
+
+@media (orientation: landscape) and (max-height: 30rem) {
+  html[data-touch] {
+    --touch-band: 7rem;
+  }
+}
+
 a {
   color: inherit;
   text-decoration: none;

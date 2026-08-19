@@ -738,6 +738,23 @@
   color: var(--dim);
 }
 
+/* Same reason as the race legend: no keyboard, and the triggers land here. */
+:global(html[data-touch]) .footer {
+  display: none;
+}
+
+/* The sticks own the bottom corners on touch, so the readouts move up out of
+   them. Expressed as one band rather than per-panel offsets so the two cannot
+   drift apart when either is retuned. */
+:global(html[data-touch]) .pilot,
+:global(html[data-touch]) .weapons {
+  bottom: calc(var(--pad) + var(--touch-band));
+}
+
+:global(html[data-touch]) .toasts {
+  bottom: calc(var(--touch-band) + 4rem);
+}
+
 .footer span {
   display: inline-flex;
   align-items: center;
