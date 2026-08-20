@@ -4,14 +4,14 @@ import { useStore } from '@/hooks/use-store'
 import type { RaceState } from '../state'
 import type { Telemetry } from '../telemetry'
 
-/** HUD refresh rate. A speed readout does not need 60 Hz; React commits do cost. */
+/** Store publish rate. Readouts do not need 60 Hz and React commits still cost. */
 const PUBLISH_PERIOD = 1 / 15
 
 /** Zone escalation interval, in SIM seconds (was a wall-clock setInterval). */
 const ZONE_PERIOD = 10
 
 /**
- * Mirrors simulation outputs to zustand for the DOM.
+ * Mirrors simulation outputs to zustand for stores and non-engine consumers.
  *
  * The only engine -> `useStore` writer. Throttled, because the old code called
  * `setSpeed`/`setBoostMeter` every physics tick — 60 zustand writes a second,

@@ -43,8 +43,9 @@ export type NetMissile = { id: number; x: number; y: number; z: number; vx: numb
  *
  * One instance lives for the life of a battle scene. It owns the socket, the
  * 60 Hz input pump, and the per-entity interpolators; the scene reads poses
- * from it each rendered frame. React only ever sees the slim HUD state in
- * `useBattleStore` — remote ship *positions* never trigger a React commit.
+ * from it each rendered frame. Zustand only receives the slim match snapshot
+ * used by the canvas HUD — remote ship *positions* never trigger a React
+ * commit.
  */
 type CType = {
   steer:          number;
@@ -158,8 +159,8 @@ export class BattleTransport {
   }
 
   private applySnapshot (snap: BattleSnapshot): void {
-    // One React commit per second's worth of states for the roster/HUD chrome;
-    // positions themselves live only in the interpolators below.
+    // One store commit per second's worth of roster/HUD state; positions
+    // themselves live only in the interpolators below.
     this.statusTally++
 
     // Interpolators: commit each player's pose, creating entries on first sight.

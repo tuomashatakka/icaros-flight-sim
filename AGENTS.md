@@ -32,6 +32,8 @@ a dev server already listening on :9002 and starts one otherwise.
 bun run dev:probe --level flats             # full state snapshot, one JSON object
 bun run dev:scenario straight-line          # deterministic scripted run + summary
 bun run dev:scenario hard-corner --json --out /tmp/t.json
+bun run dev:scenario turn-response           # isolated steering authority
+bun run dev:scenario strafe-response         # isolated lateral authority
 bun run dev:shot /tmp/a.png --step 300 --overlay colliders,wheels
 bun run dev:shot /tmp/b.png --level battle --at 0,3,-190   # frame a spot directly
 bun run dev:console --seconds 5             # errors, frame times, WebGL state
@@ -79,7 +81,7 @@ page ran before it, so `runScenario` explicitly resets, before the timeline:
 - the race store (`resetRace()`) — lap, next checkpoint, respawn target
 - telemetry — `boostMeter` especially, which drains and never refills
 - the publish module's zone-escalation accumulator
-- `controls.pitch`, the R/F aim axis
+- `controls.pitch` and `controls.strafe`, the held aim and lateral axes
 
 Everything is restored afterwards, so running a scenario mid-race is safe.
 
@@ -106,15 +108,20 @@ deterministic, and survives the netcode. In battle it feeds `BattleSim.aimOf`,
 which is what lock acquisition and both weapons aim along; `forwardOf` stays the
 true hull facing and is what the muzzle position uses.
 
-**Touch is a third path onto the same `Controls` object.** `TouchControls`
-(`src/components/hud/touch-controls.tsx`) renders twin sticks and writes into
-`activeControls()` with native listeners and direct style writes — never React
-state, because a `useState` per pointermove re-renders the HUD at thumb rate,
-which is the cost `input.ts`'s header describes tearing out. Weapon triggers
-live on `Controls` (`fire`, `fireSecondary`) rather than in `battle.ts` so keys,
-mouse and touch agree. The component stamps `html[data-touch]`, which is what
-hides the keyboard legends and offsets the bottom HUD panels by `--touch-band`;
-`?touch=1` forces it on in dev, and `dev-cli --query touch=1` reaches it.
+**Handling authority lives in shared physics.** Race and battle both call
+`stepHovercraft`, so turn/strafe feel belongs in `vehicleConfig` and
+`vehicle-step.ts`, never in one input path. The calmer baseline is 1.45 rad/s
+ground yaw with a 0.5 high-speed scale, plus a 0.14 strafe-speed scale and 8.0
+response. Verify changes with the `turn-response` and `strafe-response`
+scenarios; do not tune keyboard, pointer, and touch independently.
+
+**Touch is a third path onto the same `Controls` object.** The standalone spatial
+HUD (`src/engine/hud/`) draws twin sticks and action buttons into its screen
+plane, then writes through native pointer listeners — never React state, because
+a `useState` per pointermove re-renders at thumb rate. Weapon triggers live on
+`Controls` (`fire`, `fireSecondary`) rather than in `battle.ts` so keys, mouse,
+and touch agree. `?touch=1` forces the canvas controls on in dev, and `dev-cli
+--query touch=1` reaches them.
 
 **Post-processing extends through `BaseSceneConfig.postEffects`.** Battle's chain
 lives in `src/engine/battle/post.ts`. Two traps it documents: nothing may sample
@@ -172,7 +179,7 @@ src/engine/       The game. Vanilla three + threejs-scene, no React.
   scenes/         Composition roots (mountRace, mountHangar).
   modules/        AppModules: vehicle, race, publish, sun, ship-visual, physics-step.
   dev/            Dev-only harness. Excluded from production builds.
-  hud/            In-scene holographic HUD (emissive geometry, not DOM).
+  hud/            Continuous visor GUI: live facets, overlays, hit testing, touch.
   levels/         The four tracks, as LevelSpec data.
   physics/        Rapier world + collider helpers.
 src/hooks/        zustand stores.

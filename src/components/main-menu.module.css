@@ -185,5 +185,5 @@
   box-shadow: 0 0 24px -6px hsl(var(--accent-hsl) / 0.7);
 }
 
-.editorLink { padding: .75rem 1.5rem; border: 1px solid hsl(var(--holo-cyan-hsl) / .6); border-radius: var(--radius); background: hsl(var(--holo-cyan-hsl) / .08); font-size: .875rem; font-weight: 600; transition: background .2s, box-shadow .2s; }
-.editorLink:hover { background: hsl(var(--holo-cyan-hsl) / .18); box-shadow: 0 0 24px -6px hsl(var(--holo-cyan-hsl) / .7); }
+.editorLink { padding: .75rem 1.5rem; border: 1px solid hsl(var(--editor-accent-hsl) / .6); border-radius: var(--radius); background: hsl(var(--editor-accent-hsl) / .08); font-size: .875rem; font-weight: 600; transition: background .2s, box-shadow .2s; }
+.editorLink:hover { background: hsl(var(--editor-accent-hsl) / .18); box-shadow: 0 0 24px -6px hsl(var(--editor-accent-hsl) / .7); }

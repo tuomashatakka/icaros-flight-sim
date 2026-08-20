@@ -28,6 +28,10 @@ export interface TuningState {
   setOpen: (open: boolean) => void;
 }
 
+type PersistedTuningState = Partial<Pick<TuningState, 'tuning' | 'open'>>
+
+const LEGACY_DEFAULT_YAW_RATE = 2.4
+
 export const useTuningStore = create<TuningState>()(
   subscribeWithSelector(
     persist(
@@ -40,14 +44,25 @@ export const useTuningStore = create<TuningState>()(
       }),
       {
         name:       'ship-tuning',
-        version:    1,
+        version:    2,
         storage:    createJSONStorage(() => localStorage),
         partialize: state => ({ tuning: state.tuning, open: state.open }),
+        // Version 1 persisted the old 2.4 rad/s default. Move only that exact
+        // value to the calmer default; deliberate custom yaw values survive.
+        migrate:    persisted => {
+          const saved = persisted as PersistedTuningState
+          if (saved.tuning?.maxYawRate !== LEGACY_DEFAULT_YAW_RATE)
+            return saved
+          return {
+            ...saved,
+            tuning: { ...saved.tuning, maxYawRate: DEFAULT_TUNING.maxYawRate },
+          }
+        },
         // A saved value for a knob that has since been removed (or a missing one
         // for a knob just added) would otherwise reach the sim as `undefined`
         // and quietly produce NaN forces.
-        merge:      (persisted, current) => {
-          const saved = persisted as Partial<Pick<TuningState, 'tuning' | 'open'>> | undefined
+        merge: (persisted, current) => {
+          const saved = persisted as PersistedTuningState | undefined
           return {
             ...current,
             open:   saved?.open ?? current.open,

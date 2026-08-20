@@ -44,6 +44,9 @@ export function SceneCanvas ({ mount, onApp, className, fallback }: SceneCanvasP
 
     const canvas         = document.createElement('canvas')
     canvas.style.cssText = 'display:block;width:100%;height:100%'
+    canvas.setAttribute('role', 'application')
+    canvas.setAttribute('aria-label', 'Crash Velocity interactive game canvas. Keyboard and pointer controls are available in the cockpit HUD.')
+    canvas.tabIndex = 0
     host.replaceChildren(canvas)
 
     let app: AnyApp | null = null

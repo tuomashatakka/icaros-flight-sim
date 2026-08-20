@@ -197,6 +197,8 @@ export function stepHovercraft (params: HovercraftStepParams): HovercraftStepRes
   }                             = params
   const {
     maxSpeed,
+    strafeSpeedScale,
+    strafeResponse,
     yawResponse,
     highSpeedYawScale,
     airYawRate,
@@ -280,12 +282,12 @@ export function stepHovercraft (params: HovercraftStepParams): HovercraftStepRes
 
     const curLv             = chassis.linvel()
     const fwdSpeed          = curLv.x * _fwd.x + curLv.z * _fwd.z
-    const targetStrafeSpeed = strafeVal * maxSpeed * 0.2
+    const targetStrafeSpeed = strafeVal * maxSpeed * strafeSpeedScale
 
     const targetVx = _fwd.x * fwdSpeed + right.x * targetStrafeSpeed
     const targetVz = _fwd.z * fwdSpeed + right.z * targetStrafeSpeed
 
-    const lerpRate = 1 - Math.exp(-14 * dt)
+    const lerpRate = 1 - Math.exp(-strafeResponse * dt)
     const finalVx  = MathUtils.lerp(curLv.x, targetVx, lerpRate)
     const finalVz  = MathUtils.lerp(curLv.z, targetVz, lerpRate)
 

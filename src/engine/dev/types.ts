@@ -114,7 +114,7 @@ export type ScenarioTrace = {
 /** A timeline entry: at `at` sim seconds, merge `input` into the controls. */
 export type ScenarioStep = {
   at:       number;
-  input?:   Partial<Pick<Controls, 'steer' | 'throttle' | 'brake' | 'boost' | 'pitch'>>;
+  input?:   Partial<Pick<Controls, 'steer' | 'strafe' | 'throttle' | 'brake' | 'boost' | 'pitch'>>;
   respawn?: boolean;
 }
 

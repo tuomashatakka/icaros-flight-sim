@@ -22,7 +22,7 @@ type RaceConfig = {
   spawn: Transform;
 }
 
-type RaceState = {
+export type RaceState = {
   status: RaceStatus;
 
   /** Seconds remaining on the 3-2-1 countdown (drives the big HUD number). */
@@ -65,9 +65,9 @@ const DEFAULT_SPAWN: Transform = { position: [ 1, 2, 4 ], quaternion: [ 0, 1, 0,
  * second — which quietly defeated the 15 Hz throttling in the publish module,
  * since the race bar was re-rendering on every step anyway.
  *
- * The holographic HUD reads these directly at frame rate, so it stays exact to
- * the millisecond; the store mirrors them on a throttle for the DOM, which only
- * needs them for the finish card.
+ * The holographic HUD reads these directly at its texture cadence, so it stays
+ * exact to the millisecond; the store mirrors them on a throttle for other
+ * consumers.
  */
 export const raceTimers = { elapsed: 0, lapElapsed: 0, countdown: 3 }
 

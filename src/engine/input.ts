@@ -94,11 +94,10 @@ const clampSteer = (value: number) => Math.max(-1, Math.min(1, value))
 /**
  * The control surface of the scene currently mounted, or null.
  *
- * A deliberate module-level handle rather than a store. The on-screen touch
- * controls are DOM that lives outside the scene, and they have to write the
- * same mutable object the keyboard writes — routing them through zustand is
- * exactly the pattern this module's header describes tearing out, because it
- * re-renders the tree on every thumb movement.
+ * A deliberate module-level handle rather than a store. Battle mouse triggers
+ * and the canvas-owned HUD have to write the same mutable object as the
+ * keyboard — routing either through zustand would re-render React on every
+ * pointer or thumb movement.
  */
 let active: Controls | null = null
 
@@ -107,7 +106,7 @@ export function activeControls (): Controls | null {
 }
 
 /**
- * True while the on-screen sticks are mounted.
+ * True while the canvas HUD exposes on-screen sticks.
  *
  * Canvas drag-steering and a virtual stick both want the same finger, so the
  * pointer path ignores touch input while the sticks are up. Mouse and pen still

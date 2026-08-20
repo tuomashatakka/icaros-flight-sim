@@ -106,7 +106,8 @@ export type BaseSceneConfig<TState extends object> = {
   hudModuleFactory?: (
     shipRoot: THREE.Group,
     telemetry: Telemetry,
-    hudRef: { current: HudHandle | null }
+    hudRef: { current: HudHandle | null },
+    controls: Controls
   ) => AppModule<TState>;
   extraModules?: Array<AppModule<TState>>;
   onFrame?:        (
@@ -215,7 +216,7 @@ export async function mountBaseScene<TState extends object> (
   ]
 
   if (hudModuleFactory)
-    modules.push(hudModuleFactory(shipRoot, telemetry, hud))
+    modules.push(hudModuleFactory(shipRoot, telemetry, hud, controls))
 
   modules.push(
     defineModule<TState>({
@@ -329,7 +330,8 @@ export async function mountBaseScene<TState extends object> (
         blend,
         rig.camera,
         controls.panX,
-        controls.panY
+        controls.panY,
+        aimNorm
       )
 
       onFrame?.(frame, _shipPosition, _shipQuaternion, rig, controls)

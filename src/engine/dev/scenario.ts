@@ -140,7 +140,7 @@ export function summarise (samples: ScenarioSample[], events: ScenarioEvent[]): 
 function applyInput (controls: Controls, input: Partial<Controls> | undefined) {
   if (!input)
     return
-  for (const key of [ 'steer', 'throttle', 'brake', 'boost' ] as const)
+  for (const key of [ 'steer', 'strafe', 'throttle', 'brake', 'boost' ] as const)
     if (input[key] !== undefined)
       (controls[key] as number | boolean) = input[key]!
 }
@@ -214,6 +214,7 @@ export async function runScenario (deps: DevDeps, script: ScenarioScript): Promi
   // pose drives that hidden state to the same equilibrium every time. These
   // ticks are outside the timeline — `t = 0` is the first sampled tick.
   controls.steer    = 0
+  controls.strafe   = 0
   controls.pitch    = 0
   controls.throttle = false
   controls.brake    = false

@@ -16,7 +16,7 @@ import type { OverlayFlags } from './types'
  *   ?paused=1                  boot with the sim frozen (deterministic shots)
  *   ?tuning=<base64 json>      apply a partial ShipTuning before the first tick
  *   ?overlay=colliders,wheels  enable debug overlays on boot
- *   ?nohud=1                   hide the DOM chrome (clean screenshots)
+ *   ?nohud=1                   hide the canvas HUD (clean screenshots)
  *   ?scenario=<name>           run a bundled scenario on boot
  */
 export type DevParams = {
