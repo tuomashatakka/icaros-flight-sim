@@ -57,6 +57,7 @@ export type HudFrame = {
   throttle:         number;
   cameraBlend:      number;
   camera:           THREE.Camera;
+  hudQuaternion:    THREE.Quaternion;
   panX:             number;
   panY:             number;
   aimPitch:         number;

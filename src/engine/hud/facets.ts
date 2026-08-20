@@ -4,8 +4,10 @@ import { TEAM_COLORS } from '../battle/arena'
 import { WEAPONS } from '../battle/weapons'
 import { HudPanel } from './panel'
 import { formatHudClock, formatHudRaceTime } from './interaction'
-import { HUD_VISOR_FACETS, HUD_VISOR_SURFACE } from './layout'
-import type { HudVisorCorners } from './layout'
+import { createHudFacetMaterial, createHudGlassMaterial } from './materials'
+import type { HudFacetMaterial, HudGlassMaterial } from './materials'
+import { hudVisorPoint, HUD_PANEL_TRACES, HUD_VISOR_FACETS, HUD_VISOR_SURFACE } from './layout'
+import type { HudPanelTrace, HudVisorCorners, HudVisorFacet } from './layout'
 import { HUD_COLORS as COLORS, HUD_FONT as FONT } from './tokens'
 import type { BattleHudData, HudData, HudFrame, HudPanelKey, RaceHudData } from './types'
 
@@ -19,33 +21,29 @@ const WORLD_UP = new THREE.Vector3(0, 1, 0)
 
 export function createHudPanels (): Record<HudPanelKey, HudPanel> {
   return {
-    topLeft:      new HudPanel({ name: 'topLeft', title: 'navigation', accent: COLORS.cyan }),
-    topCenter:    new HudPanel({ name: 'topCenter', title: 'attitude', accent: COLORS.blue }),
-    topRight:     new HudPanel({ name: 'topRight', title: 'target', accent: COLORS.magenta }),
+    topLeft:      new HudPanel({ name: 'topLeft', title: 'navigation', accent: COLORS.cyan, trace: HUD_PANEL_TRACES.topLeft }),
+    topCenter:    new HudPanel({ name: 'topCenter', title: 'attitude', accent: COLORS.blue, trace: HUD_PANEL_TRACES.topCenter }),
+    topRight:     new HudPanel({ name: 'topRight', title: 'target', accent: COLORS.magenta, trace: HUD_PANEL_TRACES.topRight }),
     center:       new HudPanel({ name: 'center', width: 560, height: 560, center: true, accent: COLORS.white }),
-    bottomLeft:   new HudPanel({ name: 'bottomLeft', title: 'defense', accent: COLORS.cyan }),
-    bottomCenter: new HudPanel({ name: 'bottomCenter', title: 'propulsion', accent: COLORS.violet }),
-    bottomRight:  new HudPanel({ name: 'bottomRight', title: 'power', accent: COLORS.amber }),
+    bottomLeft:   new HudPanel({ name: 'bottomLeft', title: 'defense', accent: COLORS.cyan, trace: HUD_PANEL_TRACES.bottomLeft }),
+    bottomCenter: new HudPanel({ name: 'bottomCenter', title: 'propulsion', accent: COLORS.violet, trace: HUD_PANEL_TRACES.bottomCenter }),
+    bottomRight:  new HudPanel({ name: 'bottomRight', title: 'power', accent: COLORS.amber, trace: HUD_PANEL_TRACES.bottomRight }),
   }
 }
 
 export function createHudPanelMesh (panels: Record<HudPanelKey, HudPanel>): THREE.Mesh {
-  const geometries: THREE.BufferGeometry[]   = []
-  const materials: THREE.MeshBasicMaterial[] = []
-  const indexToKey: HudPanelKey[]            = []
+  const geometries: THREE.BufferGeometry[] = []
+  const materials: HudFacetMaterial[]      = []
+  const indexToKey: HudPanelKey[]          = []
 
   for (const definition of HUD_VISOR_FACETS) {
-    const geometry = createFacetGeometry(definition.corners)
+    const geometry = createPanelGeometry(definition)
     geometries.push(geometry)
 
-    const material = new THREE.MeshBasicMaterial({
-      map:         panels[definition.key].texture,
-      transparent: true,
-      opacity:     0.94,
-      side:        THREE.DoubleSide,
-      depthTest:   false,
-      depthWrite:  false,
-      toneMapped:  false,
+    const panel    = panels[definition.key]
+    const material = createHudFacetMaterial({
+      map:    panel.texture,
+      accent: panel.accent,
     })
     materials.push(material)
     indexToKey.push(definition.key)
@@ -57,49 +55,99 @@ export function createHudPanelMesh (panels: Record<HudPanelKey, HudPanel>): THRE
   if (!merged)
     throw new Error('failed to merge spatial hud facets')
 
-  const mesh           = new THREE.Mesh(merged, materials)
-  mesh.name            = 'spatial-cockpit-hud-seven-facets'
-  mesh.renderOrder     = 1000
-  mesh.frustumCulled   = false
-  mesh.userData.panels = indexToKey
+  const mesh                 = new THREE.Mesh(merged, materials)
+  mesh.name                  = 'spatial-cockpit-hud-seven-facets'
+  mesh.renderOrder           = 1000
+  mesh.frustumCulled         = false
+  mesh.userData.panels       = indexToKey
+  mesh.userData.hudMaterials = materials
 
-  const backingParts    = HUD_VISOR_SURFACE.map(createFacetGeometry)
+  const backingParts    = HUD_VISOR_SURFACE.map(createSurfaceGeometry)
   const backingGeometry = mergeGeometries(backingParts, false)
   for (const geometry of backingParts)
     geometry.dispose()
   if (!backingGeometry)
     throw new Error('failed to merge spatial hud backing')
 
-  const backingMaterial = new THREE.MeshBasicMaterial({
-    color:       '#03141d',
-    transparent: true,
-    opacity:     0.16,
-    side:        THREE.DoubleSide,
-    depthTest:   false,
-    depthWrite:  false,
-    toneMapped:  false,
-  })
+  const backingMaterial = createHudGlassMaterial()
   const backing         = new THREE.Mesh(backingGeometry, backingMaterial)
   backing.name          = 'spatial-cockpit-hud-continuous-glass'
   backing.renderOrder   = 999
   backing.frustumCulled = false
   backing.raycast       = () => {}
   mesh.add(backing)
+  mesh.userData.glassMaterial = backingMaterial
   return mesh
 }
 
-function createFacetGeometry (corners: HudVisorCorners): THREE.BufferGeometry {
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.Float32BufferAttribute(corners.flat(), 3))
-  geometry.setAttribute('uv', new THREE.Float32BufferAttribute([
-    0, 0,
-    1, 0,
-    0, 1,
-    1, 1,
-  ], 2))
-  geometry.setIndex([ 0, 1, 2, 2, 1, 3 ])
+function createPanelGeometry (definition: HudVisorFacet): THREE.BufferGeometry {
+  if (!definition.trace)
+    return createSurfaceGeometry(definition.corners)
+
+  const geometry            = new THREE.BufferGeometry()
+  const positions: number[] = []
+  const uvs: number[]       = []
+  const points              = definition.trace.contour.map(([ u, v ]) => new THREE.Vector2(u, v))
+  for (const point of points) {
+    const x = THREE.MathUtils.lerp(definition.corners[0][0], definition.corners[1][0], point.x)
+    const y = THREE.MathUtils.lerp(definition.corners[0][1], definition.corners[2][1], point.y)
+    positions.push(...hudVisorPoint(x, y))
+    uvs.push(point.x, point.y)
+  }
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
+  geometry.setIndex(THREE.ShapeUtils.triangulateShape(points, []).flat())
+  geometry.computeVertexNormals()
   geometry.computeBoundingSphere()
   return geometry
+}
+
+function createSurfaceGeometry (corners: HudVisorCorners): THREE.BufferGeometry {
+  const segments            = 5
+  const left                = corners[0][0]
+  const right               = corners[1][0]
+  const bottom              = corners[0][1]
+  const top                 = corners[2][1]
+  const positions: number[] = []
+  const uvs: number[]       = []
+  const indices: number[]   = []
+
+  for (let row = 0; row <= segments; row++) {
+    const v = row / segments
+    const y = THREE.MathUtils.lerp(bottom, top, v)
+    for (let column = 0; column <= segments; column++) {
+      const u = column / segments
+      const x = THREE.MathUtils.lerp(left, right, u)
+      positions.push(...hudVisorPoint(x, y))
+      uvs.push(u, v)
+    }
+  }
+
+  const stride = segments + 1
+  for (let row = 0; row < segments; row++)
+    for (let column = 0; column < segments; column++) {
+      const a = row * stride + column
+      const b = a + 1
+      const c = a + stride
+      const d = c + 1
+      indices.push(a, b, c, c, b, d)
+    }
+
+  const geometry = new THREE.BufferGeometry()
+  geometry.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3))
+  geometry.setAttribute('uv', new THREE.Float32BufferAttribute(uvs, 2))
+  geometry.setIndex(indices)
+  geometry.computeVertexNormals()
+  geometry.computeBoundingSphere()
+  return geometry
+}
+
+export function tickHudPanelMesh (mesh: THREE.Mesh, elapsed: number): void {
+  const materials = mesh.userData.hudMaterials as HudFacetMaterial[]
+  const glass     = mesh.userData.glassMaterial as HudGlassMaterial
+  for (const material of materials)
+    material.uniforms.uTime.value = elapsed
+  glass.uniforms.uTime.value = elapsed
 }
 
 export function disposeHudPanelMesh (mesh: THREE.Mesh): void {

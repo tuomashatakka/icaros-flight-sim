@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import type { HudPanelTrace, HudPanelUv } from './layout'
 import { HUD_FONT as FONT } from './tokens'
 import type { HudActionId, HudRegion } from './types'
 
@@ -10,6 +11,7 @@ type PanelOptions = {
   width?:  number;
   height?: number;
   center?: boolean;
+  trace?:  HudPanelTrace;
 }
 
 type TextOptions = {
@@ -67,6 +69,39 @@ function roundedRect (
   context.closePath()
 }
 
+function tracedLine (
+  context: CanvasRenderingContext2D,
+  points: readonly HudPanelUv[],
+  width: number,
+  height: number,
+  inset = 1,
+  close = false
+): void {
+  context.beginPath()
+  points.forEach(([ u, v ], index) => {
+    const tracedU = 0.5 + (u - 0.5) * inset
+    const tracedV = 0.5 + (v - 0.5) * inset
+    const x       = tracedU * width
+    const y       = (1 - tracedV) * height
+    if (index === 0)
+      context.moveTo(x, y)
+    else
+      context.lineTo(x, y)
+  })
+  if (close)
+    context.closePath()
+}
+
+function tracedPath (
+  context: CanvasRenderingContext2D,
+  trace: HudPanelTrace,
+  width: number,
+  height: number,
+  inset = 1
+): void {
+  tracedLine(context, trace.contour, width, height, inset, true)
+}
+
 /**
  * One reference-style HUD facet.
  *
@@ -75,16 +110,19 @@ function roundedRect (
  * the facet and route a raycast hit back here.
  */
 export class HudPanel {
-  readonly name:    string
-  readonly canvas:  HTMLCanvasElement
-  readonly context: CanvasRenderingContext2D
-  readonly texture: THREE.CanvasTexture
-  readonly regions: HudRegion[] = []
+  readonly name:             string
+  readonly canvas:           HTMLCanvasElement
+  readonly context:          CanvasRenderingContext2D
+  readonly texture:          THREE.CanvasTexture
+  readonly regions:          HudRegion[] = []
+  readonly interferenceSeed: number
+  readonly trace?:           HudPanelTrace
 
   title:   string
   accent:  string
   center:  boolean
   hovered: string | null = null
+  private contentTransformActive = false
 
   constructor ({
     name,
@@ -93,6 +131,7 @@ export class HudPanel {
     width = 640,
     height = 320,
     center = false,
+    trace,
   }: PanelOptions) {
     const canvas  = document.createElement('canvas')
     canvas.width  = width
@@ -102,12 +141,15 @@ export class HudPanel {
     if (!context)
       throw new Error(`2d canvas unavailable for hud panel ${name}`)
 
-    this.name                    = name
-    this.title                   = title
-    this.accent                  = accent
-    this.center                  = center
-    this.canvas                  = canvas
-    this.context                 = context
+    this.name             = name
+    this.title            = title
+    this.accent           = accent
+    this.center           = center
+    this.canvas           = canvas
+    this.context          = context
+    this.trace            = trace
+    this.interferenceSeed = Array.from(name).reduce((seed, character) =>
+      Math.imul(seed ^ character.charCodeAt(0), 16777619), 2166136261)
     this.texture                 = new THREE.CanvasTexture(canvas)
     this.texture.colorSpace      = THREE.SRGBColorSpace
     this.texture.minFilter       = THREE.LinearFilter
@@ -120,6 +162,11 @@ export class HudPanel {
     const width               = canvas.width
     const height              = canvas.height
 
+    if (this.contentTransformActive) {
+      context.restore()
+      this.contentTransformActive = false
+    }
+    context.setTransform(1, 0, 0, 1, 0, 0)
     this.regions.length = 0
     context.clearRect(0, 0, width, height)
 
@@ -161,25 +208,63 @@ export class HudPanel {
     }
 
     const background = context.createLinearGradient(0, 0, width, height)
-    background.addColorStop(0, 'rgba(2, 14, 20, .84)')
-    background.addColorStop(0.56, 'rgba(2, 8, 16, .72)')
-    background.addColorStop(1, 'rgba(8, 3, 18, .72)')
+    background.addColorStop(0, 'rgba(2, 14, 20, .58)')
+    background.addColorStop(0.56, 'rgba(2, 8, 16, .48)')
+    background.addColorStop(1, 'rgba(8, 3, 18, .52)')
     context.fillStyle = background
-    context.fillRect(0, 0, width, height)
+    if (this.trace) {
+      context.strokeStyle = this.accent
+      context.shadowColor = this.accent
 
-    context.strokeStyle = this.accent
-    context.globalAlpha = 0.7
-    context.lineWidth   = 2
-    context.strokeRect(10, 10, width - 20, height - 20)
-    context.globalAlpha = 0.23
-    context.strokeRect(20, 20, width - 40, height - 40)
+      if (this.trace.variant === 'screen') {
+        tracedPath(context, this.trace, width, height)
+        context.globalAlpha = 0.72
+        context.fill()
+        context.lineWidth  = 2
+        context.shadowBlur = 3
+        context.stroke()
+        tracedPath(context, this.trace, width, height, 0.965)
+        context.globalAlpha = 0.2
+        context.lineWidth   = 1.3
+        context.shadowBlur  = 0
+        context.stroke()
+      }
+      else {
+        context.globalAlpha = 0.64
+        context.lineWidth   = 2
+        context.shadowBlur  = 3
+        for (const stroke of this.trace.frame ?? []) {
+          tracedLine(context, stroke, width, height)
+          context.stroke()
+        }
+        context.shadowBlur = 0
+      }
+
+      const content = this.trace.content
+      context.save()
+      context.translate(content.x * width, content.y * height)
+      context.scale(content.width, content.height)
+      this.contentTransformActive = true
+    }
+    else {
+      context.fillRect(0, 0, width, height)
+      context.strokeStyle = this.accent
+      context.globalAlpha = 0.62
+      context.lineWidth   = 2
+      context.strokeRect(10, 10, width - 20, height - 20)
+      context.globalAlpha = 0.23
+      context.strokeRect(20, 20, width - 40, height - 40)
+    }
 
     context.globalAlpha  = 0.95
     context.fillStyle    = this.accent
     context.font         = `600 18px ${FONT}`
     context.textBaseline = 'middle'
     context.textAlign    = 'left'
+    context.shadowColor  = this.accent
+    context.shadowBlur   = 5
     context.fillText(this.title.toUpperCase(), 34, 36)
+    context.shadowBlur  = 0
     context.globalAlpha = 0.25
     context.fillRect(34, 55, Math.min(width * 0.36, 210), 2)
     context.globalAlpha = 1
@@ -187,12 +272,41 @@ export class HudPanel {
 
   finish (elapsed: number): void {
     const { context, canvas } = this
-    context.globalAlpha       = 0.045
-    context.fillStyle         = '#d7ffff'
+    if (this.contentTransformActive) {
+      context.restore()
+      this.contentTransformActive = false
+    }
+    if (this.trace?.variant !== 'screen') {
+      this.texture.needsUpdate = true
+      return
+    }
+
+    context.save()
+
+    let noise = this.interferenceSeed ^ Math.floor(elapsed * 13) | 0
+    for (let i = 0; i < 8; i++) {
+      noise ^= noise << 13
+      noise ^= noise >>> 17
+      noise ^= noise << 5
+
+      const x = 12 + (noise >>> 0) % Math.max(1, canvas.width - 28)
+      noise ^= noise << 13
+      noise ^= noise >>> 17
+      noise ^= noise << 5
+
+      const y             = 12 + (noise >>> 0) % Math.max(1, canvas.height - 28)
+      const size          = 2 + (noise >>> 27)
+      context.globalAlpha = i % 5 === 0 ? 0.08 : 0.03
+      context.fillStyle   = i % 3 === 0 ? this.accent : '#d7ffff'
+      context.fillRect(x, y, size, Math.max(2, size * 0.55))
+    }
+
+    context.globalAlpha = 0.04
+    context.fillStyle   = '#d7ffff'
 
     const scanY               = Math.floor(elapsed * 90 % canvas.height)
     context.fillRect(12, scanY, canvas.width - 24, 1)
-    context.globalAlpha      = 1
+    context.restore()
     this.texture.needsUpdate = true
   }
 
@@ -212,7 +326,10 @@ export class HudPanel {
     context.textBaseline = 'middle'
     context.globalAlpha  = alpha
     context.fillStyle    = color
+    context.shadowColor  = color
+    context.shadowBlur   = Math.max(2, size * 0.16)
     context.fillText(value, x, y)
+    context.shadowBlur  = 0
     context.globalAlpha = 1
   }
 
@@ -246,8 +363,11 @@ export class HudPanel {
     const fill = context.createLinearGradient(x, 0, x + width, 0)
     fill.addColorStop(0, color)
     fill.addColorStop(1, color2)
-    context.fillStyle = fill
+    context.fillStyle   = fill
+    context.shadowColor = color
+    context.shadowBlur  = 5
     context.fillRect(x, y, width * fillValue, height)
+    context.shadowBlur  = 0
     context.strokeStyle = 'rgba(210, 250, 255, .20)'
     context.strokeRect(x, y, width, height)
 
@@ -293,6 +413,12 @@ export class HudPanel {
           ? '#d9ffff'
           : 'rgba(150, 220, 235, .30)'
     context.stroke()
+    if (active || hovered) {
+      context.shadowColor = color
+      context.shadowBlur  = 7
+      context.stroke()
+      context.shadowBlur = 0
+    }
     context.font         = `${active ? 700 : 500} ${size}px ${FONT}`
     context.textAlign    = 'center'
     context.textBaseline = 'middle'
@@ -300,11 +426,23 @@ export class HudPanel {
     context.fillText(label.toUpperCase(), x + width * 0.5, y + height * 0.5 + 1)
 
     if (!disabled)
-      this.regions.push({ id, kind, x, y, width, height, action })
+      this.region({ id, kind, x, y, width, height, action })
   }
 
   region (region: HudRegion): void {
-    this.regions.push(region)
+    const content = this.trace?.content
+    if (!content) {
+      this.regions.push(region)
+      return
+    }
+
+    this.regions.push({
+      ...region,
+      x:      (content.x + region.x / this.canvas.width * content.width) * this.canvas.width,
+      y:      (content.y + region.y / this.canvas.height * content.height) * this.canvas.height,
+      width:  region.width * content.width,
+      height: region.height * content.height,
+    })
   }
 
   hitTest (x: number, y: number): HudRegion | null {
@@ -318,6 +456,10 @@ export class HudPanel {
   }
 
   dispose (): void {
+    if (this.contentTransformActive) {
+      this.context.restore()
+      this.contentTransformActive = false
+    }
     this.texture.dispose()
     this.regions.length = 0
   }

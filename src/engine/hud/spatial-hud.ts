@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import type { Controls } from '../input'
 import { setTouchOverlayActive } from '../input'
-import { createHudPanelMesh, createHudPanels, disposeHudPanelMesh, drawHudPanels } from './facets'
+import { createHudPanelMesh, createHudPanels, disposeHudPanelMesh, drawHudPanels, tickHudPanelMesh } from './facets'
 import { HUD_AXIS_GATE, hudSliderValue, shapeHudAxis } from './interaction'
 import { drawHudOverlay, isHudBlockingOverlay } from './overlay'
 import { HudPanel } from './panel'
@@ -102,9 +102,7 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
     const squeeze = Math.min(1, aspect / (16 / 9))
 
     visorRoot.position.copy(camera.position)
-    visorRoot.quaternion.copy(camera.quaternion)
-    visorRoot.translateX(-frame.panX * 0.035)
-    visorRoot.translateY(frame.panY * 0.022)
+    visorRoot.quaternion.copy(frame.hudQuaternion)
     visorRoot.scale.set(fovScale * squeeze, fovScale, 1)
     visorRoot.updateMatrixWorld(true)
 
@@ -176,6 +174,7 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
 
     lastFrame = frame
     syncPose(frame)
+    tickHudPanelMesh(panelMesh, frame.elapsed)
 
     if (frame.telemetry.crashSeq !== lastCrashSeq) {
       lastCrashSeq = frame.telemetry.crashSeq
@@ -496,4 +495,4 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
 }
 
 
-// perf: eight draw calls total; panels upload at 12 hz and the overlay at up to 30 hz.
+// perf: nine draw calls total; panels upload at 12 hz and the overlay at up to 30 hz.
