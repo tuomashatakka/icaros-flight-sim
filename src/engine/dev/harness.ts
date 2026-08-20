@@ -156,6 +156,7 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
 
         input: {
           steer:    round(controls.steer, 3),
+          strafe:   round(controls.strafe, 3),
           throttle: controls.throttle,
           brake:    controls.brake,
           boost:    controls.boost,
@@ -258,11 +259,12 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
     },
 
     setInput (patch) {
-      for (const key of [ 'steer', 'throttle', 'brake', 'boost', 'panX', 'panY' ] as const)
+      for (const key of [ 'steer', 'strafe', 'throttle', 'brake', 'boost', 'panX', 'panY' ] as const)
         if (patch[key] !== undefined)
           (controls[key] as number | boolean) = patch[key]!
       return {
         steer:    controls.steer,
+        strafe:   controls.strafe,
         throttle: controls.throttle,
         brake:    controls.brake,
         boost:    controls.boost,
@@ -322,9 +324,6 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
     api.overlay(params.overlay)
   if (params.paused)
     clock.paused = true
-  if (params.nohud)
-    document.documentElement.dataset.devNohud = '1'
-
   window.__dev   = api
   window.__race  = api
   window.__three = THREE
@@ -358,8 +357,6 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
       delete window.__dev
       delete window.__race
     }
-    if (params.nohud)
-      delete document.documentElement.dataset.devNohud
   })
 
   return {

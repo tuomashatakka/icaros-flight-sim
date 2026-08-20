@@ -9,10 +9,10 @@ import type { RaceState } from './state'
 /**
  * Mirrors zustand into app state, one direction only.
  *
- * The DOM keeps owning what it owns (the race state machine, ship config, HUD
- * counters); the engine only ever *reads* those here. Engine outputs travel the
- * other way through the publish module, and the two sets of fields are disjoint,
- * so there is no feedback loop.
+ * Zustand keeps owning the race state machine, ship config, and tuning; the
+ * engine only ever *reads* those here. Engine outputs travel the other way
+ * through the publish module, and the two sets of fields are disjoint, so there
+ * is no feedback loop.
  *
  * @returns Detach function — wire it into the app's dispose chain, not a
  * separate React effect, or a subscription can outlive the app it writes to.

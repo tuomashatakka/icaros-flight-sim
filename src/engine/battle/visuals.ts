@@ -631,7 +631,7 @@ export type ExplosionPool = {
 /**
  * Hit and kill bursts.
  *
- * The battle had no impact VFX at all: `hit` and `kill` events drove the DOM
+ * The battle had no impact VFX at all: `hit` and `kill` events only drove the
  * kill feed and nothing in the world, so a ship simply stopped existing. Pooled
  * like the beams — a fixed ring reused in order, never allocated mid-match, so
  * a busy fight cannot stutter on a GC.

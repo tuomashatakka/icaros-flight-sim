@@ -1,6 +1,6 @@
 import type { App } from 'threejs-scene'
 import { raceModule } from '../modules/race'
-import { hudModule } from '../hud'
+import { raceHudModule } from '../hud'
 import { initialRaceState } from '../state'
 import type { RaceState } from '../state'
 import { flatsLevel } from '../levels/flats'
@@ -50,6 +50,7 @@ export async function mountRace (
         handleCollision: race.handleCollision,
       }
     },
-    hudModuleFactory: (shipRoot, telemetry, hudRef) => hudModule(shipRoot, level, telemetry, hudRef),
+    hudModuleFactory: (_shipRoot, telemetry, hudRef, controls) =>
+      raceHudModule(canvas, level, telemetry, controls, hudRef),
   })
 }

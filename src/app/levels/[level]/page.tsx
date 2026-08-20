@@ -2,7 +2,6 @@
 
 import { use, useCallback } from 'react'
 import { SceneCanvas } from '@/components/scene-canvas'
-import { GameUI } from '@/components/hud/game-ui'
 import { mountRace } from '@/engine/scenes/race'
 import type { LevelId } from '@/engine/levels/types'
 import styles from './race.module.css'
@@ -19,7 +18,6 @@ export default function RacePage ({ params }: RacePageProps) {
   )
 
   return <main className={ styles.page }>
-    <SceneCanvas mount={ mount } />
-    <GameUI />
+    <SceneCanvas mount={ mount } fallback={ false } />
   </main>
 }

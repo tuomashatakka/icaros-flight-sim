@@ -31,24 +31,7 @@
   --border: hsl(var(--border-hsl));
   --ring: hsl(var(--ring-hsl));
 
-  /*
-   * Holographic HUD palette. Kept in sync by hand with `HOLO` in
-   * `src/engine/hud/materials.ts` — the in-scene projection and the DOM chrome
-   * that frames it have to read as one system, and nothing in the build can
-   * share a constant across a GLSL uniform and a stylesheet.
-   */
-  --holo-cyan-hsl: 184 100% 73%;
-  --holo-magenta-hsl: 328 100% 69%;
-  --holo-amber-hsl: 33 100% 64%;
-
-  --holo-cyan: hsl(var(--holo-cyan-hsl));
-  --holo-magenta: hsl(var(--holo-magenta-hsl));
-  --holo-amber: hsl(var(--holo-amber-hsl));
-
-  /* Panel chrome shared by every holo-styled DOM surface. */
-  --holo-scrim: hsl(200 60% 6% / 0.55);
-  --holo-edge: hsl(var(--holo-cyan-hsl) / 0.32);
-  --holo-glow: 0 0 12px hsl(var(--holo-cyan-hsl) / 0.45);
+  --editor-accent-hsl: 184 100% 73%;
 
   --radius: 0.5rem;
   --radius-sm: calc(var(--radius) - 4px);
@@ -85,22 +68,6 @@ body {
 
 canvas {
   touch-action: none;
-}
-
-/*
- * `TouchControls` stamps `data-touch` on the root when it mounts. The band is
- * the vertical space the on-screen sticks claim along the bottom edge; every
- * HUD that anchors to that edge offsets by it, so there is one number to change
- * rather than a magic inset per panel.
- */
-html[data-touch] {
-  --touch-band: 10rem;
-}
-
-@media (orientation: landscape) and (max-height: 30rem) {
-  html[data-touch] {
-    --touch-band: 7rem;
-  }
 }
 
 a {
@@ -192,15 +159,4 @@ select option {
   50% {
     opacity: 0.4;
   }
-}
-
-/*
- * Dev-only: `?nohud=1` strips the DOM chrome for clean captures.
- *
- * Only the React-rendered overlays are hidden — the in-scene holographic HUD is
- * geometry inside the canvas and stays, which is usually what you want, since
- * it is part of the render being inspected.
- */
-[data-dev-nohud] :is(header, footer, [data-hud]) {
-  display: none !important;
 }

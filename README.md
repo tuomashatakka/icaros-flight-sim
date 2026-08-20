@@ -5,9 +5,10 @@ A Burnout-inspired 3D arcade racer built with **Next.js 16**, **vanilla three.js
 **9 ships** in the hangar, then race one of four tracks — from a third-person chase camera or from
 inside the cockpit.
 
-React renders the DOM — menus, hangar panel, and the small amount of race chrome that is not part
-of the flight. Everything else lives inside the canvas as plain three.js driven by the engine in
-`src/engine/`; `src/components/scene-canvas.tsx` is the only file where the two meet. See
+React renders menus and the hangar panel. Race and battle render one interactive canvas each; every
+in-session readout, control, modal, toast, and tuning surface belongs to the canvas-owned HUD.
+Everything inside the canvas is plain three.js driven by `src/engine/`, and
+`src/components/scene-canvas.tsx` is the only file where React and three.js meet. See
 [Architecture](#architecture).
 
 ## Run locally
@@ -33,10 +34,13 @@ All dependencies come from the public npm registry; no token or private scope is
 | --- | --- |
 | `W` / `↑` | Thrust |
 | `S` / `↓` | Brake |
-| `←` `→` / `A` `D` | Steer (and steer the nose mid-jump — *aftertouch*) |
+| `←` `→` / `Q` `E` | Turn (and steer the nose mid-jump — *aftertouch*) |
+| `A` `D` | Strafe left / right |
+| `R` `F` | Aim or look up / down |
 | `Shift` (hold) | Boost — extra thrust + higher top speed while the reserve lasts |
 | `C` | Toggle chase ⇄ cockpit view |
-| `R` | Respawn at the last checkpoint |
+| `Backspace` | Respawn at the last checkpoint |
+| `Space` / `X` | Battle primary / secondary weapon |
 | Drag on the canvas | Steer, absolute from the press point, recentring on release |
 | Move the mouse (no button) | Look around — a slight camera pan, easing back to centre |
 
@@ -49,7 +53,7 @@ mid-corner.
 - A **3-2-1 countdown** gates the throttle; you launch on **GO!**.
 - **Loop tracks** (Neon Canyon, Orbital Ring) are **3 laps** — cross the checkpoints in order;
   the start/finish line closes each lap. **Origin Circuit** is a single **sprint** to the finish.
-- Falling off, flipping over, or pressing `R` respawns you at the last cleared checkpoint.
+- Falling off, flipping over, or pressing `Backspace` respawns you at the last cleared checkpoint.
 - Hard impacts shake the camera and flash the screen. The shake is much gentler in the cockpit —
   a jolt that reads well from outside is nauseating from a seat.
 - Lap / total / best times show in the holographic HUD; the finish screen has a **Race Again**
@@ -119,7 +123,7 @@ samples only the green channel and would erase the red canopies (Qirex, AG-Syste
 src/engine/            vanilla three.js — no React imports anywhere below this line
   scenes/              composition roots: race.ts, hangar.ts
   modules/             AppModules: vehicle, physics-step, race, ship-visual, sun, publish
-  hud/                 the in-scene holographic HUD (see below)
+  hud/                 the shared canvas-owned race and battle HUD (see below)
   levels/              the four tracks, as LevelSpec data
   physics/             Rapier world + collider helpers
   camera/rig.ts        chase + cockpit camera, as two blended stations
@@ -127,7 +131,6 @@ src/engine/            vanilla three.js — no React imports anywhere below this
   clock.ts             fixed-step clock that exposes its residual (see below)
   bridge.ts            zustand -> app state, one direction only
   dev/                 dev-only debug harness; dropped from production builds
-src/components/hud/    the DOM half of the race UI
 src/components/scene-canvas.tsx   the ONLY React<->three boundary
 public/scenarios/      scripted input timelines for the dev CLI
 scripts/dev-cli.mjs    drive the running game from a shell (see below)
@@ -151,9 +154,8 @@ Plain CSS. No utility framework, no component library, no preprocessor.
 - `src/app/globals.css` — design tokens and the reset. Colours are declared twice: a bare HSL
   triple (`--accent-hsl`) and a finished colour (`--accent`). The triple exists so a rule can
   compose an alpha variant, `hsl(var(--accent-hsl) / 0.3)`.
-- The `--holo-*` tokens are the HUD palette, and they are kept **in sync by hand** with `HOLO` in
-  `src/engine/hud/materials.ts`. Nothing in the build can share a constant between a GLSL uniform
-  and a stylesheet, and the projection and the DOM chrome that frames it have to read as one system.
+- HUD presentation tokens live in `src/engine/hud/tokens.ts`; the race and battle adapters share
+  them without leaking game-state policy into the drawing primitives.
 - `*.module.css` next to each component — scoped class names, no global collisions. Shared chrome
   within a file uses `composes:`.
 - Form controls (range, color, text, select) are styled once in `globals.css`, since nearly every
@@ -172,6 +174,11 @@ wheel raycasts do not register against a trimesh and the ship falls through.
 The `setAngvel` block that aligns the ship to the surface normal is **load-bearing, not cosmetic**.
 With it removed, thrust torques the ship onto its back within a second. `test/vehicle-physics.mjs`
 asserts exactly that (`min up-dot after settle: 1.000`).
+
+Turn and strafe authority are also shared physics contracts, not per-input multipliers. Ground yaw
+peaks at `1.45 rad/s` and falls below 45°/s at maximum speed; strafe targets 14% of cruise speed with
+an eased response. `public/scenarios/turn-response.json` and `strafe-response.json` pin their
+two-second traces on The Flats, so keyboard, pointer, touch, race, and battle stay aligned.
 
 ### Two stations, one rig
 
@@ -206,28 +213,29 @@ otherwise see is the inside of its back faces.
 
 ## The holographic HUD
 
-Speed, boost, lap, time, the artificial horizon and the next-gate marker are **in-scene geometry**,
-not DOM — `src/engine/hud/`. Two sets cross-fade with the camera: a full canopy parented to
-`shipRoot` (so it inherits the interpolated pose and banks with the hull), and a pared-back
-camera-locked strip for chase view.
+`src/engine/hud/` is a standalone canvas-owned GUI system shared by race and battle. It adapts each
+mode into one `HudData` contract, then cuts seven interactive canvas readouts from one folded visor.
+Top facets face down, bottom facets face up, adjacent quads share exact edge coordinates, and a
+nine-cell translucent backing makes the whole cockpit one continuous glass surface. A separate
+camera-locked screen plane owns transient layers:
+countdown, finish and scoreboard states, errors, toasts, tuning, crash flash, and touch controls.
 
-- Every element shares one `ShaderMaterial` (`materials.ts`) — additive, `depthWrite: false`,
-  `depthTest: false`, and **`toneMapped: false`**. That last flag is the one that matters: the
-  composer tone-maps once at `OutputPass`, and letting the HUD through that curve would drag its
-  colour back under the per-level bloom threshold (0.85–0.92), which is exactly what it needs to
-  cross in order to glow. No dedicated bloom pass is needed.
-- Gauges fill by moving a single `uFill` uniform. Arc geometry is authored with `uv.x` running
-  along the *sweep*, so one shader serves both arcs and bars without a branch.
-- The cockpit panel is authored in **screen axes** and turned to face back down the nose
-  (`rotation.y = π`). The camera looks along the ship's **+Z**, which makes its right axis the
-  ship's **−X**; without that rotation the whole panel is mirrored *and* every text plane presents
-  its back face, which silently culls the readouts, since `MeshBasicMaterial` is `FrontSide` by
-  default.
-- The horizon ladder counter-rotates against the hull, because it represents the world while
-  everything around it belongs to the ship.
-- Text is canvas-textured (there is no SDF font in the project) and **only redraws when the string
-  changes**. That guard is what lets the HUD run at frame rate; a texture upload per readout per
-  frame would dwarf everything else it does.
+- `tokens.ts` is the semantic palette, typography, cadence, and tuning specification.
+- `panel.ts` owns canvas textures, drawing primitives, and hit regions; `facets.ts` owns the seven
+  live-data layouts; `layout.ts` owns the continuous visor topology; `overlay.ts` owns full-screen
+  and touch layers.
+- `spatial-hud.ts` owns camera locking, raycast/UV hit testing, pointer capture, multitouch, and
+  disposal. It uploads panel textures at 12 Hz and the active overlay at up to 30 Hz.
+- `index.ts` contains thin race and battle adapters. The renderer never imports scene-specific
+  simulation internals, and React never subscribes to pointer-rate input.
+- Every facet displays live session, vehicle, target, objective, weapon, or control data and exposes
+  at least one useful canvas interaction; no decorative percentages or placeholder traces remain.
+- All materials are transparent, depth-independent, and `toneMapped: false`, keeping cockpit colour
+  legible through the scene composer without adding a dedicated bloom path.
+
+The race and battle routes intentionally render no interactive DOM outside the WebGL canvas.
+Accessibility metadata lives on the canvas itself, while keyboard, mouse, pen, and touch all write
+the same mutable `Controls` object used by the simulation.
 
 State is read **imperatively** — `telemetry` directly, and `useRaceStore.getState()` per frame.
 Subscribing would put a React commit in the render path, which is the exact thing the throttling in
@@ -238,16 +246,15 @@ the publish module exists to avoid.
 `raceTimers` in `src/hooks/use-race-store.ts` is a plain mutable object, for the same reason
 `src/engine/telemetry.ts` is: the clocks advance every 60 Hz sim step, and writing them into zustand
 at that rate forced 60 React commits a second — which quietly defeated the 15 Hz throttling
-elsewhere, since the race bar re-rendered on every step anyway. The HUD reads the live object and
-stays exact to the millisecond; the store mirrors it on a throttle for the finish card. Lap times
-are taken from the live clock at the instant of the crossing, never from the throttled copy.
+elsewhere. The canvas HUD reads the live object and stays exact to the millisecond; the store mirrors
+it on a throttle for other consumers. Lap times are taken from the live clock at the instant of the
+crossing, never from the throttled copy.
 
 ### Live tuning
 
-The race screen carries a **tuning panel** (top right, collapsed by default) over the seven physics
-knobs that used to live in Leva. Unlike Leva it persists to `localStorage`, so a tuning session
-survives a reload, and **copy as TS** emits just the values that moved as a block you paste into
-`vehicleConfig` in `src/lib/utils.ts`.
+The race HUD carries a canvas-native **tuning panel** over the seven physics knobs that used to live
+in Leva. It persists to `localStorage`, so a tuning session survives a reload, and **copy as TS**
+emits just the values that moved as a block you paste into `vehicleConfig` in `src/lib/utils.ts`.
 
 ## Debugging & dev tooling
 
@@ -259,6 +266,8 @@ listening on :9002 and starts one otherwise.
 bun run dev:probe --level flats             # full state snapshot as JSON
 bun run dev:scenario straight-line          # deterministic scripted run
 bun run dev:scenario hard-corner --json --out /tmp/trace.json
+bun run dev:scenario turn-response           # two-second steering authority trace
+bun run dev:scenario strafe-response         # two-second lateral authority trace
 bun run dev:shot /tmp/a.png --step 300 --overlay colliders,wheels
 bun run dev:console --seconds 5             # errors, frame times, WebGL state
 bun run dev:eval -e '__dev.probe().ship.up'
@@ -282,8 +291,8 @@ A handling change becomes a diff rather than an opinion.
   "tuning": { "thrust": 1200 },                    // optional
   "timeline": [
     { "at": 0, "input": { "throttle": true } },
-    { "at": 5, "input": { "steer": -1 } },
-    { "at": 7, "input": { "steer": 0, "boost": true } }
+    { "at": 5, "input": { "steer": -1, "strafe": 0.5 } },
+    { "at": 7, "input": { "steer": 0, "strafe": 0, "boost": true } }
   ]
 }
 ```

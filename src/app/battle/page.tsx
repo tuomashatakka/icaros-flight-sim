@@ -3,7 +3,6 @@
 import { Suspense, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { SceneCanvas } from '@/components/scene-canvas'
-import { BattleUI } from '@/components/battle/battle-ui'
 import { mountBattle } from '@/engine/scenes/battle'
 import { useShipStore } from '@/hooks/use-ship-store'
 import type { ShipId } from '@/lib/ship/registry'
@@ -29,14 +28,7 @@ function BattleContent () {
   }, [ params ])
 
   return <div className={ styles.page }>
-    <div aria-hidden className={ styles.wash } />
-
-    <div className={ styles.layout }>
-      <div className={ styles.viewport }>
-        <SceneCanvas mount={ mount } />
-        <BattleUI />
-      </div>
-    </div>
+    <SceneCanvas mount={ mount } fallback={ false } />
   </div>
 }
 

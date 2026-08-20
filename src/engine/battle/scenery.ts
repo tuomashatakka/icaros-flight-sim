@@ -225,11 +225,11 @@ function buildSkyline (rng: () => number, half: number): THREE.Object3D {
 /**
  * A holographic light strip along the crown of the cliff.
  *
- * `createHoloMaterial` was written for the race HUD and has sat unused in
- * battle, which draws its HUD in the DOM. It is exactly the right shader here:
- * additive, scanlined, cheap. Two things it needs forcing on:
+ * `createHoloMaterial` predates the canvas-facet HUD and now belongs to arena
+ * scenery. It is exactly the right shader here: additive, scanlined, cheap. Two
+ * things it needs forcing on:
  *
- * - `depthTest`, because the HUD default is `false` and these would otherwise
+ * - `depthTest`, because its default is `false` and these would otherwise
  *   paint straight over the whole arena;
  * - a narrow band at the TOP of the wall rather than the full 44-unit face. A
  *   full-height additive panel is a 600-unit sheet running down the side of the

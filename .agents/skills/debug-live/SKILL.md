@@ -27,6 +27,9 @@ bun run dev:eval -e '<javascript>'
 Common flags: `--level` (flats | neon-canyon | orbital-ring | procedural),
 `--seed`, `--overlay`, `--nohud`, `--size`, `--headed`.
 
+Handling baselines: `bun run dev:scenario turn-response` isolates full steering;
+`bun run dev:scenario strafe-response` isolates full lateral input.
+
 ## Pick the right tool
 
 | Question | Command |
@@ -58,8 +61,8 @@ is a diff, not an opinion.
   "autoStart": true,       // skip the 3-2-1; default true
   "timeline": [
     { "at": 0, "input": { "throttle": true } },
-    { "at": 5, "input": { "steer": -1 } },
-    { "at": 7, "input": { "steer": 0, "boost": true } },
+    { "at": 5, "input": { "steer": -1, "strafe": 0.5 } },
+    { "at": 7, "input": { "steer": 0, "strafe": 0, "boost": true } },
     { "at": 9, "respawn": true }
   ]
 }

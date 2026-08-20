@@ -30,6 +30,7 @@ import { mountBaseScene } from './base'
 import { activeControls } from '../input'
 import { createBattlePost } from '../battle/post'
 import type { CameraRig } from '../camera/rig'
+import { battleHudModule } from '../hud'
 
 
 export type BattleState = {
@@ -137,8 +138,8 @@ const _quat = new THREE.Quaternion()
  *
  * Physics and game rules run locally in `BattleSim`; every rule-changing event
  * is hashed and checked against the (currently local) authority, which is the
- * seam a real server drops into. Rendering never reads the sim's arrays
- * directly into React — HUD state goes through `useBattleStore`, throttled by
+ * seam a real server drops into. Rendering never reads the sim's arrays into
+ * React — the canvas HUD reads the slim `useBattleStore` snapshot, throttled by
  * that store's own equality checks.
  */
 export async function mountBattle (
@@ -346,7 +347,7 @@ export async function mountBattle (
     },
     post: post.options,
 
-    gameModuleFactory: (physics, _isVehicleCollider, _telemetry, controls, vehicleRef, rig) => {
+    gameModuleFactory: (physics, _isVehicleCollider, telemetry, controls, vehicleRef, rig) => {
       const localInterpolator = new BodyInterpolator(localPlayer.chassis)
       physics.interpolators.push(localInterpolator)
 
@@ -392,6 +393,14 @@ export async function mountBattle (
           })
 
           sim.step(1 / 60)
+
+          const velocity       = localPlayer.chassis.linvel()
+          telemetry.speed      = Math.hypot(velocity.x, velocity.z)
+          telemetry.boostMeter = localPlayer.boostMeter
+          telemetry.boosting   = controls.boost
+          telemetry.grounded   = false
+          for (let index = 0; index < localPlayer.controller.numWheels(); index++)
+            telemetry.grounded ||= localPlayer.controller.wheelIsInContact(index)
 
           const snap   = sim.snapshot()
           const events = sim.drainEvents()
@@ -498,6 +507,9 @@ export async function mountBattle (
 
       return { module: battleGameModule }
     },
+
+    hudModuleFactory: (_shipRoot, telemetry, hudRef, controls) =>
+      battleHudModule(canvas, telemetry, controls, hudRef),
 
     extraModules: [
       defineModule<BattleState>({

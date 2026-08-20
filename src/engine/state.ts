@@ -28,8 +28,9 @@ export const DEFAULT_TUNING: ShipTuning = {
  *
  * Holds only what the simulation reads each tick. Sim *outputs* (speed, boost
  * meter, lap times) deliberately live elsewhere — in module-local telemetry,
- * mirrored out to zustand for the DOM — because modules read state and never
- * write it, so an output field here would be a second copy nothing reads.
+ * mirrored out to zustand for external consumers — because modules read state
+ * and never write it, so an output field here would be a second copy nothing
+ * reads.
  */
 export type RaceState = {
   // --- input: written by engine/input via the frame loop ---
