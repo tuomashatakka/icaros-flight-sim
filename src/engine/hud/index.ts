@@ -25,6 +25,7 @@ export type HudHandle = {
     throttle: number,
     cameraBlend: number,
     camera: THREE.Camera,
+    hudQuaternion: THREE.Quaternion,
     panX: number,
     panY: number,
     aimPitch: number
@@ -75,6 +76,7 @@ function sharedHudModule<TState extends object> ({
     throttle:         0,
     cameraBlend:      0,
     camera:           new THREE.PerspectiveCamera(),
+    hudQuaternion:    new THREE.Quaternion(),
     panX:             0,
     panY:             0,
     aimPitch:         0,
@@ -101,6 +103,7 @@ function sharedHudModule<TState extends object> ({
           throttle,
           cameraBlend,
           camera,
+          hudQuaternion,
           panX,
           panY,
           aimPitch
@@ -111,13 +114,14 @@ function sharedHudModule<TState extends object> ({
           frame.throttle       = throttle
           frame.cameraBlend    = cameraBlend
           frame.camera         = camera
-          frame.panX           = panX
-          frame.panY           = panY
-          frame.aimPitch       = aimPitch
-          frame.steer          = controls.steer
-          frame.strafe         = controls.strafe
-          frame.brake          = controls.brake
-          frame.boost          = controls.boost
+          frame.hudQuaternion.copy(hudQuaternion)
+          frame.panX     = panX
+          frame.panY     = panY
+          frame.aimPitch = aimPitch
+          frame.steer    = controls.steer
+          frame.strafe   = controls.strafe
+          frame.brake    = controls.brake
+          frame.boost    = controls.boost
           target(frame)
           spatial.update(frame)
         },

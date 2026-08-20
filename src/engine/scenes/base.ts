@@ -45,6 +45,7 @@ function resolveSeed (defaultSeed = SEED): number {
 const _pan            = { panX: 0, panY: 0, pitch: 0 }
 const _shipPosition   = new THREE.Vector3()
 const _shipQuaternion = new THREE.Quaternion()
+const _hudQuaternion  = new THREE.Quaternion()
 
 /**
  * Visual nose swing from the R/F aim axis, radians (~18 deg).
@@ -316,6 +317,7 @@ export async function mountBaseScene<TState extends object> (
       _pan.panY  = controls.panY
       _pan.pitch = aimNorm
       rig.drive(frame.delta, _shipPosition, _shipQuaternion, _pan)
+      rig.hudQuaternion(_hudQuaternion)
       sun.current?.follow(_shipPosition)
 
       const blend = rig.blend()
@@ -329,6 +331,7 @@ export async function mountBaseScene<TState extends object> (
         throttle,
         blend,
         rig.camera,
+        _hudQuaternion,
         controls.panX,
         controls.panY,
         aimNorm

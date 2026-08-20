@@ -214,9 +214,12 @@ otherwise see is the inside of its back faces.
 ## The holographic HUD
 
 `src/engine/hud/` is a standalone canvas-owned GUI system shared by race and battle. It adapts each
-mode into one `HudData` contract, then cuts seven interactive canvas readouts from one folded visor.
-Top facets face down, bottom facets face up, adjacent quads share exact edge coordinates, and a
-nine-cell translucent backing makes the whole cockpit one continuous glass surface. A separate
+mode into one `HudData` contract, then places seven interactive canvas readouts over one folded visor.
+Three upper readouts use open canopy brackets, three lower readouts use closed MFD surfaces, and the
+targeting pane recesses between them. Their independent bounds cluster both utility screens left, keep
+the systems bank right, and leave the sightline open. A nine-cell translucent backing still makes the
+cockpit one continuous glass surface. The six outer silhouettes are stored as normalised vector traces,
+so their sparse strokes and asymmetric tapers stay crisp without shipping a reference bitmap. A separate
 camera-locked screen plane owns transient layers:
 countdown, finish and scoreboard states, errors, toasts, tuning, crash flash, and touch controls.
 
@@ -224,14 +227,16 @@ countdown, finish and scoreboard states, errors, toasts, tuning, crash flash, an
 - `panel.ts` owns canvas textures, drawing primitives, and hit regions; `facets.ts` owns the seven
   live-data layouts; `layout.ts` owns the continuous visor topology; `overlay.ts` owns full-screen
   and touch layers.
-- `spatial-hud.ts` owns camera locking, raycast/UV hit testing, pointer capture, multitouch, and
-  disposal. It uploads panel textures at 12 Hz and the active overlay at up to 30 Hz.
+- `spatial-hud.ts` owns ship-station anchoring, raycast/UV hit testing, pointer capture, multitouch,
+  and disposal. Pointer-look pans the camera across the stationary visor, while only the transient
+  screen plane remains camera-locked. Panels upload at 12 Hz and the active overlay at up to 30 Hz.
 - `index.ts` contains thin race and battle adapters. The renderer never imports scene-specific
   simulation internals, and React never subscribes to pointer-rate input.
 - Every facet displays live session, vehicle, target, objective, weapon, or control data and exposes
   at least one useful canvas interaction; no decorative percentages or placeholder traces remain.
-- All materials are transparent, depth-independent, and `toneMapped: false`, keeping cockpit colour
-  legible through the scene composer without adding a dedicated bloom path.
+- Facet shaders add restrained scanlines, interference, chromatic separation, and angle-dependent
+  gain over transparent canvas ink. They remain depth-independent and `toneMapped: false`, keeping
+  cockpit colour legible through the scene composer without adding a dedicated bloom path.
 
 The race and battle routes intentionally render no interactive DOM outside the WebGL canvas.
 Accessibility metadata lives on the canvas itself, while keyboard, mouse, pen, and touch all write

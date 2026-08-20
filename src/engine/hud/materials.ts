@@ -94,3 +94,140 @@ export function tickHolo (materials: Iterable<HoloMaterial>, elapsed: number): v
   for (const material of materials)
     material.uniforms.uTime.value = elapsed
 }
+
+export type HudFacetUniforms = {
+  uMap:     { value: THREE.Texture };
+  uTime:    { value: number };
+  uAccent:  { value: THREE.Color };
+  uOpacity: { value: number };
+}
+
+export type HudFacetMaterial = THREE.ShaderMaterial & { uniforms: HudFacetUniforms }
+
+const HUD_VERTEX = /* glsl */`
+varying vec2 vUv;
+varying vec3 vViewPosition;
+varying vec3 vViewNormal;
+
+void main () {
+  vUv = uv;
+  vec4 viewPosition = modelViewMatrix * vec4(position, 1.0);
+  vViewPosition = -viewPosition.xyz;
+  vViewNormal = normalize(normalMatrix * normal);
+  gl_Position = projectionMatrix * viewPosition;
+}
+`
+
+const HUD_FRAGMENT = /* glsl */`
+uniform sampler2D uMap;
+uniform float uTime;
+uniform vec3 uAccent;
+uniform float uOpacity;
+
+varying vec2 vUv;
+varying vec3 vViewPosition;
+varying vec3 vViewNormal;
+
+float hash (vec2 p) {
+  return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+}
+
+void main () {
+  float facing = abs(dot(normalize(vViewNormal), normalize(vViewPosition)));
+  vec2 radial = normalize(vUv - 0.5 + vec2(0.00001));
+  float split = mix(0.0028, 0.0011, facing);
+
+  vec4 source = texture2D(uMap, vUv);
+  vec3 signal = vec3(
+    texture2D(uMap, vUv + radial * split).r,
+    source.g,
+    texture2D(uMap, vUv - radial * split).b
+  );
+
+  float luminance = max(signal.r, max(signal.g, signal.b));
+  float glyph = smoothstep(0.08, 0.58, luminance);
+  float scan = 0.94 + 0.06 * sin((vUv.y * 260.0 - uTime * 0.7) * 6.2831853);
+  float grain = hash(floor(gl_FragCoord.xy) + floor(uTime * 18.0)) - 0.5;
+  float edgeGain = pow(1.0 - facing, 2.0);
+
+  vec3 color = signal * (scan + grain * 0.055);
+  color += uAccent * glyph * (0.08 + edgeGain * 0.18);
+  float alpha = source.a * uOpacity * mix(0.28, 1.0, glyph);
+  alpha *= 0.96 + grain * 0.08;
+
+  if (alpha < 0.002)
+    discard;
+  gl_FragColor = vec4(color * (1.08 + edgeGain * 0.22), alpha);
+}
+`
+
+type CreateHudFacetMaterialProps = {
+  map:      THREE.Texture;
+  accent:   THREE.ColorRepresentation;
+  opacity?: number;
+}
+
+export function createHudFacetMaterial ({
+  map,
+  accent,
+  opacity = 0.96,
+}: CreateHudFacetMaterialProps): HudFacetMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uMap:     { value: map },
+      uTime:    { value: 0 },
+      uAccent:  { value: new THREE.Color(accent) },
+      uOpacity: { value: opacity },
+    } satisfies HudFacetUniforms,
+    vertexShader:   HUD_VERTEX,
+    fragmentShader: HUD_FRAGMENT,
+    transparent:    true,
+    depthTest:      false,
+    depthWrite:     false,
+    toneMapped:     false,
+    side:           THREE.DoubleSide,
+  }) as HudFacetMaterial
+}
+
+type HudGlassUniforms = {
+  uTime:  { value: number };
+  uColor: { value: THREE.Color };
+}
+
+export type HudGlassMaterial = THREE.ShaderMaterial & { uniforms: HudGlassUniforms }
+
+const HUD_GLASS_FRAGMENT = /* glsl */`
+uniform float uTime;
+uniform vec3 uColor;
+
+varying vec2 vUv;
+varying vec3 vViewPosition;
+varying vec3 vViewNormal;
+
+void main () {
+  float facing = abs(dot(normalize(vViewNormal), normalize(vViewPosition)));
+  float fresnel = pow(1.0 - facing, 2.4);
+  float sweep = 0.5 + 0.5 * sin((vUv.y * 8.0 - uTime * 0.08) * 6.2831853);
+  float alpha = 0.018 + fresnel * 0.16 + sweep * 0.008;
+  gl_FragColor = vec4(uColor * (0.42 + fresnel * 1.35), alpha);
+}
+`
+
+export function createHudGlassMaterial (): HudGlassMaterial {
+  return new THREE.ShaderMaterial({
+    uniforms: {
+      uTime:  { value: 0 },
+      uColor: { value: new THREE.Color('#53cfe0') },
+    } satisfies HudGlassUniforms,
+    vertexShader:   HUD_VERTEX,
+    fragmentShader: HUD_GLASS_FRAGMENT,
+    transparent:    true,
+    blending:       THREE.AdditiveBlending,
+    depthTest:      false,
+    depthWrite:     false,
+    toneMapped:     false,
+    side:           THREE.DoubleSide,
+  }) as HudGlassMaterial
+}
+
+// perf: one sampled texture and three neighbouring texels per HUD fragment; no per-frame allocation.

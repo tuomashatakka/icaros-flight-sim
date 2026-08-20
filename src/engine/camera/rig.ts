@@ -132,6 +132,9 @@ export type CameraPan = { panX: number; panY: number; pitch?: number }
 export type CameraRig = {
   camera: THREE.PerspectiveCamera;
 
+  /** Camera orientation before pointer-look; the ship-space cockpit/HUD anchor. */
+  hudQuaternion(target: THREE.Quaternion): THREE.Quaternion;
+
   /** Advance the rig. Call from the RENDER phase with the real delta and the interpolated pose. */
   drive(realDelta: number, position: THREE.Vector3, quaternion: THREE.Quaternion, pan: CameraPan): void;
 
@@ -186,11 +189,16 @@ export function createCameraRig (rng: SeededRng, far = 400): CameraRig {
   let aim  = 0
 
   /** Last applied shake, subtracted before the next update so it never feeds back. */
-  const lastShake = new THREE.Vector3()
+  const lastShake     = new THREE.Vector3()
+  const hudQuaternion = new THREE.Quaternion()
   let shakeAmount = 0
 
   return {
     camera: rig.camera,
+
+    hudQuaternion (target) {
+      return target.copy(hudQuaternion)
+    },
 
     requestSnap () {
       snapRequested = true
@@ -304,6 +312,11 @@ export function createCameraRig (rng: SeededRng, far = 400): CameraRig {
 
       rig.camera.position.add(_shake)
       lastShake.copy(_shake)
+
+      // Save the ship-following orientation before pointer-look. The camera is
+      // free to pan across the cockpit after this, while the visor stays bolted
+      // to the same station as the hull.
+      hudQuaternion.copy(rig.camera.quaternion)
 
       // --- look-around pan --------------------------------------------------
       // Rotation only, and applied AFTER the solve. A positional pan would be
