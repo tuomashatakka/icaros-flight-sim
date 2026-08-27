@@ -50,6 +50,7 @@ const server = Bun.serve<SocketData, never>({
           tick:    room.tick,
           humans:  room.humanCount,
           players: room.sim.players.length,
+          rewind:  room.rewindDepth,
         })),
         // Surfaced rather than swallowed: an overflow means the sim dropped
         // wall-clock time, which every client reads as a stall.

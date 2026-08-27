@@ -14,6 +14,7 @@ import { BattleSim } from 'Δengine/battle/sim'
 import { apexArena } from 'Δengine/battle/arena'
 import { toBattleInput } from 'Δengine/battle/protocol'
 import { DEFAULT_BACKFILL, rebalanceBots, teamForJoin } from './bots'
+import { RewindBuffer } from './rewind'
 import type { BackfillConfig } from './bots'
 import type { BattleTeam } from 'Δengine/battle/arena'
 import type { Loadout } from 'Δengine/battle/weapons'
@@ -88,6 +89,7 @@ export class BattleRoom {
   private readonly clients = new Map<PlayerId, RoomClient>()
   private readonly queues = new Map<PlayerId, InputFrame[]>()
   private readonly lastFrame = new Map<PlayerId, InputFrame>()
+  private readonly rewind:       RewindBuffer
   private readonly ticksPerSnap: number
   private readonly maxPlayers:   number
   private readonly backfill:     BackfillConfig
@@ -107,7 +109,21 @@ export class BattleRoom {
     this.backfill     = options.backfill ?? DEFAULT_BACKFILL
     this.now          = options.now ?? (() => Date.now())
     this.ticksPerSnap = Math.max(1, Math.round(options.tickHz / options.snapshotHz))
+    this.rewind       = new RewindBuffer(options.tickHz)
     this.startedAt    = this.now()
+
+    // Shots resolve against what the shooter saw. Installed here rather than
+    // inside the sim because it is a SERVER concern: a local run has no round
+    // trip to compensate for and must stay on the un-rewound path.
+    sim.lagCompensation = shooter => {
+      const client = this.clients.get(shooter.id)
+      if (!client)
+        // A bot. It sees the present, so there is nothing to rewind.
+        return null
+
+      const tick = this.rewind.resolveTick(client.interpTick, this.tickNo)
+      return tick === this.tickNo ? null : this.rewind.poseSourceAt(tick)
+    }
   }
 
   static async create (options: RoomOptions): Promise<BattleRoom> {
@@ -144,6 +160,11 @@ export class BattleRoom {
 
   get uptimeMs (): number {
     return this.now() - this.startedAt
+  }
+
+  /** Ticks of hitbox history held, for `/health`. */
+  get rewindDepth (): number {
+    return this.rewind.depth
   }
 
   join (
@@ -316,6 +337,11 @@ export class BattleRoom {
     this.applyInputs()
     this.sim.step(dt)
     this.tickNo++
+
+    // Recorded after the step and after the tick advances, so a frame's number
+    // matches the poses a snapshot taken at that tick would carry — which is
+    // what a client's `interpTick` refers to.
+    this.rewind.record(this.tickNo, this.sim.players)
 
     const events = this.sim.drainEvents()
     if (events.length)
