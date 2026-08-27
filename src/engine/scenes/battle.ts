@@ -4,11 +4,10 @@ import { defineModule } from 'threejs-scene'
 import { apexArena, BATTLE_TEAMS, TEAM_COLORS } from '../battle/arena'
 import type { Scenery } from '../battle/scenery'
 import type { BattleTeam } from '../battle/arena'
-import { AIM_MAX, BattleSim } from '../battle/sim'
-import type { BattlePlayer } from '../battle/sim'
+import { DEFAULT_BATTLE_CONFIG } from '../battle/sim'
 import type { BattleEvent } from '../battle/types'
-import { WEAPONS } from '../battle/weapons'
-import type { Loadout } from '../battle/weapons'
+import { DEFAULT_LOADOUT, WEAPONS } from '../battle/weapons'
+import type { Loadout, WeaponId } from '../battle/weapons'
 import {
   buildBeamPool,
   buildCaretMarker,
@@ -19,8 +18,11 @@ import {
   buildExplosionPool
 } from '../battle/visuals'
 import type { CaretMarker, Nameplate, ObjectiveVisual, ZoneVisual } from '../battle/visuals'
-import { calculateActionHash, verifyActionHash } from '../battle/hash'
-import type { ServerAction } from '../battle/hash'
+import { BattleTransport } from '../battle/transport'
+import type { NetRemote } from '../battle/transport'
+import type { SnapshotPlayer } from '../battle/protocol'
+import { LocalPrediction } from '../battle/prediction'
+import { createHovercraft, createHovercraftState } from '../sim/vehicle-step'
 import { BodyInterpolator } from '../interpolation'
 import { useBattleStore } from '@/hooks/use-battle-store'
 import { IDLE_LOCK } from '@/hooks/use-battle-store'
@@ -133,47 +135,54 @@ type Opponent = {
 const _pose = new THREE.Vector3()
 const _quat = new THREE.Quaternion()
 
+export type BattleMountOptions = {
+  name?:    string;
+  shipId?:  ShipId;
+  loadout?: Partial<Loadout>;
+
+  /** Room to join. The server picks its default match when omitted. */
+  match?: string;
+
+  /** `?sv=` dev override: a full ws:// URL or a bare port. */
+  server?: string;
+}
+
 /**
  * The battle scene composition root extending `mountBaseScene`.
  *
- * Physics and game rules run locally in `BattleSim`; every rule-changing event
- * is hashed and checked against the (currently local) authority, which is the
- * seam a real server drops into. Rendering never reads the sim's arrays into
- * React — the canvas HUD reads the slim `useBattleStore` snapshot, throttled by
- * that store's own equality checks.
+ * Battle is network-only. The rules, the physics and every outcome live on the
+ * authoritative server (`packages/server`); this scene owns exactly two things
+ * the server cannot: a PREDICTION of the local ship, so controls answer without
+ * waiting a round trip, and the rendering of everyone else, interpolated ~100 ms
+ * in the past on the server's own clock.
+ *
+ * There is one rapier world here now — the base scene's, holding the arena and
+ * the single predicted chassis. The old local `BattleSim` built a second world
+ * with a second copy of the arena colliders and stepped it from a different
+ * module in the same tick.
+ *
+ * Rendering never puts remote positions into React. The canvas HUD reads the
+ * slim `useBattleStore` snapshot, which the transport commits on a timer.
  */
 export async function mountBattle (
   canvas: HTMLCanvasElement,
-  name = 'Pilot',
-  shipId: ShipId = 'icaras',
-  loadout?: Partial<Loadout>
+  options: BattleMountOptions = {}
 ): Promise<App<BattleState>> {
-  const arena = apexArena()
-  const sim   = await BattleSim.create(arena)
+  const arena            = apexArena()
+  const name             = options.name ?? 'Pilot'
+  const shipId           = options.shipId ?? 'icaras'
+  const loadout: Loadout = { ...DEFAULT_LOADOUT, ...options.loadout }
 
-  const localTeam: BattleTeam = 'red'
-  const localPlayer           = sim.addPlayer(name, localTeam, shipId)
-  if (loadout)
-    sim.setLoadout(localPlayer.id, loadout)
-
-  // A five-point arena needs bodies on it, or every zone is uncontested and the
-  // capture rules never get exercised.
-  for (let i = 0; i < 3; i++) {
-    sim.addBot('blue')
-    if (i > 0)
-      sim.addBot('red')
-  }
+  const transport = new BattleTransport()
 
   useBattleStore.getState().resetSession()
-  useBattleStore.getState().joined({
-    playerId: localPlayer.id,
-    team:     localTeam,
-    shipId,
-    name,
-  })
 
-  // Start immediately so driving controls are live on arrival.
-  sim.start(0)
+  // Prediction needs somewhere to stand before the first snapshot lands. Red
+  // lane 0 is a guess; the first reconciliation moves the ship to wherever the
+  // server actually seated it, and that correction is over the hard-snap
+  // threshold so it does not try to smooth across the arena.
+  const provisionalSpawn = arena.spawns.red[0]
+  let prediction: LocalPrediction | null = null
 
   const post = createBattlePost()
 
@@ -227,26 +236,38 @@ export async function mountBattle (
 
   // The local ship needs its own caret target too — for the ONE enemy the local
   // player is tracking, drawn around that enemy, not around us.
-  let tickCount = 0
+  const tickCount = 0
 
-  const zoneViews = () => sim.zones.map(z => ({
-    id:        z.def.id,
-    name:      z.def.name,
-    short:     z.def.short,
-    owner:     z.owner,
-    progress:  z.progress,
-    capturing: z.capturing,
-    contested: z.contested,
-  }))
+  /**
+   * Zone views for the HUD.
+   *
+   * The snapshot carries zone ids and state but not display names — those live
+   * in the arena, which the client has its own copy of. Joining them here is
+   * why `useBattleStore.setChrome` gets real names instead of the id fallback
+   * the transport writes when it commits on its own.
+   */
+  const zoneViews = (snapshot: ReturnType<BattleTransport['latest']>) =>
+    (snapshot?.zones ?? []).map(z => {
+      const def = arena.controlPoints.find(c => c.id === z.id)
+      return {
+        id:        z.id,
+        name:      def?.name ?? z.id,
+        short:     def?.short ?? z.id.slice(0, 2).toUpperCase(),
+        owner:     z.owner,
+        progress:  z.progress,
+        capturing: z.capturing,
+        contested: z.contested,
+      }
+    })
 
-  const nameOf = () => new Map(sim.players.map(p => [ p.id, p.name ]))
+  const nameOf = () => new Map((transport.latest()?.players ?? []).map(p => [ p.id, p.name ]))
 
-  function ensureOpponent (player: BattlePlayer): Opponent {
-    let entry = opponents.get(player.id)
+  function ensureOpponent (remote: NetRemote): Opponent {
+    let entry = opponents.get(remote.id)
     if (entry)
       return entry
 
-    const root      = buildShipHull(player.team)
+    const root      = buildShipHull(remote.team)
     const nameplate = buildNameplate()
     const caret     = buildCaretMarker()
     root.add(nameplate.sprite)
@@ -254,7 +275,7 @@ export async function mountBattle (
     overlays.add(caret.group)
 
     entry = { root, nameplate, caret }
-    opponents.set(player.id, entry)
+    opponents.set(remote.id, entry)
     return entry
   }
 
@@ -269,20 +290,24 @@ export async function mountBattle (
     opponents.delete(id)
   }
 
+  /** The ship a snapshot id refers to, whoever owns it. */
+  function playerIn (id: string): SnapshotPlayer | undefined {
+    return transport.latest()?.players.find(p => p.id === id)
+  }
+
   /**
    * Put a burst on a player, by id.
    *
-   * Events carry ids rather than coordinates, and the body is authoritative
-   * anyway — a position baked into the event would be a tick stale by the time
-   * the render phase drew it.
+   * Events carry ids rather than coordinates, and the snapshot is
+   * authoritative anyway — a position baked into the event would already be a
+   * tick stale by the time the render phase drew it.
    */
   function burstAt (id: string, colour: THREE.ColorRepresentation, scale: number) {
-    const player = sim.getPlayer(id)
+    const player = playerIn(id)
     if (!player)
       return
 
-    const t = player.chassis.translation()
-    blastPool.spawn({ x: t.x, y: t.y + 0.6, z: t.z }, colour, scale)
+    blastPool.spawn({ x: player.x, y: player.y + 0.6, z: player.z }, colour, scale)
   }
 
   /**
@@ -295,29 +320,29 @@ export async function mountBattle (
   function reactTo (e: BattleEvent, rig: CameraRig) {
     switch (e.type) {
       case 'fire':
-        if (e.id === localPlayer.id)
+        if (e.id === transport.localId())
           rig.shake(WEAPONS[e.weapon].needsLock ? 0.5 : 0.22)
         break
       case 'hit':
-        burstAt(e.target, TEAM_COLORS[sim.getPlayer(e.hitBy)?.team ?? 'red'], 1.1)
-        if (e.target === localPlayer.id) {
+        burstAt(e.target, TEAM_COLORS[playerIn(e.hitBy)?.team ?? 'red'], 1.1)
+        if (e.target === transport.localId()) {
           rig.shake(0.7)
           post.pulse(0.55, '#ff5470')
         }
-        else if (e.hitBy === localPlayer.id)
+        else if (e.hitBy === transport.localId())
           post.pulse(0.16, '#9fe8ff')
         break
       case 'kill':
         burstAt(e.target, '#ffd28a', 4.2)
-        if (e.target === localPlayer.id) {
+        if (e.target === transport.localId()) {
           rig.shake(1.6)
           post.pulse(1.1, '#ff2d6f')
         }
-        else if (e.hitBy === localPlayer.id)
+        else if (e.hitBy === transport.localId())
           post.pulse(0.4, '#b7f34a')
         break
       case 'lock':
-        if (e.id === localPlayer.id)
+        if (e.id === transport.localId())
           post.pulse(0.22, '#22d3ee')
         break
       case 'flagScored':
@@ -328,6 +353,148 @@ export async function mountBattle (
     }
   }
 
+  /**
+   * Push one snapshot into the HUD store.
+   *
+   * Every field here is the SERVER'S. Lock in particular: the server owns the
+   * cone test, and a client that decided its own would disagree with the
+   * authority about who it was shooting.
+   */
+  function publishHud (server: SnapshotPlayer, snapshot: NonNullable<ReturnType<BattleTransport['latest']>>): void {
+    const store  = useBattleStore.getState()
+    const target = server.lockTarget ? playerIn(server.lockTarget) : undefined
+
+    if (target)
+      store.setLockOn({
+        phase:    server.lockPhase,
+        targetId: target.id,
+        name:     target.name,
+        distance: Math.hypot(target.x - server.x, target.y - server.y, target.z - server.z),
+        team:     target.team,
+        progress: server.lockMeter,
+      })
+    else
+      store.setLockOn(IDLE_LOCK)
+
+    store.setPilot({
+      health:    server.health,
+      maxHealth: server.maxHealth,
+      boost:     server.boost,
+      kills:     server.kills,
+      deaths:    server.deaths,
+      carrying:  snapshot.flags.find(f => f.carrierId === server.id)?.team ?? null,
+    })
+
+    const primarySpec   = WEAPONS[loadout.primary]
+    const secondarySpec = WEAPONS[loadout.secondary]
+    store.setWeapons(
+      { id: primarySpec.id, cooldown: server.primaryCd, needsLock: primarySpec.needsLock },
+      { id: secondarySpec.id, cooldown: server.secondaryCd, needsLock: secondarySpec.needsLock }
+    )
+
+    store.setChrome({
+      status:      snapshot.status,
+      countdown:   snapshot.countdown,
+      timeLeft:    Math.round(snapshot.timeLeft),
+      scores:      snapshot.scores,
+      scoreTarget: DEFAULT_BATTLE_CONFIG.scoreTarget,
+      zones:       zoneViews(snapshot),
+      flags:       snapshot.flags.map(f => ({
+        team:      f.team,
+        state:     f.state,
+        carrierId: f.carrierId,
+      })),
+    })
+  }
+
+  /**
+   * Draw every remote ship where the server says it was ~100 ms ago.
+   *
+   * Rendering the newest pose straight onto a transform is what made a clean
+   * 30 Hz stream look like a stuttering one — a remote is only ever drawn from
+   * the interpolator, never from a packet.
+   */
+  function renderRemotes (elapsed: number): void {
+    const snapshot   = transport.latest()
+    const server     = transport.localState()
+    const renderTime = transport.renderTimeMs()
+
+    for (const remote of transport.remotes()) {
+      const entry = ensureOpponent(remote)
+
+      if (!remote.interp.sampleAt(renderTime, _pose, _quat)) {
+        // Nothing buffered yet. (0, 0, 0) is a real place on this map, so an
+        // unseen ship is hidden rather than parked at the origin.
+        entry.root.visible = false
+        entry.caret.setVisible(false)
+        continue
+      }
+
+      entry.root.visible = true
+      entry.root.position.copy(_pose)
+      entry.root.quaternion.copy(_quat)
+
+      const carrying = snapshot?.flags.some(f => f.carrierId === remote.id) ?? false
+      entry.nameplate.set(remote.name, remote.state.health, remote.state.maxHealth, remote.team, carrying)
+
+      // The caret only ever appears on the ONE ship the local player's lock is
+      // working on — a bracket on every enemy is wallpaper, not a target.
+      const tracked = Boolean(server) && server?.lockTarget === remote.id && remote.team !== transport.localTeam()
+      entry.caret.setVisible(tracked && server?.lockPhase !== 'idle')
+      if (tracked && server) {
+        entry.caret.group.position.set(_pose.x, _pose.y + 1.4, _pose.z)
+        entry.caret.group.updateMatrixWorld()
+        entry.caret.update(app.ctx.camera, server.lockMeter, server.lockPhase === 'locked', true, elapsed)
+      }
+    }
+
+    const live = new Set(transport.remotes().map(r => r.id))
+    for (const id of [ ...opponents.keys() ])
+      if (!live.has(id))
+        dropOpponent(id)
+  }
+
+  /** Objectives, weapons and control points, all straight off the snapshot. */
+  function renderWorld (snapshot: NonNullable<ReturnType<BattleTransport['latest']>>, elapsed: number): void {
+    for (const team of BATTLE_TEAMS) {
+      const visual = objectives[team]
+      const state  = snapshot.flags.find(f => f.team === team)
+      if (!visual || !state)
+        continue
+      visual.group.position.set(state.x, state.y, state.z)
+      visual.update(elapsed, state.state === 'carried')
+    }
+
+    // Beams are sub-100 ms flashes, drawn from the newest snapshot rather than
+    // interpolated: one smoothed into the past would arrive after the impact it
+    // belongs to.
+    snapshot.beams.forEach((b, i) => {
+      const spec = WEAPONS[b.weapon]
+      // Fade over the beam's remaining life so a hit reads as a flash, not a
+      // rod that blinks out.
+      beamPool.show(i, { x: b.from[0], y: b.from[1], z: b.from[2] }, { x: b.to[0], y: b.to[1], z: b.to[2] },
+                    b.weapon, Math.max(0, Math.min(1, b.life / (spec.beamLife ?? 0.1))))
+    })
+    beamPool.hideFrom(snapshot.beams.length)
+
+    // Missiles carry velocity, so they are dead-reckoned forward from the
+    // snapshot that described them instead of stepping between packets.
+    const ahead = Math.max(0, Math.min(0.25, transport.stats().snapshotAgeMs / 1000))
+    snapshot.missiles.forEach((m, i) => {
+      missilePool.show(i,
+                       { x: m.x + m.vx * ahead, y: m.y + m.vy * ahead, z: m.z + m.vz * ahead },
+                       { x: m.vx, y: m.vy, z: m.vz },
+                       m.weapon)
+    })
+    missilePool.hideFrom(snapshot.missiles.length)
+
+    zoneVisuals.forEach((visual, i) => {
+      const z = snapshot.zones[i]
+      if (z)
+        visual.update(z.owner, z.capturing, z.progress, z.contested, elapsed)
+    })
+  }
+
   const app = await mountBaseScene<BattleState>({
     canvas,
     initialState:            initialBattleState(),
@@ -336,9 +503,10 @@ export async function mountBattle (
     colliders:               arena.colliders,
     colliderOffset:          arena.colliderOffset,
     useDefaultVehicleModule: false,
-    // The sim owns the trim so it survives the netcode round-trip; the hull and
-    // camera just mirror whatever elevation it settled on.
-    aimPitchSource:          () => localPlayer.aimAngle / AIM_MAX,
+    // The trim is predicted locally and corrected against the server, because
+    // a reticle that waits half a round trip to move feels broken; the hull and
+    // camera mirror whatever elevation it settled on.
+    aimPitchSource:          () => prediction?.aimNormalised ?? 0,
     // The deck's diagonal is ~850 units; the race rig's 400 far plane would
     // clip the far wall clean off.
     cameraFar:               1600,
@@ -348,38 +516,59 @@ export async function mountBattle (
     post: post.options,
 
     gameModuleFactory: (physics, _isVehicleCollider, telemetry, controls, vehicleRef, rig) => {
-      const localInterpolator = new BodyInterpolator(localPlayer.chassis)
+      // The ONE body in this world besides the arena: the predicted local ship.
+      // Everyone else is an interpolated transform with no physics at all,
+      // because their motion is the server's to decide and simulating it here
+      // would only produce a second, disagreeing answer.
+      const local = createHovercraft(physics.world, {
+        position:   provisionalSpawn.position,
+        quaternion: provisionalSpawn.quaternion,
+      })
+
+      prediction = new LocalPrediction({
+        chassis:    local.chassis,
+        controller: local.controller,
+        state:      createHovercraftState(),
+      })
+
+      const localInterpolator = new BodyInterpolator(local.chassis)
       physics.interpolators.push(localInterpolator)
 
       vehicleRef.current = {
         get body () {
-          return localPlayer.chassis
+          return local.chassis
         },
         get interpolator () {
           return localInterpolator
         },
         get controller () {
-          return localPlayer.controller
+          return local.controller
         },
         get debug () {
           return null
         },
         teleportTo (transform, liftY = 1) {
-          localPlayer.chassis.setTranslation({ x: transform.position[0], y: transform.position[1] + liftY, z: transform.position[2] }, true)
-          localPlayer.chassis.setLinvel({ x: 0, y: 0, z: 0 }, true)
-          localPlayer.chassis.setAngvel({ x: 0, y: 0, z: 0 }, true)
+          local.chassis.setTranslation({ x: transform.position[0], y: transform.position[1] + liftY, z: transform.position[2] }, true)
+          local.chassis.setLinvel({ x: 0, y: 0, z: 0 }, true)
+          local.chassis.setAngvel({ x: 0, y: 0, z: 0 }, true)
           localInterpolator.teleport()
           rig.requestSnap()
         },
       }
 
+      transport.connect({ name, shipId, loadout, match: options.match, url: options.server })
+
+      let clientTick    = 0
+      let lastSnapshot  = 0
+      let lastAimCommit = -1
+
       const battleGameModule: AppModule<BattleState> = defineModule<BattleState>({
-        name: 'battle-sim-logic',
+        name: 'battle-net',
         build () {},
         update (state) {
-          tickCount++
+          clientTick++
 
-          sim.setInput(localPlayer.id, {
+          const input = {
             steer:         state.steer,
             throttle:      state.throttle,
             brake:         state.brake,
@@ -390,118 +579,65 @@ export async function mountBattle (
             strafe:        controls.strafe,
             aimPitch:      controls.pitch,
             resetSeq:      state.resetSeq,
-          })
+          }
 
-          sim.step(1 / 60)
+          // Queue, predict, send — in that order. The frame the server will
+          // eventually acknowledge is the same object applied locally, so
+          // reconciliation replays exactly what was predicted.
+          const frame = transport.pushInput(input, clientTick)
+          prediction?.step(frame, provisionalSpawn, true)
+          transport.flushInput(transport.serverTick())
 
-          const velocity       = localPlayer.chassis.linvel()
+          // A new snapshot is the only thing that can correct the prediction,
+          // so reconciliation runs on arrival rather than every tick.
+          const server = transport.localState()
+          if (prediction && server && transport.serverTick() !== lastSnapshot) {
+            lastSnapshot = transport.serverTick()
+
+            const result = prediction.reconcile(server, transport.unacknowledged(), provisionalSpawn, true)
+            transport.noteCorrection(result.correctionM)
+
+            if (result.snapped) {
+              localInterpolator.teleport()
+              rig.requestSnap()
+            }
+          }
+
+          const velocity       = local.chassis.linvel()
           telemetry.speed      = Math.hypot(velocity.x, velocity.z)
-          telemetry.boostMeter = localPlayer.boostMeter
+          telemetry.boostMeter = prediction?.boost ?? 1
           telemetry.boosting   = controls.boost
           telemetry.grounded   = false
-          for (let index = 0; index < localPlayer.controller.numWheels(); index++)
-            telemetry.grounded ||= localPlayer.controller.wheelIsInContact(index)
+          for (let index = 0; index < local.controller.numWheels(); index++)
+            telemetry.grounded ||= local.controller.wheelIsInContact(index)
 
-          const snap   = sim.snapshot()
-          const events = sim.drainEvents()
-          const store  = useBattleStore.getState()
+          const snapshot = transport.latest()
+          const store    = useBattleStore.getState()
 
-          // --- lock-on readout ---
-          const lock   = localPlayer.lock
-          const target = lock.targetId ? sim.getPlayer(lock.targetId) : undefined
-          if (target) {
-            const pt = localPlayer.chassis.translation()
-            const tt = target.chassis.translation()
-            store.setLockOn({
-              phase:    lock.phase,
-              targetId: target.id,
-              name:     target.name,
-              distance: Math.hypot(tt.x - pt.x, tt.y - pt.y, tt.z - pt.z),
-              team:     target.team,
-              progress: lock.progress,
-            })
+          store.setNetStats(transport.stats())
+
+          const aim = prediction?.aimNormalised ?? 0
+          if (Math.abs(aim - lastAimCommit) > 0.01) {
+            lastAimCommit = aim
+            store.setAimPitch(aim)
           }
-          else
-            store.setLockOn(IDLE_LOCK)
 
-          store.setAimPitch(localPlayer.aimAngle / AIM_MAX)
+          if (!snapshot || !server)
+            return
 
-          store.setPilot({
-            health:    localPlayer.health,
-            maxHealth: localPlayer.maxHealth,
-            boost:     localPlayer.boostMeter,
-            kills:     localPlayer.kills,
-            deaths:    localPlayer.deaths,
-            carrying:  localPlayer.carriedFlag,
-          })
-
-          const primarySpec   = WEAPONS[localPlayer.loadout.primary]
-          const secondarySpec = WEAPONS[localPlayer.loadout.secondary]
-          store.setWeapons(
-            { id: primarySpec.id, cooldown: localPlayer.cooldown.primary / primarySpec.cooldown, needsLock: primarySpec.needsLock },
-            { id: secondarySpec.id, cooldown: localPlayer.cooldown.secondary / secondarySpec.cooldown, needsLock: secondarySpec.needsLock }
-          )
+          publishHud(server, snapshot)
 
           // Battle disables the default vehicle module, which is the only thing
           // that ever writes `telemetry.shake` — so the base `impact` module has
           // been idling since the mode was built. Drive the rig directly.
+          const events = transport.drainEvents()
           if (events.length) {
             const names = nameOf()
-            for (const e of events) {
-              store.applyEvent(e, names)
-              reactTo(e, rig)
-
-              const localSnapshot = {
-                scores:      snap.scores,
-                status:      snap.status,
-                playerCount: snap.players.length,
-                eventType:   e.type,
-              }
-
-              // Compute the authority's hash directly. Deriving it by calling
-              // `verifyActionHash` with an empty hash "worked", but that call
-              // console.warns on every mismatch — so every single event logged
-              // a verification failure that had not actually happened.
-              const mockServerAction: ServerAction = {
-                tick:    tickCount,
-                type:    e.type,
-                payload: e as Record<string, unknown>,
-                hash:    calculateActionHash(e.type, tickCount, e as Record<string, unknown>, localSnapshot),
-              }
-
-              const vResult = verifyActionHash(mockServerAction, localSnapshot)
-              store.setVerification({
-                tick:    vResult.tick,
-                hash:    vResult.serverHash,
-                matched: vResult.matched,
-              })
+            for (const event of events) {
+              store.applyEvent(event, names)
+              reactTo(event, rig)
             }
           }
-
-          store.setRoster(
-            sim.players.map(p => ({
-              id:     p.id,
-              name:   p.name,
-              team:   p.team,
-              isBot:  p.isBot,
-              kills:  p.kills,
-              deaths: p.deaths,
-            }))
-          )
-
-          store.setChrome({
-            status:      snap.status,
-            countdown:   snap.countdown,
-            timeLeft:    Math.round(snap.timeLeft),
-            scores:      snap.scores,
-            scoreTarget: sim.config.scoreTarget,
-            zones:       zoneViews(),
-            flags:       snap.flags.map(f => ({
-              team:      f.team,
-              state:     f.state,
-              carrierId: f.carrierId,
-            })),
-          })
         },
       })
 
@@ -530,75 +666,16 @@ export async function mountBattle (
 
       // Motion blur rides ground speed rather than the boost flag, so coasting
       // fast still streaks and tapping boost from a standstill does not.
-      const lv = localPlayer.chassis.linvel()
-      post.setSpeed(Math.hypot(lv.x, lv.z) / vehicleConfig.maxSpeed)
+      const lv = prediction?.rig.chassis.linvel()
+      post.setSpeed(lv ? Math.hypot(lv.x, lv.z) / vehicleConfig.maxSpeed : 0)
       scenery?.update(elapsed)
       blastPool.update(frame.delta)
 
-      // --- opponents ---
-      for (const p of sim.players) {
-        if (p.id === localPlayer.id)
-          continue
+      renderRemotes(elapsed)
 
-        const entry = ensureOpponent(p)
-        const t     = p.chassis.translation()
-        const q     = p.chassis.rotation()
-        _pose.set(t.x, t.y, t.z)
-        _quat.set(q.x, q.y, q.z, q.w)
-        entry.root.position.copy(_pose)
-        entry.root.quaternion.copy(_quat)
-        entry.nameplate.set(p.name, p.health, p.maxHealth, p.team, p.carriedFlag !== null)
-
-        // The caret only ever appears on the ONE ship the local player's lock
-        // is working on — a bracket on every enemy is wallpaper, not a target.
-        const lock    = localPlayer.lock
-        const tracked = lock.targetId === p.id && p.team !== localPlayer.team
-        entry.caret.setVisible(tracked && lock.phase !== 'idle')
-        if (tracked) {
-          entry.caret.group.position.set(t.x, t.y + 1.4, t.z)
-          entry.caret.group.updateMatrixWorld()
-          entry.caret.update(app.ctx.camera, lock.progress, lock.phase === 'locked', true, elapsed)
-        }
-      }
-
-      for (const id of [ ...opponents.keys() ])
-        if (!sim.players.some(p => p.id === id))
-          dropOpponent(id)
-
-      // --- objectives ---
-      for (const team of BATTLE_TEAMS) {
-        const visual = objectives[team]
-        const state  = sim.flags.find(f => f.team === team)
-        if (!visual || !state)
-          continue
-        visual.group.position.set(state.position[0], state.position[1], state.position[2])
-        visual.update(elapsed, state.state === 'carried')
-      }
-
-      // --- weapons ---
-      sim.beams.forEach((b, i) => {
-        const spec = WEAPONS[b.weapon]
-        // Fade over the beam's remaining life so a hit reads as a flash, not a
-        // rod that blinks out.
-        beamPool.show(i, { x: b.from[0], y: b.from[1], z: b.from[2] }, { x: b.to[0], y: b.to[1], z: b.to[2] },
-                      b.weapon, Math.max(0, Math.min(1, b.life / (spec.beamLife ?? 0.1))))
-      })
-      beamPool.hideFrom(sim.beams.length)
-
-      sim.missiles.forEach((m, i) => {
-        missilePool.show(i,
-                         { x: m.position[0], y: m.position[1], z: m.position[2] },
-                         { x: m.velocity[0], y: m.velocity[1], z: m.velocity[2] },
-                         m.weapon)
-      })
-      missilePool.hideFrom(sim.missiles.length)
-
-      // --- control points ---
-      zoneVisuals.forEach((visual, i) => {
-        const z = sim.zones[i]
-        if (z)
-          visual.update(z.owner, z.capturing, z.progress, z.contested, elapsed)
-      })
+      const snapshot = transport.latest()
+      if (snapshot)
+        renderWorld(snapshot, elapsed)
     },
 
     onDispose: () => {
@@ -615,49 +692,60 @@ export async function mountBattle (
       beamPool.dispose()
       missilePool.dispose()
       blastPool.dispose()
-      sim.dispose()
+      transport.close()
     },
   })
 
-  // Dev-only handle on the sim itself.
+  // Dev-only handle on the match.
   //
   // The generic `window.__dev` harness speaks vehicle-and-track; nothing in it
-  // can place an enemy, read a lock meter or confirm a beam was drawn. Named
+  // can read a lock meter, confirm a beam was drawn, or move an enemy. Named
   // with the `__dev` prefix on purpose so the post-build leak grep
   // (`grep -r "__dev" .next/static`) catches this too if the guard ever breaks.
+  //
+  // `place` and `face` used to reach into a local sim. There is no local sim
+  // any more, so they are requests to the authority — which ignores them unless
+  // it was started with `DEV_COMMANDS=1`.
   if (process.env.NODE_ENV !== 'production')
     (window as unknown as Record<string, unknown>).__devBattle = {
-      probe: () => ({
-        status:   sim.status,
-        scores:   sim.scores,
-        lock:     { ...localPlayer.lock },
-        beams:    sim.beams.length,
-        missiles: sim.missiles.length,
-        players:  sim.players.map(p => {
-          const t = p.chassis.translation()
-          return { id: p.id, team: p.team, hp: p.health, x: Math.round(t.x), y: Math.round(t.y), z: Math.round(t.z) }
-        }),
-        zones: sim.zones.map(z => ({ id: z.def.id, owner: z.owner, progress: Math.round(z.progress * 100) / 100 })),
-      }),
+      probe: () => {
+        const snapshot = transport.latest()
+        const server   = transport.localState()
+        return {
+          connected: transport.localId() !== null,
+          net:       transport.stats(),
+          status:    snapshot?.status ?? 'offline',
+          scores:    snapshot?.scores ?? { red: 0, blue: 0 },
+          lock:      server ? { phase: server.lockPhase, targetId: server.lockTarget, progress: server.lockMeter } : null,
+          beams:     snapshot?.beams.length ?? 0,
+          missiles:  snapshot?.missiles.length ?? 0,
+          players:   (snapshot?.players ?? []).map(p => ({
+            id:   p.id,
+            team: p.team,
+            hp:   p.health,
+            x:    Math.round(p.x),
+            y:    Math.round(p.y),
+            z:    Math.round(p.z),
+          })),
+          zones: (snapshot?.zones ?? []).map(z => ({
+            id:       z.id,
+            owner:    z.owner,
+            progress: Math.round(z.progress * 100) / 100,
+          })),
+        }
+      },
 
-      /** Drop an enemy at a spot, facing the local player. Returns its id. */
-      place: (id: string, x: number, y: number, z: number) => {
-        const target = sim.getPlayer(id) ?? sim.players.find(p => p.team !== localPlayer.team)
-        if (!target)
-          return null
-        target.chassis.setTranslation({ x, y, z }, true)
-        target.chassis.setLinvel({ x: 0, y: 0, z: 0 }, true)
-        target.chassis.setAngvel({ x: 0, y: 0, z: 0 }, true)
-        return target.id
+      // Drop an enemy at a spot. Returns the id asked for, not a confirmation:
+      //  the move lands on the server and arrives back in a later snapshot.
+      place: (id: string | null, x: number, y: number, z: number) => {
+        transport.sendDev({ cmd: 'place', id: id ?? undefined, x, y, z })
+        return id
       },
 
       /** Aim the local ship at a world point, so a lock can be driven from a script. */
       face: (x: number, z: number) => {
-        const t   = localPlayer.chassis.translation()
-        const yaw = Math.atan2(x - t.x, z - t.z)
-        localPlayer.chassis.setRotation({ x: 0, y: Math.sin(yaw / 2), z: 0, w: Math.cos(yaw / 2) }, true)
-        localPlayer.chassis.setAngvel({ x: 0, y: 0, z: 0 }, true)
-        return yaw
+        transport.sendDev({ cmd: 'face', x, z })
+        return Math.atan2(x, z)
       },
     }
 

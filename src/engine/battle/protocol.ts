@@ -37,6 +37,16 @@ export type Tick = number
 
 export type PlayerId = string
 
+/**
+ * One ship as it appears in a snapshot.
+ *
+ * Named here rather than re-derived at each use site: prediction, the
+ * interpolators and the HUD all read the same record, and an inline
+ * `BattleSnapshot['players'][number]` in three files is three places to miss
+ * when a field is added.
+ */
+export type SnapshotPlayer = BattleSnapshot['players'][number]
+
 // ---------------------------------------------------------------- validators
 
 /**

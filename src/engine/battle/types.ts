@@ -168,6 +168,16 @@ export type BattleSnapshot = {
     lockMeter:   number;
 
     /**
+     * Vertical aim trim, radians.
+     *
+     * Authoritative because the sim integrates it from the input stream rather
+     * than assigning it — so a client that predicts the trim locally (it must,
+     * or the reticle waits a round trip to move) has something to correct
+     * against, and remote ships aim where the server says they do.
+     */
+    aimAngle: number;
+
+    /**
      * Bumped by every respawn. The client watches it to tell a teleport apart
      * from movement: a kill relocates the chassis across the arena, and an
      * interpolator blended across that draws a ship streaking through the

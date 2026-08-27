@@ -65,7 +65,9 @@ export const NEUTRAL_INPUT: BattleInput = {
 }
 
 /** Vertical aim travel, radians/sec, and its clamp. */
-const AIM_RATE = 0.62
+// Radians per second the vertical trim wheel travels while held. Exported so
+//  the client can predict the same trim rather than wait a round trip for it.
+export const AIM_RATE = 0.62
 
 export const AIM_MAX = 0.35
 
@@ -1179,6 +1181,7 @@ export class BattleSim {
           lockPhase:    p.lock.phase,
           lockTarget:   p.lock.targetId,
           lockMeter:    p.lock.progress,
+          aimAngle:     p.aimAngle,
           respawnIndex: p.respawnIndex,
         }
       }),

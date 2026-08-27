@@ -461,7 +461,14 @@ function drawBattlePanels (panels: Record<HudPanelKey, HudPanel>, data: BattleHu
         : battle.status.toUpperCase()
   topCenter.text({ x: 320, y: 92, size: 18, align: 'center', color: '#dfeaff', value: status })
   drawAttitudeScale(topCenter, frame.aimPitch, roll)
-  topCenter.text({ x: 36, y: 278, size: 13, alpha: 0.55, value: `TURN ${signedPercent(frame.steer)} · STRAFE ${signedPercent(frame.strafe)} · NET ${battle.hashMatchStatus.toUpperCase()} ${battle.verifiedTicks}` })
+
+  // NET reads real connection health now. It used to show a hash-match tally
+  // from a verifier that compared the local sim against a hash the local sim
+  // had just produced — it was pinned to OK by construction.
+  const net = battle.net.synced
+    ? `${battle.net.rttMs}ms ±${battle.net.jitterMs}`
+    : 'SYNCING'
+  topCenter.text({ x: 36, y: 278, size: 13, alpha: 0.55, value: `TURN ${signedPercent(frame.steer)} · STRAFE ${signedPercent(frame.strafe)} · NET ${net}` })
   topCenter.button({ id: 'battle-attitude-view', x: 500, y: 254, width: 108, height: 38, label: frame.cameraBlend > 0.5 ? 'cockpit' : 'chase', action: 'view', active: frame.cameraBlend > 0.5, size: 13 })
   topCenter.finish(frame.elapsed)
 
