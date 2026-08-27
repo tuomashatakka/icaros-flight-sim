@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "plugins":         [],
+    "types":           [ "bun" ],
+    "noEmit":          true,
+    "resolveJsonModule": true,
+    "paths": {
+      "Δ*":  [ "../../src/*" ],
+      "@/*": [ "../../src/*" ]
+    }
+  },
+  "include": [ "src/**/*.ts", "test/**/*.ts" ],
+  "exclude": [ "node_modules" ]
+}
