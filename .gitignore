@@ -2,6 +2,9 @@
 
 # dependencies
 /node_modules
+# Workspaces get their own hoisted installs; the root rule is anchored and
+# would not catch them.
+node_modules/
 /.pnp
 .pnp.*
 .yarn/*

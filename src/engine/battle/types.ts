@@ -166,6 +166,15 @@ export type BattleSnapshot = {
     lockPhase:   LockPhase;
     lockTarget:  string | null;
     lockMeter:   number;
+
+    /**
+     * Bumped by every respawn. The client watches it to tell a teleport apart
+     * from movement: a kill relocates the chassis across the arena, and an
+     * interpolator blended across that draws a ship streaking through the
+     * level. Carried in the snapshot rather than inferred from the `kill`
+     * event so a dropped event cannot cause the smear.
+     */
+    respawnIndex: number;
   }>;
   zones: Array<{ id: string; owner: BattleTeam | null; progress: number; capturing: BattleTeam | null; contested: boolean }>;
   flags: Array<{
