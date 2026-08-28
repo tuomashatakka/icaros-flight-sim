@@ -526,9 +526,9 @@ export async function mountBattle (
       })
 
       prediction = new LocalPrediction({
-        chassis:    local.chassis,
-        controller: local.controller,
-        state:      createHovercraftState(),
+        chassis: local.chassis,
+        world:   physics.world,
+        state:   createHovercraftState(),
       })
 
       const localInterpolator = new BodyInterpolator(local.chassis)
@@ -541,11 +541,8 @@ export async function mountBattle (
         get interpolator () {
           return localInterpolator
         },
-        get controller () {
-          return local.controller
-        },
         get debug () {
-          return null
+          return prediction?.debug ?? null
         },
         teleportTo (transform, liftY = 1) {
           local.chassis.setTranslation({ x: transform.position[0], y: transform.position[1] + liftY, z: transform.position[2] }, true)
@@ -607,9 +604,8 @@ export async function mountBattle (
           telemetry.speed      = Math.hypot(velocity.x, velocity.z)
           telemetry.boostMeter = prediction?.boost ?? 1
           telemetry.boosting   = controls.boost
-          telemetry.grounded   = false
-          for (let index = 0; index < local.controller.numWheels(); index++)
-            telemetry.grounded ||= local.controller.wheelIsInContact(index)
+          telemetry.grounded   = prediction?.grounded ?? false
+          telemetry.airbrake   = prediction?.airbrake ?? 0
 
           const snapshot = transport.latest()
           const store    = useBattleStore.getState()

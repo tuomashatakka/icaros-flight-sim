@@ -6,10 +6,11 @@ import { subscribeWithSelector } from 'zustand/middleware'
 
 export type RaceStatus = 'idle' | 'countdown' | 'racing' | 'finished'
 
-export type Transform = {
-  position:   [number, number, number];
-  quaternion: [number, number, number, number];
-}
+// Defined in the sim layer — the physics owns the pose type, and it must not
+// import a zustand store to get at it. Re-exported for the existing call sites.
+export type { Transform } from 'Δengine/sim/types'
+import type { Transform } from 'Δengine/sim/types'
+
 
 type RaceConfig = {
   checkpointCount: number;

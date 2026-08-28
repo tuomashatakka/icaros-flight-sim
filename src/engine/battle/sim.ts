@@ -330,7 +330,6 @@ export class BattleSim {
       health:       100,
       maxHealth:    100,
       chassis:      rig.chassis,
-      controller:   rig.controller,
       sim:          createHovercraftState(),
       controls:     { ...NEUTRAL_INPUT },
       boostMeter:   1,
@@ -348,7 +347,6 @@ export class BattleSim {
   }
 
   private deleteShell (player: BattlePlayer): void {
-    this.physics.world.removeVehicleController(player.controller)
     this.physics.world.removeRigidBody(player.chassis)
   }
 
@@ -433,7 +431,7 @@ export class BattleSim {
 
       const stepOut  = stepHovercraft({
         chassis:     player.chassis,
-        controller:  player.controller,
+        world:       this.physics.world,
         input:       controls,
         tuning:      DEFAULT_TUNING,
         state:       player.sim,

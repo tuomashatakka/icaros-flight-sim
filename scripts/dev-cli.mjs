@@ -189,8 +189,10 @@ function buildUrl (args, extra = {}) {
     query.set(key, String(value))
 
   const search = query.toString()
-  // `--level battle` targets the arena route, which is not under /levels.
-  const path   = level === 'battle' ? '/battle' : `/levels/${level}`
+  // Two routes live outside /levels: the arena, and the crash lab.
+  const path = level === 'battle'
+    ? '/battle'
+    : level === 'crash-lab' ? '/crash-lab' : `/levels/${level}`
   return `${ORIGIN}${path}${search ? `?${search}` : ''}`
 }
 
@@ -235,7 +237,13 @@ async function withPage (args, fn, { urlExtra = {}} = {}) {
 
   try {
     await page.goto(buildUrl(args, urlExtra), { waitUntil: 'domcontentloaded' })
-    await page.waitForFunction(() => window.__dev?.ready === true, null, { timeout: READY_TIMEOUT })
+
+    // The crash lab is not the race scene and has no `__dev` harness — it runs
+    // eight headless worlds before it can draw anything, so it signals its own.
+    const readyProbe = args.level === 'crash-lab'
+      ? () => window.__crashLab?.ready === true
+      : () => window.__dev?.ready === true
+    await page.waitForFunction(readyProbe, null, { timeout: READY_TIMEOUT })
       .catch(async () => {
         // A ready timeout is nearly always a mount failure, and the console is
         // where the reason is. Surfacing it here saves an entire second run.
@@ -320,6 +328,19 @@ const commands = {
     await mkdir(dirname(path), { recursive: true })
 
     const probe = await withPage(args, async page => {
+      // The crash lab has no `__dev`: it is playback, not a live sim, so
+      // "freeze and step" is `--step` frames into a recorded trace. Everything
+      // below that drives the vehicle harness is skipped for it.
+      const isLab = args.level === 'crash-lab'
+      if (isLab) {
+        await page.evaluate(
+          n => window.__crashLab?.setFrame?.(n),
+          Number(args.step ?? 0)
+        )
+        await page.screenshot({ path, animations: 'disabled' })
+        return { lab: true, frame: Number(args.step ?? 0) }
+      }
+
       // Freeze first, then advance a known number of ticks. Two runs of the same
       // command land on the same tick with the same seed, so the images are
       // comparable — an unpaused screenshot is at the mercy of frame timing.
@@ -353,7 +374,10 @@ const commands = {
       return result
     }, { urlExtra: args.nohud ? {} : {}})
 
-    out({ path, tick: probe.sim.tick, ship: probe.ship, overlay: probe.overlay })
+    // The lab returns its own shape — it has no ship and no overlay flags.
+    out(probe.lab
+      ? { path, frame: probe.frame, lab: true }
+      : { path, tick: probe.sim.tick, ship: probe.ship, overlay: probe.overlay })
   },
 
   async console (args) {

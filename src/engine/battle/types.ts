@@ -50,7 +50,6 @@ export type BattlePlayer = {
   health:     number;
   maxHealth:  number;
   chassis:    import('@dimforge/rapier3d-compat').RigidBody;
-  controller: import('@dimforge/rapier3d-compat').DynamicRayCastVehicleController;
   sim:        import('../sim/vehicle-step').HovercraftState;
   controls:   BattleInput;
   boostMeter: number;

@@ -14,11 +14,14 @@ the game is doing. `scripts/dev-cli.mjs` boots it, drives the in-page
 ```bash
 bun run dev:probe --level flats             # full state snapshot
 bun run dev:scenario straight-line          # deterministic scripted run + summary
-bun run dev:shot /tmp/a.png --step 300 --overlay colliders,wheels
+bun run dev:shot /tmp/a.png --step 300 --overlay colliders,forces
 bun run dev:shot /tmp/b.png --level battle --at 0,3,-190
 bun run dev:console --seconds 5             # errors, frame times, WebGL state
 bun run dev:eval -e '__dev.probe().ship.up'
 bun run dev:replay point-blank              # battle determinism, no browser
+bun run lab                                 # crash dummies, pass/fail per check
+bun run lab wall-slam --dump                # one case, full trace to data/
+bun run dev:shot /tmp/l.png --level crash-lab --query lane=2
 ```
 
 `--level battle` drives `/battle`; `--at x,y,z[,yaw]` teleports before framing.
@@ -41,6 +44,14 @@ what a summary field means. Invoke it when debugging runtime behaviour.
 - **bun, not npm.** Never create `package-lock.json`.
 - **`postProcessing` must stay last** in `race.ts`'s module array.
 - **After moving a body, call `interpolator.teleport()`** or it smears.
+- **All ship motion is `addForceAtPoint`.** No `setLinvel`/`setAngvel` for
+  control — see the thruster-rig rules in AGENTS.md. Forces must be applied
+  before `world.step()`, so `vehicle` precedes `physics-step`.
+- **`src/engine/sim/` is a leaf.** It may import `three` and `rapier` and
+  nothing else in this repo. Adding an app import there is the regression.
+- **The crash lab plays traces back, it does not simulate.** See AGENTS.md.
+- **Physics debug layers are ON by default in dev**, with number keys 1-9 to
+  toggle and 0 to clear. `?overlay=` (even empty) overrides the default.
 - **Adding persistent sim state?** Reset it in `runScenario`
   (`src/engine/dev/scenario.ts`) or scenarios silently stop being reproducible.
   Battle's equivalent is `packages/server/src/dev/replay.ts`, which builds a

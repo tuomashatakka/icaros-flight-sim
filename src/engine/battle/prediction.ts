@@ -27,6 +27,10 @@
 import { Vector3 } from 'three'
 import { STEP } from '../clock'
 import { stepHovercraft } from '../sim/vehicle-step'
+import type { VehicleDebug } from '../modules/vehicle'
+
+
+const COLLECT_FORCES = process.env.NODE_ENV !== 'production'
 import { vehicleConfig } from 'Δlib/utils'
 import { DEFAULT_TUNING } from '../state'
 import { AIM_MAX, AIM_RATE } from './sim'
@@ -56,9 +60,9 @@ const SMOOTH_HALF_LIFE = 0.055
 const AIM_EPSILON = 0.02
 
 export type PredictionRig = {
-  chassis:    RAPIER.RigidBody;
-  controller: RAPIER.DynamicRayCastVehicleController;
-  state:      HovercraftState;
+  chassis: RAPIER.RigidBody;
+  world:   RAPIER.World;
+  state:   HovercraftState;
 }
 
 export type PredictionResult = {
@@ -82,6 +86,9 @@ export class LocalPrediction {
   private readonly offset = new Vector3()
 
   private boostMeter = 1
+  private groundedNow = false
+  private airbrakeNow = 0
+  private debugNow:    VehicleDebug | null = null
   private aimAngle = 0
   private lastResetSeq = 0
   private respawnSeen: number | null = null
@@ -92,6 +99,33 @@ export class LocalPrediction {
 
   get boost (): number {
     return this.boostMeter
+  }
+
+  /**
+   * Hover-pad contact from the last predicted step.
+   *
+   * Read off the step result rather than probed off the body, because there is
+   * no vehicle controller to ask any more — the four hover rays are cast inside
+   * `stepHovercraft` and nothing else re-casts them.
+   */
+  get grounded (): boolean {
+    return this.groundedNow
+  }
+
+  /** Air-brake deployment 0..1, for the wing panels. */
+  get airbrake (): number {
+    return this.airbrakeNow
+  }
+
+  /**
+   * The same debug payload the race scene publishes, off the predicted step.
+   *
+   * Battle draws the identical force overlay as race — the local ship really is
+   * running the same `stepHovercraft`, so there is no reason for the two modes
+   * to disagree about what a debug layer shows.
+   */
+  get debug (): VehicleDebug | null {
+    return this.debugNow
   }
 
   /** Predicted vertical trim, normalised to −1..1 for the HUD and the hull. */
@@ -121,20 +155,36 @@ export class LocalPrediction {
       this.aimAngle = Math.max(-AIM_MAX, Math.min(AIM_MAX, this.aimAngle + input.aimPitch * AIM_RATE * STEP))
 
     const out = stepHovercraft({
-      chassis:     this.rig.chassis,
-      controller:  this.rig.controller,
+      chassis:       this.rig.chassis,
+      world:         this.rig.world,
       input,
-      tuning:      DEFAULT_TUNING,
-      state:       this.rig.state,
-      dt:          STEP,
+      tuning:        DEFAULT_TUNING,
+      state:         this.rig.state,
+      dt:            STEP,
       allowDrive,
       spawn,
       resetRequested,
-      boostMeter:  this.boostMeter,
-      targetSpeed: vehicleConfig.maxSpeed,
+      boostMeter:    this.boostMeter,
+      targetSpeed:   vehicleConfig.maxSpeed,
+      collectForces: COLLECT_FORCES,
     })
 
-    this.boostMeter = out.boostMeter
+    this.boostMeter  = out.boostMeter
+    this.groundedNow = out.grounded
+    this.airbrakeNow = out.airbrake
+    this.debugNow    = COLLECT_FORCES
+      ? {
+        racing:       allowDrive,
+        engineForce:  out.engineForce,
+        currentSpeed: out.speed,
+        targetSpeed:  vehicleConfig.maxSpeed,
+        contacts:     out.contacts,
+        dt:           STEP,
+        forces:       out.forces,
+        netForce:     out.netForce,
+        netTorque:    out.netTorque,
+      }
+      : null
   }
 
   /**

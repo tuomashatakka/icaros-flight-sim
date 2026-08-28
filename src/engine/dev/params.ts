@@ -15,7 +15,9 @@ import type { OverlayFlags } from './types'
  *   ?seed=7                    override the scene seed
  *   ?paused=1                  boot with the sim frozen (deterministic shots)
  *   ?tuning=<base64 json>      apply a partial ShipTuning before the first tick
- *   ?overlay=colliders,wheels  enable debug overlays on boot
+ *   ?overlay=colliders,forces  enable debug overlays on boot (physics layers
+ *                              default ON in dev; an explicit ?overlay= wins,
+ *                              including an empty one)
  *   ?nohud=1                   hide the canvas HUD (clean screenshots)
  *   ?scenario=<name>           run a bundled scenario on boot
  */
@@ -26,6 +28,15 @@ export type DevParams = {
   overlay:  OverlayFlags;
   nohud:    boolean;
   scenario: string | null;
+
+  /**
+   * Whether `?overlay=` was present at all, distinct from it being empty.
+   *
+   * Dev turns the physics layers on by default, so "no parameter" and
+   * "parameter listing nothing" have to mean different things — otherwise there
+   * is no way to ask for a clean frame.
+   */
+  overlayExplicit: boolean;
 }
 
 const EMPTY: DevParams = {
@@ -35,9 +46,14 @@ const EMPTY: DevParams = {
   overlay:  {},
   nohud:    false,
   scenario: null,
+
+  overlayExplicit: false,
 }
 
-const OVERLAY_KEYS = [ 'colliders', 'wheels', 'contacts', 'path', 'frustum' ] as const
+const OVERLAY_KEYS = [
+  'colliders', 'contacts', 'path', 'frustum',
+  'rays', 'forces', 'netForce', 'thrusters', 'com', 'velocity', 'inertia',
+] as const
 
 /**
  * Parse a partial tuning object out of a base64 blob.
@@ -87,5 +103,7 @@ export function readDevParams (search = typeof window === 'undefined' ? '' : win
     overlay,
     nohud:    query.get('nohud') === '1',
     scenario: query.get('scenario'),
+
+    overlayExplicit: query.has('overlay'),
   }
 }

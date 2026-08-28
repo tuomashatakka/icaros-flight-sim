@@ -2,26 +2,12 @@ import type { RaceStatus } from '@/hooks/use-race-store'
 import type { ShipConfig } from '@/lib/ship/registry'
 import { vehicleConfig } from '@/lib/utils'
 
-/** The 7 params the Leva panel used to live-override each step. */
-export type ShipTuning = {
-  hoverHeight:         number;
-  suspensionStiffness: number;
-  sideGrip:            number;
-  thrust:              number;
-  maxYawRate:          number;
-  maxBank:             number;
-  uprightStrength:     number;
-}
-
-export const DEFAULT_TUNING: ShipTuning = {
-  hoverHeight:         vehicleConfig.hoverHeight,
-  suspensionStiffness: vehicleConfig.suspensionStiffness,
-  sideGrip:            vehicleConfig.sideGrip,
-  thrust:              vehicleConfig.thrust,
-  maxYawRate:          vehicleConfig.maxYawRate,
-  maxBank:             vehicleConfig.maxBank,
-  uprightStrength:     vehicleConfig.uprightStrength,
-}
+// Defined in the sim layer and re-exported here. The physics may not import
+// app code, and `ShipTuning` is a physics input, so it belongs down there.
+export { DEFAULT_TUNING } from './sim/types'
+export type { ShipTuning } from './sim/types'
+import { DEFAULT_TUNING } from './sim/types'
+import type { ShipTuning } from './sim/types'
 
 /**
  * App state for the race scene.

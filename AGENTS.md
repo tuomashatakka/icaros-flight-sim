@@ -69,7 +69,34 @@ ignores them without that flag.
 ```bash
 bun run dev:replay point-blank        # headless match replay, twice, hashes compared
 bun run dev:replay straight-fight --json
+
+bun run lab                           # every crash dummy, pass/fail per check
+bun run lab wall-slam --dump          # one case, full trace to data/crash-lab/
+bun run test:lab                      # all of them, twice, hashes compared
 ```
+
+### The crash lab
+
+Eight atomic physics cases, each in its own lane: a wall slam under boost, a
+figure eight, a ramp jump, station keeping on a slope, brake-into-reverse, a
+strafe off a ledge, a turbine-blown tube, and a stack of crates to shoulder
+through. They live in `src/engine/sim/lab/`.
+
+**One definition, two consumers.** `cases.ts` is pure data — geometry, spawn,
+input timeline, and the checks — with no rapier, no rendering and no test
+framework in it. `run.ts` runs a case headless and records EVERY tick, not a
+sample. `test/crash-dummies.test.ts` turns the checks into assertions;
+`/crash-lab` renders the same traces. If the watchable thing and the green thing
+could disagree about what a case is, neither is worth much.
+
+**The visual lab plays traces back, it does not simulate.** That is what makes
+the scrubber exact, stepping BACKWARDS possible at all, and the arrows you pause
+on the same forces the assertions ran against. `?lane=N` follows one dummy
+close enough to read them.
+
+A case that drives off the end of its deck respawns, which silently invalidates
+every check after it — if a lane starts failing for no reason, check its floor
+is still longer than the run.
 
 `dev:replay` is battle's determinism check and has no browser in it at all. See
 below.
@@ -161,12 +188,43 @@ deterministic, and survives the netcode. In battle it feeds `BattleSim.aimOf`,
 which is what lock acquisition and both weapons aim along; `forwardOf` stays the
 true hull facing and is what the muzzle position uses.
 
+**The ship is a thruster rig, not a vehicle controller.** Every control is a
+force applied at a point on the hull — `src/engine/sim/thrusters.ts` is the
+hardware, `vehicle-step.ts` decides each nozzle's throttle and applies
+`addForceAtPoint`. Nothing sets a velocity or an angular velocity to make the
+ship move; the only pose mutation left is a teleport. It used to be a rapier
+`DynamicRayCastVehicleController` with `setLinvel` for strafe and `setAngvel`
+for yaw AND upright, which meant no coupling between anything and no momentum
+doing work.
+
+**The rig's geometry IS the handling model.** A lateral nozzle sits aft of and
+above the COM, so a strafe cannot happen without also yawing the nose into it,
+banking into it, and dipping the nose — all three fall out of `tau = r x F`.
+There is no downstream code adding those effects, so moving a mount point
+changes how the ship drives and nothing else will notice.
+`test/thrusters.test.ts` pins the signs; change a position and read what it says.
+
 **Handling authority lives in shared physics.** Race and battle both call
-`stepHovercraft`, so turn/strafe feel belongs in `vehicleConfig` and
-`vehicle-step.ts`, never in one input path. The calmer baseline is 1.45 rad/s
-ground yaw with a 0.5 high-speed scale, plus a 0.14 strafe-speed scale and 8.0
-response. Verify changes with the `turn-response` and `strafe-response`
-scenarios; do not tune keyboard, pointer, and touch independently.
+`stepHovercraft`, so turn/strafe feel belongs in `vehicleConfig`,
+`thrusters.ts` and `vehicle-step.ts`, never in one input path. Verify changes
+with the `turn-response` and `strafe-response` scenarios and `bun run
+test:physics`; do not tune keyboard, pointer, and touch independently.
+
+**Forces must accumulate before `world.step()`**, so the `vehicle` module has to
+precede `physics-step` in the module array. This is the same class of ordering
+constraint as `postProcessing` being last, and it fails the same way: silently,
+with the ship simply not responding.
+
+**Hover rays must exclude sensors.** Checkpoint gates are eight-metre sensor
+cuboids sitting on the racing line, and rapier includes sensors in ray casts by
+default. Without `QueryFilterFlags.EXCLUDE_SENSORS` the pads find "ground" at the
+top of every gate and fire at full force.
+
+**Downforce is load-bearing.** A hover pad can only push UP, so once the ship
+crests a rise and the pads run out of reach there is no force available to put
+it back on the track — it ramps off every undulation and keeps going. The `v^2`
+downforce term in `DRAG`/`DOWNFORCE` is what plants it. Removing it looks like
+tidying and turns the track into a launch ramp.
 
 **Touch is a third path onto the same `Controls` object.** The standalone spatial
 HUD (`src/engine/hud/`) draws twin sticks and action buttons into its screen
@@ -200,13 +258,40 @@ Rendering samples `BodyInterpolator.sample(clock.alpha(), …)` — never the ra
 body, or poses stair-step above 60 Hz. After any `setTranslation`/`setRotation`,
 call `interpolator.teleport()` or the ship visibly smears to the new pose.
 
-**Colliders must be cuboids.** Track collision is box strips
-(`src/engine/physics/colliders.ts`), not a trimesh — the ship falls through a
-trimesh at speed.
+**Station keeping is throttle AND brake together.** Holding both is not a
+contradiction — mains lit, air brakes out, the difference trimmed to hold
+position — and it is how you park an airframe with no wheels. The trim band is
+deliberately tight: proportional control against a steady disturbance leaves a
+standing error, and a wide band on a slope becomes a slow permanent creep.
 
-**The upright control is not cosmetic.** The surface-alignment `setAngvel` in
-`src/engine/modules/vehicle.ts` is what keeps thrust from torquing the ship onto
-its back. Removing it looks harmless and is not.
+**Anything outside the ship pushes it through `externalForce`.** Wind, turbine
+wash, a blast. It is applied at the COM and recorded as a `'wind'` force sample
+so the debug arrows can see it — a force the overlay cannot draw is a force that
+defeats the point of the overlay. It must be a pure function of tick and pose
+upstream or determinism goes with it.
+
+**Colliders must be cuboids.** Track collision is box strips
+(`src/engine/physics/colliders.ts`), not a trimesh.
+
+**And a strip box is sunk by its own half-thickness**, so its TOP face is flush
+with the ribbon the mesh draws (`boxColliderFromRing`). Centring it on the
+surface instead — which it did — floats the drivable plane half a thickness
+above the visible road, and because the offset follows the segment's local up,
+on a banked corner it drifts sideways too. The route you drove was not the route
+you saw. `flats.ts` hand-authors the same shift for its ground slab; anything
+new that emits a collider owes the surface the same courtesy.
+
+**A collider with no mesh is a bug, not a shortcut.** The flats deck had four
+invisible perimeter walls for a long time. Levels now build the fence mesh FROM
+the wall collider list, the way `arena.ts` builds its ramps from
+`plateauColliders`, so the two cannot drift.
+
+**The upright control is not cosmetic** — it is now a PD controller allocated
+across the four hover pads as differential lift, and airborne as an attitude
+couple. It is still what keeps thrust from putting the ship on its back. It
+cannot go back to being a `setAngvel`: overwriting angular velocity means no
+other torque on the hull can do anything, which is what made every other force
+decorative.
 
 **Yaw sign lives in the vehicle.** `steer` is negated exactly once, in
 `vehicle.ts`. +Y rotation is a LEFT turn.
@@ -280,7 +365,8 @@ preprocessor. Tailwind was removed on purpose.
 ## Layout
 
 ```
-src/app/          Next routes. /levels/[level], /hangar, /lobby, /battle.
+src/app/          Next routes. /levels/[level], /hangar, /lobby, /battle,
+                  /crash-lab.
 src/components/   React. scene-canvas.tsx is the ONLY React↔three boundary.
 src/engine/       The game. Vanilla three + threejs-scene, no React.
   scenes/         Composition roots (mountRace, mountHangar, mountBattle).
@@ -292,6 +378,14 @@ src/engine/       The game. Vanilla three + threejs-scene, no React.
   hud/            Continuous visor GUI: live facets, overlays, hit testing, touch.
   levels/         The four tracks, as LevelSpec data.
   physics/        Rapier world + collider helpers.
+  sim/            The physics itself, and the crash lab. A LEAF: it imports
+                  `three` and `rapier` and nothing else in this repo, so it can
+                  lift into its own package without a rewrite. `config.ts` owns
+                  `vehicleConfig` and `types.ts` owns `Transform`/`ShipTuning`;
+                  `@/lib/utils` and `engine/state.ts` re-export them for the
+                  call sites that already point there. Do not import app code
+                  from in here — the sim used to reach into a zustand store for
+                  a four-line type, and that one edge was the whole problem.
 src/hooks/        zustand stores.
 src/lib/net/      Browser-side account and lobby clients.
 public/scenarios/ Race scenario scripts for the CLI and ?scenario=.

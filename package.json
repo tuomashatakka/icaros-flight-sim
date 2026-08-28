@@ -13,7 +13,7 @@
     "lint": "eslint src packages scripts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p packages/server",
     "test": "vitest run && bun test packages/server/test-bun",
-    "test:physics": "node test/vehicle-physics.mjs",
+    "test:physics": "bun test/vehicle-physics.ts",
     "dev:cli": "node scripts/dev-cli.mjs",
     "dev:probe": "node scripts/dev-cli.mjs probe",
     "dev:scenario": "node scripts/dev-cli.mjs scenario",
@@ -22,7 +22,9 @@
     "dev:eval": "node scripts/dev-cli.mjs eval",
     "dev:server": "bun --watch packages/server/src/index.ts",
     "dev:all": "node scripts/dev-all.mjs",
-    "dev:replay": "bun packages/server/src/dev/replay-cli.ts"
+    "dev:replay": "bun packages/server/src/dev/replay-cli.ts",
+    "lab": "bun scripts/crash-lab.ts",
+    "test:lab": "bun scripts/crash-lab.ts --twice"
   },
   "dependencies": {
     "@dimforge/rapier3d-compat": "0.19.2",

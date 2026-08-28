@@ -11,10 +11,12 @@ const _quat  = new THREE.Quaternion()
 /**
  * Attach a strip of oriented boxes to one fixed body.
  *
- * The drivable surface is hundreds of thin cuboids rather than a trimesh
- * because rapier's raycast-vehicle wheels collide with cuboids but not
- * trimeshes — see the note in `build-track.ts`. There is deliberately no
- * trimesh path here.
+ * The drivable surface is hundreds of thin cuboids rather than a trimesh. It
+ * began as a workaround — rapier's raycast-vehicle wheels did not collide with
+ * trimeshes — and survives the move to hover rays for a different reason: a ray
+ * against a box returns one clean face normal, where a trimesh returns
+ * per-triangle normals that make the hull twitch at every seam. There is
+ * deliberately no trimesh path here.
  *
  * @param offset - World offset applied to the whole strip (the old fixed
  * RigidBody's position).

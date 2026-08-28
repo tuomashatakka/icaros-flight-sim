@@ -46,6 +46,7 @@ export function MainMenu () {
         <Link href="/hangar" className={ styles.hangarLink }>⚙ Enter the Hangar</Link>
         <Link href="/lobby" className={ styles.battleLink }>⚔ Join a Battle</Link>
         <Link href="/editor" className={ styles.editorLink }>⌑ Open Map Forge</Link>
+        <Link href="/crash-lab" className={ styles.labLink }>◈ Run the Crash Lab</Link>
       </nav>
     </div>
   </main>

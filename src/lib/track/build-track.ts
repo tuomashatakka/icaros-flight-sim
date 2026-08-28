@@ -53,7 +53,7 @@ export function boxColliderFromRing (
   R0: THREE.Vector3,
   L1: THREE.Vector3,
   R1: THREE.Vector3,
-  thickness = 0.5,
+  halfThickness = 0.25,
   maxLen = Infinity
 ): BoxCollider | null {
   const mid0       = L0.clone().add(R0)
@@ -75,33 +75,45 @@ export function boxColliderFromRing (
   const up    = right.clone().cross(forward)
     .normalize()
 
-  const basis  = new THREE.Matrix4().makeBasis(right, up, forward)
-  const euler  = new THREE.Euler().setFromRotationMatrix(basis)
+  const basis = new THREE.Matrix4().makeBasis(right, up, forward)
+  const euler = new THREE.Euler().setFromRotationMatrix(basis)
+
+  // Sunk by its own half-thickness along the segment's local up, so the box's
+  // TOP face lands flush on the ribbon the mesh draws. Centring it on the
+  // surface instead floats the drivable plane a half-thickness ABOVE the
+  // visible road; and because this up is `right x forward`, not world up, on a
+  // banked corner that offset tilts with the bank, so the route you drive
+  // drifts sideways off the route you see. `flats.ts` hand-authors the same
+  // -half-extent shift for its ground slab; the generated path did not.
   const center = mid0.clone().add(mid1)
     .multiplyScalar(0.5)
+    .addScaledVector(up, -halfThickness)
 
   return {
     position: [ center.x, center.y, center.z ],
     rotation: [ euler.x, euler.y, euler.z ],
-    args:     [ halfWidth, thickness, len * 0.5 ],
+    args:     [ halfWidth, halfThickness, len * 0.5 ],
   }
 }
 
 /**
  * Walks a ribbon's [L0,R0,L1,R1,…] vertex strip and emits one thin oriented box
- * collider per segment. rapier's raycast-vehicle wheels collide with cuboids but
- * NOT trimeshes in this version, so the drivable surface is built from boxes.
+ * collider per segment. The drivable surface is boxes rather than a trimesh: the
+ * ship used to be a raycast vehicle whose wheels did not collide with trimeshes
+ * at all, and now that it hovers on four downward rays the reason has changed
+ * rather than gone — a ray against a box gives a clean face normal, where a
+ * trimesh hands back per-triangle normals that jitter the hull at every seam.
  *
  * Segments longer than `maxLen` are skipped — this drops the spurious bridges
  * across branch/merge gaps in hand-authored strips (e.g. procedural.tsx).
  */
 export function ribbonBoxColliders (
   vertices: Float32Array,
-  opts: { thickness?: number; maxLen?: number; stride?: number } = {}
+  opts: { halfThickness?: number; maxLen?: number; stride?: number } = {}
 ): BoxCollider[] {
-  const thickness = opts.thickness ?? 0.5
-  const maxLen    = opts.maxLen ?? 60
-  const stride    = opts.stride ?? 2
+  const halfThickness = opts.halfThickness ?? 0.25
+  const maxLen        = opts.maxLen ?? 60
+  const stride        = opts.stride ?? 2
 
   const rings                = Math.floor(vertices.length / 6) // L,R pair = 6 floats
   const at                   = (i: number) => new THREE.Vector3(vertices[i * 3], vertices[i * 3 + 1], vertices[i * 3 + 2])
@@ -112,7 +124,7 @@ export function ribbonBoxColliders (
       R0      = at(i * 2 + 1)
     const L1  = at((i + stride) * 2),
       R1      = at((i + stride) * 2 + 1)
-    const box = boxColliderFromRing(L0, R0, L1, R1, thickness, maxLen)
+    const box = boxColliderFromRing(L0, R0, L1, R1, halfThickness, maxLen)
     if (box)
       boxes.push(box)
   }
