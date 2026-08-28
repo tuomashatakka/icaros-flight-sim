@@ -11,7 +11,7 @@ import { HULL_CENTRE_Y, resolveBeamHits, resolveBlastHits } from 'Δengine/battl
 import type { HitCandidate } from 'Δengine/battle/hitscan'
 
 
-const ORIGIN = { x: 0, y: 0, z: 0 }
+const ORIGIN  = { x: 0, y: 0, z: 0 }
 const FORWARD = { x: 0, y: 0, z: 1 }
 
 /** An enemy `z` ahead, offset `off` sideways. Y is set so the hull centre is level. */
@@ -73,12 +73,12 @@ describe('resolveBeamHits', () => {
     // A chassis origin sits at the hull's floor. Aiming at it made beams pass
     // under targets that looked square in the reticle.
     const atFloor: HitCandidate = { id: 'a', team: 'blue', position: { x: 0, y: 0, z: 40 }}
-    const level   = resolveBeamHits(beam({ origin: { x: 0, y: HULL_CENTRE_Y, z: 0 }, radius: 0.2 }), [ atFloor ])
+    const level                 = resolveBeamHits(beam({ origin: { x: 0, y: HULL_CENTRE_Y, z: 0 }, radius: 0.2 }), [ atFloor ])
     expect(level).toHaveLength(1)
   })
 
   it('works along an arbitrary direction, not just an axis', () => {
-    const diagonal = { x: Math.SQRT1_2, y: 0, z: Math.SQRT1_2 }
+    const diagonal             = { x: Math.SQRT1_2, y: 0, z: Math.SQRT1_2 }
     const target: HitCandidate = { id: 'a', team: 'blue', position: { x: 30, y: -HULL_CENTRE_Y, z: 30 }}
 
     expect(resolveBeamHits(beam({ direction: diagonal }), [ target ])).toHaveLength(1)
@@ -87,7 +87,7 @@ describe('resolveBeamHits', () => {
 
 describe('resolveBlastHits', () => {
   it('splashes every hostile inside the radius and nothing outside it', () => {
-    const centre = { x: 0, y: 0, z: 0 }
+    const centre  = { x: 0, y: 0, z: 0 }
     const inside  = enemy('in', 4)
     const outside = enemy('out', 6)
 

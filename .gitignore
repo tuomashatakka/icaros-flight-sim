@@ -57,3 +57,7 @@ firestore-debug.log
 
 # Claude Code: share skills, keep personal permissions local
 .claude/settings.local.json
+
+# Battle server sqlite and crash-lab trace dumps. Both are generated; the traces
+# are reproducible from `bun run lab --dump` and run to megabytes apiece.
+data/
