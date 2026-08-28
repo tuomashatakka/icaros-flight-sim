@@ -11,7 +11,7 @@
     "build": "next build",
     "start": "next start",
     "lint": "eslint src packages scripts",
-    "typecheck": "tsc --noEmit && tsc --noEmit -p packages/server",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p packages/physics && tsc --noEmit -p packages/server",
     "test": "vitest run && bun test packages/server/test-bun",
     "test:physics": "bun test/vehicle-physics.ts",
     "dev:cli": "node scripts/dev-cli.mjs",
@@ -27,6 +27,7 @@
     "test:lab": "bun scripts/crash-lab.ts --twice"
   },
   "dependencies": {
+    "@crash-velocity/physics": "workspace:*",
     "@dimforge/rapier3d-compat": "0.19.2",
     "next": "16.2.9",
     "react": "^19.2.7",

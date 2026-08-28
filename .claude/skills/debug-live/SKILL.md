@@ -20,6 +20,8 @@ Cold start (spawning a server) is ~30 s; against a warm server each command is
 bun run dev:probe [--level flats]
 bun run dev:scenario <name|path.json> [--json] [--out FILE] [--level L]
 bun run dev:shot <out.png> [--step N] [--overlay a,b] [--size 1280x720] [--nohud]
+bun run dev:shot <out.png> --level crash-lab [--query lane=N]   # the crash lab
+bun run lab [case] [--dump] [--twice]                           # headless dummies
 bun run dev:console [--seconds 5]
 bun run dev:eval -e '<javascript>'
 ```

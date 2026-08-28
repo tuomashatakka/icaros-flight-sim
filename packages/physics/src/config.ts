@@ -1,11 +1,10 @@
 /**
  * Ship tuning constants.
  *
- * Lives in the sim layer, not in `lib/utils`, because the physics must not
- * import upward: `src/engine/sim/` depends on `three` and `rapier` and nothing
- * else in this repo. `@/lib/utils` re-exports this for the ~15 existing call
- * sites, so the app keeps its old import path while the dependency edge points
- * the right way round.
+ * Lives in the physics package, not in `lib/utils`, because the physics must
+ * not import upward. `@/lib/utils` re-exports it for the call sites that
+ * already point there, so the app keeps its import path while the dependency
+ * edge points the right way round.
  */
 
 // --- Anti-grav hover-racer tuning -------------------------------------------

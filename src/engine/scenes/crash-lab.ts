@@ -14,9 +14,9 @@ import {
   TORQUE_SCALE,
   createVectorLines,
 } from '../fx/vectors'
-import { CRASH_CASES, LANE_PITCH } from '../sim/lab/cases'
-import type { CrashCase, LabSolid, LabTrace } from '../sim/lab/cases'
-import { runCrashCase } from '../sim/lab/run'
+import { CRASH_CASES, LANE_PITCH } from '@crash-velocity/physics/lab/cases'
+import type { CrashCase, LabSolid, LabTrace } from '@crash-velocity/physics/lab/cases'
+import { runCrashCase } from '@crash-velocity/physics/lab/run'
 import { DEFAULT_CONFIGS } from '@/lib/ship/registry'
 
 /**

@@ -4,10 +4,10 @@ import { vehicleConfig } from '@/lib/utils'
 
 // Defined in the sim layer and re-exported here. The physics may not import
 // app code, and `ShipTuning` is a physics input, so it belongs down there.
-export { DEFAULT_TUNING } from './sim/types'
-export type { ShipTuning } from './sim/types'
-import { DEFAULT_TUNING } from './sim/types'
-import type { ShipTuning } from './sim/types'
+export { DEFAULT_TUNING } from '@crash-velocity/physics/types'
+export type { ShipTuning } from '@crash-velocity/physics/types'
+import { DEFAULT_TUNING } from '@crash-velocity/physics/types'
+import type { ShipTuning } from '@crash-velocity/physics/types'
 
 /**
  * App state for the race scene.

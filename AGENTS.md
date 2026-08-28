@@ -29,9 +29,20 @@ connects — `bun run dev:all` is the one to reach for. The server is a separate
 Bun process in `packages/server`, and it must be, because it is a persistent
 stateful simulation: exactly what a serverless host cannot run.
 
-The workspace is `packages/*`. It has **no runtime dependencies** — `Bun.serve`
-does HTTP and WebSocket, `bun:sqlite` is the database and `Bun.password` is the
-hasher, so nothing is installed to do what the runtime already does.
+The workspace is `packages/*`: `server` and `physics`.
+
+**`packages/server` has no runtime dependencies** — `Bun.serve` does HTTP and
+WebSocket, `bun:sqlite` is the database and `Bun.password` is the hasher, so
+nothing is installed to do what the runtime already does. (That rule is about
+the server specifically; `physics` genuinely needs `three` and `rapier`.)
+
+**`packages/physics` is the simulation, and it is a leaf.** It depends on
+`three` and `@dimforge/rapier3d-compat` and nothing else — no React, no zustand,
+no DOM, no scene graph. Import it as `@crash-velocity/physics`. `bun run
+typecheck` checks it standalone with `paths: {}`, so an `@/…` import inside it
+is a build error rather than a thing someone notices later. It ships TypeScript
+source and Next transpiles it (`transpilePackages`); there is no build step
+between it and its two consumers, so there is no stale-dist failure mode.
 
 **New code imports through `Δ`, not `@`.** Both aliases resolve to `src/`;
 `Δengine/battle/sim` is the one to use going forward. There is no slash after
@@ -377,19 +388,18 @@ src/engine/       The game. Vanilla three + threejs-scene, no React.
   dev/            Dev-only harness. Excluded from production builds.
   hud/            Continuous visor GUI: live facets, overlays, hit testing, touch.
   levels/         The four tracks, as LevelSpec data.
-  physics/        Rapier world + collider helpers.
-  sim/            The physics itself, and the crash lab. A LEAF: it imports
-                  `three` and `rapier` and nothing else in this repo, so it can
-                  lift into its own package without a rewrite. `config.ts` owns
-                  `vehicleConfig` and `types.ts` owns `Transform`/`ShipTuning`;
-                  `@/lib/utils` and `engine/state.ts` re-export them for the
-                  call sites that already point there. Do not import app code
-                  from in here — the sim used to reach into a zustand store for
-                  a four-line type, and that one edge was the whole problem.
+  physics/        Rapier world + collider helpers (the app's side of it).
 src/hooks/        zustand stores.
 src/lib/net/      Browser-side account and lobby clients.
 public/scenarios/ Race scenario scripts for the CLI and ?scenario=.
 scripts/          dev-cli.mjs, dev-all.mjs.
+
+packages/physics/ The simulation. Thruster rig, flight control, crash lab.
+  src/config.ts   `vehicleConfig`. Re-exported by `@/lib/utils`.
+  src/types.ts    `Transform`, `ShipTuning`. Re-exported by their old homes.
+  src/thrusters.ts  The rig as data — the geometry IS the handling model.
+  src/vehicle-step.ts  One tick: sense, control, allocate, apply.
+  src/lab/        The eight crash dummies and the headless runner.
 
 packages/server/  The authoritative battle server. Zero runtime dependencies.
   src/match/      Room, fixed-rate loop, bot backfill, lag-compensation rewind.

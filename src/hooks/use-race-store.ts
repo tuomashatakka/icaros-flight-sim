@@ -8,8 +8,8 @@ export type RaceStatus = 'idle' | 'countdown' | 'racing' | 'finished'
 
 // Defined in the sim layer — the physics owns the pose type, and it must not
 // import a zustand store to get at it. Re-exported for the existing call sites.
-export type { Transform } from 'Δengine/sim/types'
-import type { Transform } from 'Δengine/sim/types'
+export type { Transform } from '@crash-velocity/physics/types'
+import type { Transform } from '@crash-velocity/physics/types'
 
 
 type RaceConfig = {

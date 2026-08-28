@@ -11,8 +11,8 @@
  * read when a check fails and the summary line does not explain why.
  */
 import { mkdir, writeFile } from 'node:fs/promises'
-import { CRASH_CASES } from 'Δengine/sim/lab/cases'
-import { runCrashCase } from 'Δengine/sim/lab/run'
+import { CRASH_CASES } from '@crash-velocity/physics/lab/cases'
+import { runCrashCase } from '@crash-velocity/physics/lab/run'
 
 
 const ESC   = String.fromCharCode(27)

@@ -47,8 +47,9 @@ what a summary field means. Invoke it when debugging runtime behaviour.
 - **All ship motion is `addForceAtPoint`.** No `setLinvel`/`setAngvel` for
   control — see the thruster-rig rules in AGENTS.md. Forces must be applied
   before `world.step()`, so `vehicle` precedes `physics-step`.
-- **`src/engine/sim/` is a leaf.** It may import `three` and `rapier` and
-  nothing else in this repo. Adding an app import there is the regression.
+- **The physics lives in `packages/physics`**, imported as
+  `@crash-velocity/physics`. It is a leaf: `three` and `rapier` only. `bun run
+  typecheck` checks it standalone, so an `@/…` import in there fails the build.
 - **The crash lab plays traces back, it does not simulate.** See AGENTS.md.
 - **Physics debug layers are ON by default in dev**, with number keys 1-9 to
   toggle and 0 to clear. `?overlay=` (even empty) overrides the default.

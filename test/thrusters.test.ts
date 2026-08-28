@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { Vector3 } from 'three'
-import { AIRBRAKE_PANELS, DOWNFORCE, DRAG, INERTIA, THRUSTER_RIG } from '@/engine/sim/thrusters'
+import { AIRBRAKE_PANELS, DOWNFORCE, DRAG, INERTIA, THRUSTER_RIG } from '@crash-velocity/physics/thrusters'
 import { vehicleConfig } from '@/lib/utils'
 
 /**

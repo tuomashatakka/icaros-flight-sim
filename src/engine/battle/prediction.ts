@@ -26,7 +26,7 @@
 
 import { Vector3 } from 'three'
 import { STEP } from '../clock'
-import { stepHovercraft } from '../sim/vehicle-step'
+import { stepHovercraft } from '@crash-velocity/physics/vehicle-step'
 import type { VehicleDebug } from '../modules/vehicle'
 
 
@@ -35,7 +35,7 @@ import { vehicleConfig } from 'Δlib/utils'
 import { DEFAULT_TUNING } from '../state'
 import { AIM_MAX, AIM_RATE } from './sim'
 import type { ArenaTransform } from './arena'
-import type { HovercraftState } from '../sim/vehicle-step'
+import type { HovercraftState } from '@crash-velocity/physics/vehicle-step'
 import type { BattleInput } from './types'
 import type { InputFrame, SnapshotPlayer } from './protocol'
 import type RAPIER from '@dimforge/rapier3d-compat'

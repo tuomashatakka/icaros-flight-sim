@@ -13,8 +13,8 @@ import RAPIER from '@dimforge/rapier3d-compat'
 import { Quaternion, Vector3 } from 'three'
 import { vehicleConfig } from '@/lib/utils'
 import { DEFAULT_TUNING } from 'Δengine/state'
-import { createHovercraft, createHovercraftState, stepHovercraft } from 'Δengine/sim/vehicle-step'
-import type { HovercraftInput } from 'Δengine/sim/vehicle-step'
+import { createHovercraft, createHovercraftState, stepHovercraft } from '@crash-velocity/physics/vehicle-step'
+import type { HovercraftInput } from '@crash-velocity/physics/vehicle-step'
 
 
 await RAPIER.init()

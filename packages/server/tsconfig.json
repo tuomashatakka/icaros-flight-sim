@@ -13,8 +13,10 @@
     "noEmit":          true,
     "resolveJsonModule": true,
     "paths": {
-      "Δ*":  [ "../../src/*" ],
-      "@/*": [ "../../src/*" ]
+      "@crash-velocity/physics":   [ "../physics/src/index.ts" ],
+      "@crash-velocity/physics/*": [ "../physics/src/*" ],
+      "Δ*":                        [ "../../src/*" ],
+      "@/*":                       [ "../../src/*" ]
     }
   },
   "include": [ "src/**/*.ts", "test/**/*.ts" ],

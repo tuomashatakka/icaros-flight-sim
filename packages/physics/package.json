@@ -1,0 +1,15 @@
+{
+  "name": "@crash-velocity/physics",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "@dimforge/rapier3d-compat": "0.19.2",
+    "three": "^0.185.1"
+  }
+}

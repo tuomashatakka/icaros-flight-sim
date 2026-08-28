@@ -7,7 +7,7 @@ import { vehicleConfig } from './config'
  * reaching into a zustand store module for a four-line type was the single
  * worst dependency edge in the engine, and the thing that would have made
  * lifting the physics into its own package painful. Both are re-exported from
- * their old homes, so nothing outside this directory had to change.
+ * their old homes, so nothing outside this package had to change.
  */
 export type Transform = {
   position:   [number, number, number];

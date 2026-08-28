@@ -6,9 +6,9 @@ import type { Transform } from '@/hooks/use-race-store'
 import type { RaceState } from '../state'
 import type { Physics } from '../physics/world'
 import { BodyInterpolator } from '../interpolation'
-import { stepHovercraft, createHovercraft, createHovercraftState } from '../sim/vehicle-step'
-import type { HovercraftState, HovercraftStepResult } from '../sim/vehicle-step'
-import type { ForceSample } from '../sim/thrusters'
+import { stepHovercraft, createHovercraft, createHovercraftState } from '@crash-velocity/physics/vehicle-step'
+import type { HovercraftState, HovercraftStepResult } from '@crash-velocity/physics/vehicle-step'
+import type { ForceSample } from '@crash-velocity/physics/thrusters'
 import type { Telemetry } from '../telemetry'
 
 

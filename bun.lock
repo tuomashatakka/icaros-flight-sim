@@ -5,6 +5,7 @@
     "": {
       "name": "nextn",
       "dependencies": {
+        "@crash-velocity/physics": "workspace:*",
         "@dimforge/rapier3d-compat": "0.19.2",
         "next": "16.2.9",
         "react": "^19.2.7",
@@ -26,6 +27,14 @@
         "vitest": "^4.1.10",
       },
     },
+    "packages/physics": {
+      "name": "@crash-velocity/physics",
+      "version": "0.1.0",
+      "peerDependencies": {
+        "@dimforge/rapier3d-compat": "0.19.2",
+        "three": "^0.185.1",
+      },
+    },
     "packages/server": {
       "name": "@crash-velocity/server",
       "version": "0.1.0",
@@ -36,6 +45,8 @@
     },
   },
   "packages": {
+    "@crash-velocity/physics": ["@crash-velocity/physics@workspace:packages/physics"],
+
     "@crash-velocity/server": ["@crash-velocity/server@workspace:packages/server"],
 
     "@dimforge/rapier3d-compat": ["@dimforge/rapier3d-compat@0.19.2", "", {}, "sha512-AZHL1jqUF55QJkJyU1yKeh4ImX2J93bVLIezT1+o0FZqTix6O06MOaqpKoJ4MmbDCsoZmwO+qc471/SDMDm2AA=="],

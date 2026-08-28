@@ -10,7 +10,7 @@ import {
   NET_TORQUE_COLOUR,
   TORQUE_SCALE,
 } from '../fx/vectors'
-import { INERTIA, THRUSTER_RIG } from '../sim/thrusters'
+import { INERTIA, THRUSTER_RIG } from '@crash-velocity/physics/thrusters'
 import type { DevDeps, OverlayFlags } from './types'
 
 

@@ -50,7 +50,7 @@ export type BattlePlayer = {
   health:     number;
   maxHealth:  number;
   chassis:    import('@dimforge/rapier3d-compat').RigidBody;
-  sim:        import('../sim/vehicle-step').HovercraftState;
+  sim:        import('@crash-velocity/physics/vehicle-step').HovercraftState;
   controls:   BattleInput;
   boostMeter: number;
   stun:       number;

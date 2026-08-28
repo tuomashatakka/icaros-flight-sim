@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from 'vitest'
-import { CRASH_CASES } from '@/engine/sim/lab/cases'
-import type { LabTrace } from '@/engine/sim/lab/cases'
-import { runCrashCase } from '@/engine/sim/lab/run'
+import { CRASH_CASES } from '@crash-velocity/physics/lab/cases'
+import type { LabTrace } from '@crash-velocity/physics/lab/cases'
+import { runCrashCase } from '@crash-velocity/physics/lab/run'
 
 /**
  * The crash dummies, as tests.
