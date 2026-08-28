@@ -24,6 +24,16 @@ export type RouteDeps = {
   config:   ServerConfig;
   registry: Registry;
   now:      () => number;
+
+  /**
+   * Spend a lobby ticket, or null when there is no lobby in play.
+   *
+   * Optional because a direct `/battle` connection is still allowed — it is
+   * what the dev CLI and a bare `?match=` link do. A ticket, when present,
+   * carries the name and match the lobby agreed on, so a client cannot join a
+   * different room than the one it was admitted to.
+   */
+  redeemTicket?: (token: string) => { matchId: string; name: string } | null;
 }
 
 /** WebSocket close codes. 4000+ is the application-defined range. */
@@ -126,11 +136,27 @@ async function handleJoin (
     return
   }
 
-  const room = data.roomId
-    ? await deps.registry.create(data.roomId)
+  // A ticket names the match, and outranks whatever the query string asked
+  // for: the lobby decided where this player belongs.
+  let roomId = data.roomId
+  let name   = message.name
+
+  if (message.ticket) {
+    const ticket = deps.redeemTicket?.(message.ticket) ?? null
+    if (!ticket) {
+      fail(sink, 'bad-ticket', 'that invitation has expired')
+      sink.close(CLOSE_PROTOCOL, 'bad ticket')
+      return
+    }
+    roomId = ticket.matchId
+    name   = ticket.name
+  }
+
+  const room = roomId
+    ? await deps.registry.create(roomId)
     : await deps.registry.defaultRoom()
 
-  const client = seatFor(message, room, sink)
+  const client = seatFor({ ...message, name }, room, sink)
   if (!client)
     return
 

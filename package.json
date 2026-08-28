@@ -12,7 +12,7 @@
     "start": "next start",
     "lint": "eslint src packages scripts",
     "typecheck": "tsc --noEmit && tsc --noEmit -p packages/server",
-    "test": "vitest run && bun test packages/server",
+    "test": "vitest run && bun test packages/server/test-bun",
     "test:physics": "node test/vehicle-physics.mjs",
     "dev:cli": "node scripts/dev-cli.mjs",
     "dev:probe": "node scripts/dev-cli.mjs probe",

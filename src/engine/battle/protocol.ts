@@ -353,11 +353,17 @@ export const jsonCodec: Codec = {
  * routine event on a public socket, not an exception, and the caller answers it
  * with an `ErrorMessage` instead of unwinding the room's tick.
  */
-export type ParseResult =
-  | { ok: true; message: ClientMessage } |
+export type ParseResult<T = ClientMessage> =
+  | { ok: true; message: T } |
   { ok: false; reason: string }
 
-export function parseClientMessage (raw: string | ArrayBuffer | Uint8Array, codec: Codec = jsonCodec): ParseResult {
+type SchemaType = { safeParse (value: unknown): { success: boolean; data?: unknown; error?: z.ZodError }}
+
+function parseWith<T> (
+  schema: SchemaType,
+  raw: string | ArrayBuffer | Uint8Array,
+  codec: Codec
+): ParseResult<T> {
   let decoded: unknown
   try {
     decoded = codec.decode(raw)
@@ -366,11 +372,18 @@ export function parseClientMessage (raw: string | ArrayBuffer | Uint8Array, code
     return { ok: false, reason: 'malformed payload' }
   }
 
-  const parsed = clientMessageSchema.safeParse(decoded)
+  const parsed = schema.safeParse(decoded)
   if (!parsed.success)
-    return { ok: false, reason: parsed.error.issues.map(i => `${i.path.join('.')}: ${i.message}`).join('; ') }
+    return {
+      ok:     false,
+      reason: (parsed.error?.issues ?? []).map(i => `${i.path.join('.')}: ${i.message}`).join('; ') || 'invalid message',
+    }
 
-  return { ok: true, message: parsed.data as ClientMessage }
+  return { ok: true, message: parsed.data as T }
+}
+
+export function parseClientMessage (raw: string | ArrayBuffer | Uint8Array, codec: Codec = jsonCodec): ParseResult<ClientMessage> {
+  return parseWith(clientMessageSchema, raw, codec)
 }
 
 /**
@@ -391,4 +404,138 @@ export function toBattleInput (frame: InputFrame): BattleInput {
     aimPitch:      frame.aimPitch,
     resetSeq:      frame.resetSeq,
   }
+}
+
+// ---------------------------------------------------------------- lobby
+
+/**
+ * The lobby channel (`/lobby`).
+ *
+ * Match listing, creation and joining are folded in here rather than split into
+ * a REST matchmaker: the lobby needs something to join, and a second transport
+ * for three endpoints would be more surface than the feature is worth. When a
+ * match starts, every member is handed a ticket and opens `/battle` with it.
+ */
+
+export type LobbyMode = 'ctf'
+
+export type LobbyPlayer = {
+  id:    string;
+  name:  string;
+  team:  BattleTeam;
+  ready: boolean;
+
+  /** Signed in, as opposed to playing as a guest. */
+  registered: boolean;
+}
+
+export type LobbyMatchConfig = {
+  name:       string;
+  mode:       LobbyMode;
+  maxPlayers: number;
+  botFill:    boolean;
+}
+
+export type LobbyListing = LobbyMatchConfig & {
+  id:      string;
+  players: number;
+
+  // True once the match has started; a listing stays visible so late arrivals
+  //  can still drop into a game in progress.
+  live: boolean;
+}
+
+// --- C→S ---
+
+export type LobbyAuth = { type: 'auth'; token?: string; name?: string }
+export type LobbyList = { type: 'list' }
+export type LobbyCreate = { type: 'create'; config: Partial<LobbyMatchConfig> }
+export type LobbyJoin = { type: 'join'; matchId: string }
+export type LobbySetTeam = { type: 'setTeam'; team: BattleTeam }
+export type LobbyReady = { type: 'ready'; value: boolean }
+export type LobbyStart = { type: 'start' }
+export type LobbyLeave = { type: 'leave' }
+export type LobbyChat = { type: 'chat'; text: string }
+
+export type LobbyClientMessage =
+  | LobbyAuth | LobbyList | LobbyCreate | LobbyJoin |
+  LobbySetTeam | LobbyReady | LobbyStart | LobbyLeave | LobbyChat
+
+export const lobbyClientMessageSchema = z.discriminatedUnion('type', [
+  z.object({
+    type:  z.literal('auth'),
+    token: z.string().max(128)
+      .optional(),
+    name: z.string().min(1)
+      .max(24)
+      .optional(),
+  }),
+  z.object({ type: z.literal('list') }),
+  z.object({
+    type:   z.literal('create'),
+    config: z.object({
+      name: z.string().min(1)
+        .max(40)
+        .optional(),
+      mode:       z.literal('ctf').optional(),
+      maxPlayers: z.int().min(2)
+        .max(16)
+        .optional(),
+      botFill: z.boolean().optional(),
+    }),
+  }),
+  z.object({ type: z.literal('join'), matchId: z.string().max(64) }),
+  z.object({ type: z.literal('setTeam'), team: teamSchema }),
+  z.object({ type: z.literal('ready'), value: z.boolean() }),
+  z.object({ type: z.literal('start') }),
+  z.object({ type: z.literal('leave') }),
+  z.object({
+    type: z.literal('chat'),
+    text: z.string().min(1)
+      .max(240),
+  }),
+])
+
+// --- S→C ---
+
+export type LobbyWelcome = {
+  type:       'welcome';
+  protocol:   number;
+  playerId:   string;
+  name:       string;
+  registered: boolean;
+
+  /** Present only when the server issued a fresh one; the client stores it. */
+  token?: string;
+
+  stats?: { matches: number; kills: number; deaths: number; captures: number };
+}
+
+export type LobbyMatches = { type: 'matches'; matches: LobbyListing[] }
+
+export type LobbyState = {
+  type:    'lobby';
+  matchId: string;
+  hostId:  string;
+  config:  LobbyMatchConfig;
+  players: LobbyPlayer[];
+
+  /** Set once the host starts it; late joiners see a live match. */
+  live: boolean;
+}
+
+/** Everything needed to open `/battle` and be admitted. */
+export type LobbyStarting = { type: 'starting'; matchId: string; ticket: string }
+
+export type LobbyChatLine = { type: 'chatLine'; from: string; text: string; at: number }
+
+export type LobbyErrorCode = 'bad-message' | 'no-such-match' | 'match-full' | 'not-host' | 'auth-failed'
+
+export type LobbyError = { type: 'lobbyError'; code: LobbyErrorCode; message: string }
+
+export type LobbyServerMessage =
+  | LobbyWelcome | LobbyMatches | LobbyState | LobbyStarting | LobbyChatLine | LobbyError
+
+export function parseLobbyMessage (raw: string | ArrayBuffer | Uint8Array, codec: Codec = jsonCodec): ParseResult<LobbyClientMessage> {
+  return parseWith(lobbyClientMessageSchema, raw, codec)
 }

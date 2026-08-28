@@ -8,7 +8,7 @@
     "dev": "bun --watch src/index.ts",
     "start": "bun src/index.ts",
     "typecheck": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test test-bun"
   },
   "devDependencies": {
     "@types/bun": "^1.4.0",
