@@ -115,7 +115,6 @@ type Lane = {
   trace:    LabTrace;
   root:     THREE.Group;
   shipRoot: THREE.Group;
-  ship:     ShipInstance | null;
   props:    THREE.Mesh[];
   path:     THREE.Line;
   wires:    THREE.Object3D[];
@@ -164,6 +163,10 @@ export async function mountCrashLab (
 
   const forceLines = createVectorLines(8192)
   const netLines   = createVectorLines(1024)
+
+  // The single loaded hull every lane shares. Held here so teardown can free it
+  // exactly once, however many lanes cloned it.
+  let hull: ShipInstance | null = null
 
   const app = createApp<CrashLabState>(canvas, {
     state: {
@@ -251,19 +254,34 @@ export async function mountCrashLab (
               trace,
               root,
               shipRoot,
-              ship:  null,
               props,
               path,
               wires: root.children.filter(c => c.name === 'wire'),
             }
             lanes.push(lane)
+          })
 
-            // Real assets, loaded per lane. Async, so the lab is watchable
-            // immediately and the hulls appear as they resolve.
-            void loadShip(DEFAULT_CONFIGS.icaras.shipId, SHIP_SIZE).then(instance => {
-              instance.root.position.y = VISUAL_LIFT
-              shipRoot.add(instance.root)
-              lane.ship = instance
+          // ONE hull, eight lanes.
+          //
+          // Every lane flies the same ship at the same size, so this used to
+          // call `loadShip` eight times: eight procedural builds, eight sets of
+          // geometry, materials and shader programs, all resolving in the same
+          // moment. Cloning shares geometry and materials, which is both what
+          // the lab wants — every dummy IS the same ship — and eight times less
+          // to allocate in the one window where a memory-pressured phone was
+          // dropping the WebGL context out from under the scene.
+          //
+          // Async, so the lab is watchable immediately and the hulls appear as
+          // they resolve.
+          void loadShip(DEFAULT_CONFIGS.icaras.shipId, SHIP_SIZE).then(instance => {
+            hull = instance
+
+            lanes.forEach((lane, index) => {
+              // The original goes to the first lane; the rest get clones of it,
+              // so nothing is built twice and nothing is left unused.
+              const root      = index === 0 ? instance.root : instance.root.clone(true)
+              root.position.y = VISUAL_LIFT
+              lane.shipRoot.add(root)
             })
           })
 
@@ -365,8 +383,11 @@ export async function mountCrashLab (
           forceLines.dispose()
           netLines.dispose()
           wireMaterial.dispose()
-          for (const lane of lanes)
-            lane.ship?.dispose()
+          // Disposed once, not once per lane: the other seven are clones that
+          // share this instance's geometry and materials, and disposing those
+          // a second time would free buffers still referenced by the first.
+          hull?.dispose()
+          hull = null
           lanes.length = 0
         },
       }),

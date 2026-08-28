@@ -11,11 +11,25 @@ export type AnyApp = App<any>
 
 /**
  * How many times a lost context is silently rebuilt before the player is told.
- * A phone that backgrounds the tab loses its context and gets it straight back,
- * which should be invisible; a device that cannot hold one at all would
- * otherwise remount forever.
+ *
+ * Exactly one, deliberately. Rebuilding is not free: each attempt asks the
+ * browser for another context, and Chrome cuts a page off from WebGL entirely
+ * once it has lost too many in a short window. A device reported this happening
+ * — the first loss came with a 1x1 probe context still GRANTED, and after three
+ * rapid rebuild attempts the same probe came back REFUSED, which is a worse
+ * state than the one being recovered from. So: one try, then hand it to the
+ * player, whose retry is a deliberate act rather than a loop.
  */
-const MAX_AUTO_RECOVERIES = 3
+const MAX_AUTO_RECOVERIES = 1
+
+/**
+ * How long to wait before that one attempt.
+ *
+ * A context is usually lost because the device is under pressure right now.
+ * Rebuilding into that same moment is what fails; a breath later often works,
+ * and costs nothing when it would have succeeded anyway.
+ */
+const RECOVERY_DELAY_MS = 1200
 
 export type SceneCanvasProps = {
 
@@ -93,6 +107,7 @@ export function SceneCanvas ({ mount, onApp, className, fallback }: SceneCanvasP
     // Which GPU, which limits, how big the buffer. Read while the context still
     // answers, because a lost one refuses these exact questions.
     let device: DeviceInfo = {}
+    let recoveryTimer      = 0
 
     // A context lost while playing (tab backgrounded, GPU reset, another page
     // claiming the budget) leaves three rendering into nothing — the scene
@@ -114,13 +129,13 @@ export function SceneCanvas ({ mount, onApp, className, fallback }: SceneCanvasP
       setReport(diagnostics)
 
       if (recoveries.current >= MAX_AUTO_RECOVERIES) {
-        setError(new Error('the WebGL context kept being lost.'))
+        setError(new Error('the device took the WebGL context away.'))
         setStatus('error')
         return
       }
 
       recoveries.current += 1
-      setAttempt(value => value + 1)
+      recoveryTimer = window.setTimeout(() => setAttempt(value => value + 1), RECOVERY_DELAY_MS)
     }
 
     canvas.addEventListener('webglcontextlost', onContextLost)
@@ -157,6 +172,7 @@ export function SceneCanvas ({ mount, onApp, className, fallback }: SceneCanvasP
 
     return () => {
       cancelled = true
+      window.clearTimeout(recoveryTimer)
       canvas.removeEventListener('webglcontextlost', onContextLost)
       if (typeof detachBridges === 'function')
         detachBridges()
