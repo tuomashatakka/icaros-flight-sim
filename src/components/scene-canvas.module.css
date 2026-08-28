@@ -60,3 +60,17 @@
 .retry:hover {
   background: hsl(187 86% 40% / 0.24);
 }
+
+/* Device facts, printed for a screenshot: this failure only happens on phones,
+   where there is no console to read them from. */
+.report {
+  margin: 0.75rem 0 0;
+  font-size: 0.75rem;
+  line-height: 1.5;
+  color: hsl(210 20% 72%);
+}
+
+.report dd {
+  margin: 0;
+  overflow-wrap: anywhere;
+}

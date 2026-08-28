@@ -2,6 +2,8 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { App } from 'threejs-scene'
+import { captureDeviceInfo, collectWebglReport, formatWebglReport } from './webgl-report'
+import type { DeviceInfo, WebglReport } from './webgl-report'
 import styles from './scene-canvas.module.css'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mount fns are generic over their own state shape
@@ -54,10 +56,14 @@ export function SceneCanvas ({ mount, onApp, className, fallback }: SceneCanvasP
   // Bumping this rebuilds the scene on a fresh canvas: the retry button, and
   // the automatic recovery when the browser takes the context away.
   const [ attempt, setAttempt ] = useState(0)
-  const recoveries              = useRef(0)
+  // What the device said when it gave up. Rendered on screen because the
+  // failure only happens on phones, where there is no console to read.
+  const [ report, setReport ] = useState<WebglReport | null>(null)
+  const recoveries            = useRef(0)
 
   const retry = useCallback(() => {
     recoveries.current = 0
+    setReport(null)
     setAttempt(value => value + 1)
   }, [])
 
@@ -79,6 +85,14 @@ export function SceneCanvas ({ mount, onApp, className, fallback }: SceneCanvasP
     let app: AnyApp | null = null
     let detachBridges: (() => void) | void
     let cancelled = false
+    // Stamped when the scene starts drawing, so a context loss can say how long
+    // it survived. "Rendered for about a second, then died" is a different bug
+    // from "never started", and only this number tells them apart on a device
+    // with no console attached.
+    let drawingSince = 0
+    // Which GPU, which limits, how big the buffer. Read while the context still
+    // answers, because a lost one refuses these exact questions.
+    let device: DeviceInfo = {}
 
     // A context lost while playing (tab backgrounded, GPU reset, another page
     // claiming the budget) leaves three rendering into nothing — the scene
@@ -89,8 +103,18 @@ export function SceneCanvas ({ mount, onApp, className, fallback }: SceneCanvasP
       if (cancelled)
         return
 
+      // `statusMessage` is where Chrome puts the driver's own reason.
+      const statusMessage = (event as WebGLContextEvent).statusMessage
+      const diagnostics   = collectWebglReport('context-lost', app, {
+        aliveSeconds: drawingSince ? (performance.now() - drawingSince) / 1000 : undefined,
+        statusMessage,
+        device,
+      })
+      console.error('[scene] webgl context lost', diagnostics)
+      setReport(diagnostics)
+
       if (recoveries.current >= MAX_AUTO_RECOVERIES) {
-        setError(new Error('the WebGL context kept being lost. Close other tabs using 3D graphics, then retry.'))
+        setError(new Error('the WebGL context kept being lost.'))
         setStatus('error')
         return
       }
@@ -115,11 +139,16 @@ export function SceneCanvas ({ mount, onApp, className, fallback }: SceneCanvasP
         app = built
         detachBridges = onApp?.(built)
         built.start()
+        drawingSince = performance.now()
+        device       = captureDeviceInfo(built)
         setStatus('ready')
       }
       catch (cause) {
         console.error('[scene] mount failed', cause)
         if (!cancelled) {
+          const diagnostics = collectWebglReport('create-failed', null, { error: cause })
+          console.error('[scene] webgl report', diagnostics)
+          setReport(diagnostics)
           setError(cause instanceof Error ? cause : new Error(String(cause)))
           setStatus('error')
         }
@@ -143,7 +172,11 @@ export function SceneCanvas ({ mount, onApp, className, fallback }: SceneCanvasP
   return <div className={ [ styles.root, className ].filter(Boolean).join(' ') }>
     <div ref={ hostRef } className={ styles.host } />
     {/* Sibling of the canvas host, never a child — `replaceChildren` would wipe it. */}
-    {status !== 'ready' && (fallback ?? <SceneFallback status={ status } error={ error } onRetry={ retry } />)}
+    {/* A caller suppressing the loading state (`fallback={false}`) is hiding a
+        spinner, not opting out of being told the scene died — so a failure
+        always renders the built-in fallback and its diagnostics. */}
+    {status === 'loading' && (fallback ?? <SceneFallback status={ status } error={ error } report={ report } onRetry={ retry } />)}
+    {status === 'error' && <SceneFallback status={ status } error={ error } report={ report } onRetry={ retry } />}
   </div>
 }
 
@@ -168,10 +201,11 @@ function releaseContext (app: AnyApp) {
 type SceneFallbackProps = {
   status:   'loading' | 'error';
   error:    Error | null;
+  report:   WebglReport | null;
   onRetry?: () => void;
 }
 
-function SceneFallback ({ status, error, onRetry }: SceneFallbackProps) {
+function SceneFallback ({ status, error, report, onRetry }: SceneFallbackProps) {
   if (status === 'loading')
     return <div className={ styles.fallback }>
       <p className={ styles.loading }>INITIALISING…</p>
@@ -179,6 +213,11 @@ function SceneFallback ({ status, error, onRetry }: SceneFallbackProps) {
 
   return <div className={ [ styles.fallback, styles.error ].join(' ') }>
     <p>Scene failed to load{error ? `: ${error.message}` : '.'}</p>
+
+    {report && <dl className={ styles.report }>
+      {formatWebglReport(report).map(line => <dd key={ line }>{ line }</dd>)}
+    </dl>}
+
     <button type="button" className={ styles.retry } onClick={ onRetry }>Retry</button>
   </div>
 }
