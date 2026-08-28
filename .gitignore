@@ -42,6 +42,9 @@ next-env.d.ts
 
 .genkit/*
 .env*
+# ...except the documented template, which carries no secrets and is the only
+# record of what the server reads.
+!.env.example
 
 # firebase
 firebase-debug.log
