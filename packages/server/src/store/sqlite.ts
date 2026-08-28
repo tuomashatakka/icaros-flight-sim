@@ -70,7 +70,7 @@ export class SqliteStore implements Store {
     return account
   }
 
-  async findAccount (username: string): Promise<(Account & { passwordHash: string }) | null> {
+  async findAccount (username: string): Promise<Account & { passwordHash: string } | null> {
     const row = this.db.query('SELECT * FROM accounts WHERE lower(username) = lower(?)')
       .get(username) as AccountRow | null
     if (!row)

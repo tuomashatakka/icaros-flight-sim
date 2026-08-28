@@ -24,7 +24,7 @@ function makeDeps (): LobbyDeps {
 
 function connect (deps: LobbyDeps, id: string): LobbySocket & { sent: LobbyServerMessage[] } {
   const sent: LobbyServerMessage[] = []
-  const socket = {
+  const socket                     = {
     playerId: id,
     name:     id,
     account:  null,
@@ -41,7 +41,9 @@ function connect (deps: LobbyDeps, id: string): LobbySocket & { sent: LobbyServe
 const send = (deps: LobbyDeps, socket: LobbySocket, message: unknown) =>
   routeLobbyMessage(JSON.stringify(message), socket, deps)
 
-const lastLobby = (socket: { sent: LobbyServerMessage[] }): LobbyState | undefined =>
+type SocketType = { sent: LobbyServerMessage[] }
+
+const lastLobby = (socket: SocketType): LobbyState | undefined =>
   [ ...socket.sent ].reverse().find(m => m.type === 'lobby') as LobbyState | undefined
 
 describe('lobby', () => {
@@ -101,6 +103,7 @@ describe('lobby', () => {
 
       await send(deps, host, { type: 'auth', name: 'Host' })
       await send(deps, host, { type: 'create', config: {}})
+
       const matchId = lastLobby(host)!.matchId
 
       await send(deps, guest, { type: 'auth', name: 'Guest' })
@@ -116,6 +119,7 @@ describe('lobby', () => {
 
       await send(deps, host, { type: 'auth', name: 'Host' })
       await send(deps, host, { type: 'create', config: { maxPlayers: 2 }})
+
       const matchId = lastLobby(host)!.matchId
 
       for (const id of [ 'b' ]) {
@@ -139,11 +143,12 @@ describe('lobby', () => {
     })
 
     it('moves a player between matches rather than leaving them in both', async () => {
-      const host = connect(deps, 'host')
+      const host  = connect(deps, 'host')
       const mover = connect(deps, 'mover')
 
       await send(deps, host, { type: 'auth', name: 'Host' })
       await send(deps, host, { type: 'create', config: { name: 'First' }})
+
       const first = lastLobby(host)!.matchId
 
       await send(deps, mover, { type: 'auth', name: 'Mover' })
@@ -162,6 +167,7 @@ describe('lobby', () => {
 
       await send(deps, host, { type: 'auth', name: 'Host' })
       await send(deps, host, { type: 'create', config: {}})
+
       const matchId = lastLobby(host)!.matchId
 
       await send(deps, guest, { type: 'auth', name: 'Guest' })
@@ -191,6 +197,7 @@ describe('lobby', () => {
       const host = connect(deps, 'host')
       await send(deps, host, { type: 'auth', name: 'Host' })
       await send(deps, host, { type: 'create', config: {}})
+
       const matchId = lastLobby(host)!.matchId
       await send(deps, host, { type: 'start' })
 
@@ -210,6 +217,7 @@ describe('lobby', () => {
 
       await send(deps, host, { type: 'auth', name: 'Host' })
       await send(deps, host, { type: 'create', config: {}})
+
       const matchId = lastLobby(host)!.matchId
 
       await send(deps, guest, { type: 'auth', name: 'Guest' })

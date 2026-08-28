@@ -18,8 +18,8 @@ export type AuthResult =
   | { ok: true; account: Account; token: string } |
   { ok: false; reason: 'taken' | 'invalid' | 'malformed' }
 
-/** Letters, digits, dash and underscore. Names appear on nameplates and in a
- *  kill feed, so control characters and lookalike whitespace are out. */
+// Letters, digits, dash and underscore. Names appear on nameplates and in a
+//  kill feed, so control characters and lookalike whitespace are out.
 const USERNAME = /^[A-Za-z0-9_-]{3,24}$/
 
 const MIN_PASSWORD = 8

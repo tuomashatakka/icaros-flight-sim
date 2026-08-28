@@ -54,7 +54,7 @@ export interface Store {
   /** Fails when the username is taken; usernames are the only unique key. */
   createAccount (username: string, passwordHash: string): Promise<Account | null>
 
-  findAccount (username: string): Promise<(Account & { passwordHash: string }) | null>
+  findAccount (username: string): Promise<Account & { passwordHash: string } | null>
   accountById (id: string): Promise<Account | null>
 
   createSession (accountId: string, ttlMs: number): Promise<Session>
@@ -70,6 +70,6 @@ export interface Store {
   close (): void
 }
 
-/** Sessions last a week: long enough that a returning player is still signed in,
- *  short enough that a leaked token is not forever. */
+// Sessions last a week: long enough that a returning player is still signed in,
+//  short enough that a leaked token is not forever.
 export const SESSION_TTL_MS = 7 * 24 * 60 * 60 * 1000

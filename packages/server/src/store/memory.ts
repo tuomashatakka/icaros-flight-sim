@@ -20,9 +20,9 @@ type StoredAccount = Account & { passwordHash: string }
 
 export class MemoryStore implements Store {
   private readonly accounts = new Map<string, StoredAccount>()
-  private readonly byName   = new Map<string, string>()
+  private readonly byName = new Map<string, string>()
   private readonly sessions = new Map<string, Session>()
-  private readonly matches  = new Map<string, MatchRecord>()
+  private readonly matches = new Map<string, MatchRecord>()
   private readonly rosters: MatchPlayerRecord[] = []
 
   async createAccount (username: string, passwordHash: string): Promise<Account | null> {
