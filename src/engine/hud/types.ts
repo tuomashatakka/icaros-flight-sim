@@ -97,6 +97,52 @@ export type HudFrame = {
   targetLabel:      string;
   checkpointNumber: number;
   checkpointCount:  number;
+
+  /**
+   * Typical distance between gates on this course, metres.
+   *
+   * The closure bar used to normalise against a flat 600, which on a tight
+   * track pinned it near 1 and never moved.
+   */
+  gateSpacing: number;
+
+  /** Weapon aim and its predicted impact, when the mode has weapons. */
+  sight: HudSight | null;
+}
+
+/**
+ * Where the guns point and where the shot lands, in world space.
+ *
+ * Supplied by the mode, not derived by the HUD: only the scene knows the
+ * predicted chassis pose, the weapon's reach and the rapier world to ask. The
+ * HUD's job is to project it. `null` in modes that have no weapon.
+ */
+export type HudSight = {
+
+  /** Muzzle the aim ray leaves from. */
+  origin: THREE.Vector3;
+
+  /** Unit aim direction — where the GUNS point, not where the camera looks. */
+  direction: THREE.Vector3;
+
+  /** First impact along `direction`, ray-marched. Null when nothing is in reach. */
+  impact: THREE.Vector3 | null;
+
+  /** Distance to `impact`, or the weapon's reach when it hits nothing. */
+  range: number;
+
+  /** True when `impact` is a ship rather than arena geometry. */
+  onTarget: boolean;
+
+  /**
+   * The DRAWN gun muzzles, world space.
+   *
+   * Deliberately not `origin`: the sim fires everything from one synthetic
+   * point on the centreline, while the hull carries two visible pods. Moving
+   * the sim's muzzle would change hit results on a server-authoritative
+   * simulation, so the reticle draws the convergence the pods imply instead.
+   */
+  hardpoints: readonly THREE.Vector3[];
 }
 
 export type HudActionId =

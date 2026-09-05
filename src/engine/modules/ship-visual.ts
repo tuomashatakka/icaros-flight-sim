@@ -34,6 +34,14 @@ export type ShipVisualHandle = {
    * would otherwise see is the inside of its back faces.
    */
   setHullVisible(visible: boolean): void;
+
+  /**
+   * Muzzle tips of the DRAWN guns, world space, appended into `out`.
+   *
+   * Empty until a hull has loaded. The battle sight uses these for its
+   * convergence lines — see `Cannons.muzzleWorld`.
+   */
+  muzzleWorld(out: THREE.Vector3[]): THREE.Vector3[];
 }
 
 type HandleType = { current: ShipVisualHandle | null }
@@ -111,6 +119,11 @@ export function shipVisualModule (
 
       if (handle)
         handle.current = {
+          muzzleWorld (out) {
+            out.length = 0
+            return instance ? instance.cannons.muzzleWorld(out) : out
+          },
+
           setHullVisible (visible) {
             if (visible === hullVisible)
               return

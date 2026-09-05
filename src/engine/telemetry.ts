@@ -1,3 +1,6 @@
+import * as THREE from 'three'
+
+
 /**
  * Simulation outputs, module-local.
  *
@@ -33,6 +36,15 @@ export type Telemetry = {
    */
   gLoad: number;
 
+  /**
+   * Chassis linear velocity, world space, m/s.
+   *
+   * `speed` is its ground-plane magnitude and was all the HUD had, so nothing
+   * could show sideslip or climb rate — both of which a hovercraft with no
+   * wheels does constantly.
+   */
+  velocity: THREE.Vector3;
+
   /** Monotonic crash counter — `publish` fires one flash per unseen increment. */
   crashSeq: number;
 
@@ -49,6 +61,7 @@ export function createTelemetry (): Telemetry {
     airbrake:      0,
     thrustCommand: 0,
     gLoad:         0,
+    velocity:      new THREE.Vector3(),
     crashSeq:      0,
     shake:         0,
   }

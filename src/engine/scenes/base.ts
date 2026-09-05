@@ -117,6 +117,15 @@ export type BaseSceneConfig<TState extends object> = {
    */
   post?: ScenePost;
 
+  /**
+   * Filled at build time with the hull's handle, if the scene needs it.
+   *
+   * The base owns the ship visual, but battle's reticle has to ask the DRAWN
+   * guns where their muzzles are. Handing the ref in beats widening
+   * `gameModuleFactory`, which already takes six arguments.
+   */
+  shipVisualRef?: { current: ShipVisualHandle | null };
+
   /** Camera far plane. Defaults to the race rig's 400. */
   cameraFar?:         number;
   buildGeometry?:     (ctx: AppContext<TState>, physics: Physics) => void;
@@ -187,7 +196,7 @@ export async function mountBaseScene<TState extends object> (
 
   type ShipVisualType = { current: ShipVisualHandle | null }
 
-  const shipVisual: ShipVisualType = { current: null }
+  const shipVisual: ShipVisualType = config.shipVisualRef ?? { current: null }
 
   type PublishType = { current: PublishHandle | null }
 

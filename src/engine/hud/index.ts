@@ -12,10 +12,11 @@ import type { Controls } from '../input'
 import type { LevelSpec } from '../levels/types'
 import type { Telemetry } from '../telemetry'
 import { createSpatialHud } from './spatial-hud'
-import type { HudData, HudFrame, HudSource, HudViewFrame } from './types'
+import { LOCK } from '../battle/weapons'
+import type { HudData, HudFrame, HudSight, HudSource, HudViewFrame } from './types'
 
 
-export type { HudFrame, HudViewFrame } from './types'
+export type { HudFrame, HudSight, HudViewFrame } from './types'
 
 export type HudHandle = {
   update(view: HudViewFrame): void;
@@ -30,6 +31,24 @@ type SharedHudOptions<TState extends object> = {
   handle:    HandleType;
   source:    HudSource;
   target(frame: HudFrame): void;
+}
+
+/**
+ * Mean distance between consecutive gates, metres.
+ *
+ * Computed once per mount: the waypoints are level data and do not move, and
+ * this is what the closure bar is normalised against so a tight track reads
+ * differently from a 600-unit sprint.
+ */
+function averageGateSpacing (level: LevelSpec): number {
+  const points = level.waypoints
+  if (points.length < 2)
+    return 600
+
+  let total = 0
+  for (let i = 1; i < points.length; i++)
+    total += points[i].distanceTo(points[i - 1])
+  return Math.max(1, total / (points.length - 1))
 }
 
 function menu (): void {
@@ -78,6 +97,8 @@ function sharedHudModule<TState extends object> ({
     targetLabel:      '',
     checkpointNumber: 0,
     checkpointCount:  0,
+    gateSpacing:      600,
+    sight:            null,
   }
 
   return defineModule<TState>({
@@ -157,6 +178,8 @@ export function raceHudModule<TState extends object> (
     },
   }
 
+  const gateSpacing = averageGateSpacing(level)
+
   return sharedHudModule<TState>({
     canvas,
     telemetry,
@@ -171,15 +194,24 @@ export function raceHudModule<TState extends object> (
       frame.targetLabel      = level.id.toUpperCase()
       frame.checkpointNumber = waypoints.length > 0 ? index + 1 : 0
       frame.checkpointCount  = waypoints.length
+      frame.gateSpacing      = gateSpacing
+      // No guns in race; the sight draws an attitude reference instead.
+      frame.sight            = null
     },
   })
 }
 
+/**
+ * @param readSight - Where the guns point and what the shot hits, or null while
+ * the predicted chassis does not exist yet. Supplied by the scene because only
+ * it has the predicted pose, the weapon's reach and a rapier world to ask.
+ */
 export function battleHudModule<TState extends object> (
   canvas: HTMLCanvasElement,
   telemetry: Telemetry,
   controls: Controls,
-  handle: HandleType
+  handle: HandleType,
+  readSight: () => HudSight | null
 ): AppModule<TState> {
   const source: HudSource = {
     mode:    'battle',
@@ -202,10 +234,18 @@ export function battleHudModule<TState extends object> (
     handle,
     source,
     target (frame) {
-      frame.target           = null
-      frame.targetLabel      = 'APEX ARENA'
+      const battle = useBattleStore.getState()
+      const locked = battle.lockOn.targetId !== null
+
+      // `target` used to be hardcoded null with the label pinned to the arena
+      // name, so every range readout in battle showed zero and the reticle
+      // label always fell through to FREE VECTOR.
+      frame.sight            = readSight()
+      frame.target           = locked ? frame.sight?.impact ?? null : null
+      frame.targetLabel      = locked ? battle.lockOn.name?.toUpperCase() ?? 'CONTACT' : 'APEX ARENA'
       frame.checkpointNumber = 0
       frame.checkpointCount  = 0
+      frame.gateSpacing      = LOCK.range
     },
   })
 }

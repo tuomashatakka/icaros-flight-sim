@@ -1,6 +1,7 @@
 import { TEAM_COLORS } from '../battle/arena'
 import type { Controls } from '../input'
 import { HudPanel } from './panel'
+import { drawHudSight } from './sight'
 import { formatHudRaceTime } from './interaction'
 import { HUD_COLORS as COLORS, HUD_FONT as FONT, HUD_TUNING_SPECS } from './tokens'
 import type { BattleHudData, HudActionId, HudData, HudFrame, RaceHudData } from './types'
@@ -374,6 +375,10 @@ export function drawHudOverlay ({
   else if (data.mode === 'battle' && data.battle.status === 'error')
     drawBattleError(overlay, data)
   else {
+    // The sight is screen space by necessity — see `hud/sight.ts`. It draws
+    // under the countdown and the touch controls so neither is ever occluded
+    // by a reticle that happens to swing across them.
+    drawHudSight(overlay, data, frame)
     drawCountdown(overlay, data)
     if (isTouch)
       drawTouchControls(overlay, data, controls, stickX, stickY)

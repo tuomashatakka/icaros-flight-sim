@@ -14,9 +14,9 @@ function input (cameraBlend: number, yaw = 0): HudStationInput {
     cameraBlend,
     camera,
     // The cockpit anchor faces down the nose, like the chase camera does.
-    hudQuaternion:  new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw + Math.PI),
-    hudLead:        new THREE.Quaternion(),
-    shipPosition:   new THREE.Vector3(0, 0, 0),
+    hudQuaternion: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw + Math.PI),
+    hudLead:       new THREE.Quaternion(),
+    shipPosition:  new THREE.Vector3(0, 0, 0),
     hullQuaternion,
   }
 }

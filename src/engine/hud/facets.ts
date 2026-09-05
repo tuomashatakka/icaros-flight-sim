@@ -3,6 +3,7 @@ import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
 import { TEAM_COLORS } from '../battle/arena'
 import { WEAPONS } from '../battle/weapons'
 import { HudPanel } from './panel'
+import { drawPitchLadder, headingFrom, pitchFrom, rollFrom, surfaceAlignment } from './instruments'
 import { formatHudClock, formatHudRaceTime } from './interaction'
 import { createHudFacetMaterial, createHudGlassMaterial } from './materials'
 import type { HudFacetMaterial, HudGlassMaterial } from './materials'
@@ -166,42 +167,53 @@ export function disposeHudPanelMesh (mesh: THREE.Mesh): void {
   mesh.geometry.dispose()
 }
 
-function drawAttitudeScale (panel: HudPanel, pitch: number, roll: number): void {
+/**
+ * The attitude panel's instrument.
+ *
+ * `frame.aimPitch` used to be passed here as "pitch". In race that is the raw
+ * -1/0/+1 R/F key state, not an angle, so the horizon had three positions and
+ * none of them was the hull's. The ladder reads the hull; the aim axis is a
+ * separate caret, because a gun elevation and an attitude are different facts.
+ */
+function drawAttitude (panel: HudPanel, quaternion: THREE.Quaternion, aimPitch: number): void {
+  const pitch = pitchFrom(quaternion)
+  const roll  = rollFrom(quaternion)
+
+  drawPitchLadder(panel, {
+    x:               panel.canvas.width * 0.5,
+    y:               168,
+    halfWidth:       184,
+    halfHeight:      74,
+    pitch,
+    roll,
+    pixelsPerDegree: 3.4,
+  })
+
+  // Commanded gun elevation, on its own tape beside the ladder — this is the
+  // one thing `aimPitch` legitimately says.
   const { context } = panel
-  const centerX     = panel.canvas.width * 0.5
-  const axisY       = 154
+  const trackX      = panel.canvas.width * 0.5 + 214
   context.save()
-  context.translate(centerX, axisY)
-  context.rotate(-roll)
-  context.strokeStyle = 'rgba(120, 175, 255, .58)'
+  context.strokeStyle = 'rgba(120, 175, 255, .45)'
   context.lineWidth   = 2
   context.beginPath()
-  context.moveTo(64 - centerX, 0)
-  context.lineTo(panel.canvas.width - 64 - centerX, 0)
+  context.moveTo(trackX, 108)
+  context.lineTo(trackX, 228)
   context.stroke()
+  context.fillStyle   = COLORS.amber
+  context.globalAlpha = 0.9
 
-  for (let i = -6; i <= 6; i++) {
-    const x      = i * 34
-    const height = i % 3 === 0 ? 25 : 12
-    context.beginPath()
-    context.moveTo(x, -height)
-    context.lineTo(x, height)
-    context.stroke()
-  }
-
-  const horizonY      = 64 + THREE.MathUtils.clamp(pitch, -1, 1) * 38
-  context.strokeStyle = COLORS.white
-  context.lineWidth   = 3
+  const caretY        = 168 - THREE.MathUtils.clamp(aimPitch, -1, 1) * 58
   context.beginPath()
-  context.moveTo(-48, horizonY)
-  context.lineTo(-10, horizonY)
-  context.moveTo(10, horizonY)
-  context.lineTo(48, horizonY)
-  context.stroke()
-  context.beginPath()
-  context.arc(0, horizonY, 9, 0, TAU)
-  context.stroke()
+  context.moveTo(trackX - 11, caretY)
+  context.lineTo(trackX - 2, caretY - 6)
+  context.lineTo(trackX - 2, caretY + 6)
+  context.closePath()
+  context.fill()
   context.restore()
+
+  panel.text({ x: 36, y: 110, size: 13, alpha: 0.6, value: `PITCH ${pitch >= 0 ? '+' : ''}${Math.round(pitch)}°` })
+  panel.text({ x: 36, y: 132, size: 13, alpha: 0.6, value: `BANK ${roll >= 0 ? '+' : ''}${Math.round(roll)}°` })
 }
 
 function drawCheckpointPips (panel: HudPanel, total: number, next: number): void {
@@ -261,82 +273,6 @@ function drawZonePips (panel: HudPanel, data: BattleHudData): void {
   })
 }
 
-function drawReticle (panel: HudPanel, data: HudData, frame: HudFrame): void {
-  const { context, canvas } = panel
-  const centerX             = canvas.width * 0.5
-  const centerY             = canvas.height * 0.5 + frame.aimPitch * 72
-  const battle              = data.mode === 'battle' ? data.battle : null
-  const lock                = battle?.lockOn
-  const locked              = lock?.phase === 'locked'
-  const tracking            = lock?.phase === 'tracking'
-  const color               = locked ? COLORS.magenta : tracking ? COLORS.amber : COLORS.white
-
-  context.strokeStyle = color
-  context.lineWidth   = 3
-  context.globalAlpha = 0.9
-  context.beginPath()
-  context.moveTo(centerX - 78, centerY)
-  context.lineTo(centerX - 24, centerY)
-  context.moveTo(centerX + 24, centerY)
-  context.lineTo(centerX + 78, centerY)
-  context.moveTo(centerX, centerY - 78)
-  context.lineTo(centerX, centerY - 24)
-  context.moveTo(centerX, centerY + 24)
-  context.lineTo(centerX, centerY + 78)
-  context.stroke()
-
-  context.lineWidth   = 2
-  context.globalAlpha = 0.48
-  for (let i = 0; i < 4; i++) {
-    const start = 0.18 + i * Math.PI * 0.5
-    context.beginPath()
-    context.arc(centerX, centerY, 48, start, start + 1.06)
-    context.stroke()
-  }
-
-  if (lock && lock.phase !== 'idle') {
-    const progress      = Math.max(0, Math.min(1, lock.progress))
-    context.strokeStyle = color
-    context.globalAlpha = 0.95
-    context.lineWidth   = 4
-    context.beginPath()
-    context.arc(centerX, centerY, 74, -Math.PI * 0.5, -Math.PI * 0.5 + TAU * progress)
-    context.stroke()
-    if (locked) {
-      const size = 94
-      context.strokeRect(centerX - size, centerY - size, size * 2, size * 2)
-    }
-  }
-
-  context.globalAlpha  = 0.76
-  context.fillStyle    = color
-  context.font         = `500 14px ${FONT}`
-  context.textAlign    = 'center'
-  context.textBaseline = 'middle'
-
-  const label          = lock?.phase === 'locked'
-    ? `${lock.name?.toUpperCase() ?? 'TARGET'} / LOCK / ${lock.distance} M`
-    : lock?.phase === 'tracking'
-      ? `ACQUIRING ${Math.round(lock.progress * 100)}% / ${lock.name?.toUpperCase() ?? 'TARGET'}`
-      : data.mode === 'race'
-        ? `${frame.targetLabel || 'FREE VECTOR'} / ${Math.round(frame.target ? frame.shipPosition.distanceTo(frame.target) : 0)} M`
-        : 'FREE VECTOR'
-  context.fillText(label, centerX, centerY + 126)
-
-  if (data.mode === 'battle')
-    data.battle.killFeed.slice(0, 3).forEach((entry, index) => {
-      context.globalAlpha = 0.72 - index * 0.14
-      context.fillStyle   = entry.team ? TEAM_COLORS[entry.team] : COLORS.white
-      context.font        = `500 12px ${FONT}`
-      context.fillText(
-        `${entry.killer.toUpperCase()} / ${entry.weapon ? WEAPONS[entry.weapon].label.toUpperCase() : 'RAM'} / ${entry.victim.toUpperCase()}`,
-        centerX,
-        70 + index * 22
-      )
-    })
-  context.globalAlpha = 1
-}
-
 function drawRacePanels (panels: Record<HudPanelKey, HudPanel>, data: RaceHudData, frame: HudFrame): void {
   const race               = data.race
   const telemetry          = frame.telemetry
@@ -344,10 +280,9 @@ function drawRacePanels (panels: Record<HudPanelKey, HudPanel>, data: RaceHudDat
   const heading            = headingFrom(frame.hullQuaternion)
   const view               = frame.cameraBlend > 0.5 ? 'COCKPIT' : 'CHASE'
   const upness             = surfaceAlignment(frame.hullQuaternion)
-  const roll               = rollFrom(frame.hullQuaternion)
-  const targetClosure      = frame.target ? 1 - THREE.MathUtils.clamp(targetDistance / 600, 0, 1) : 0
-  const checkpointProgress = race.checkpointCount > 0
-    ? race.nextCheckpoint / race.checkpointCount
+  const targetClosure      = gateClosure(frame)
+  const checkpointProgress = frame.checkpointCount > 0
+    ? frame.checkpointNumber / frame.checkpointCount
     : 0
   const courseProgress = race.loop
     ? (race.currentLap - 1 + checkpointProgress) / Math.max(race.laps, 1)
@@ -357,12 +292,12 @@ function drawRacePanels (panels: Record<HudPanelKey, HudPanel>, data: RaceHudDat
   const topLeft = panels.topLeft
   topLeft.title = 'navigation'
   topLeft.begin()
-  topLeft.text({ x: 36, y: 96, size: 18, color: '#b9ffff', value: `HDG ${String(Math.round(heading) % 360).padStart(3, '0')}°` })
+  topLeft.text({ x: 36, y: 96, size: 18, color: COLORS.paleCyan, value: `HDG ${String(Math.round(heading) % 360).padStart(3, '0')}°` })
   topLeft.text({ x: 36, y: 128, size: 15, alpha: 0.62, value: `${frame.targetLabel || 'VECTOR'} / GATE ${frame.checkpointNumber}/${Math.max(frame.checkpointCount, 1)}` })
   topLeft.bar({ x: 36, y: 172, width: 390, height: 16, label: 'gate closure', value: targetClosure, color: COLORS.cyan, color2: COLORS.blue })
   topLeft.button({ id: 'menu', x: 456, y: 90, width: 142, height: 44, label: 'menu', action: 'menu' })
   topLeft.button({ id: 'view', x: 456, y: 148, width: 142, height: 44, label: view, action: 'view', active: frame.cameraBlend > 0.5 })
-  drawCheckpointPips(topLeft, frame.checkpointCount, race.nextCheckpoint)
+  drawCheckpointPips(topLeft, frame.checkpointCount, Math.max(0, frame.checkpointNumber - 1))
   topLeft.finish(frame.elapsed)
 
   const topCenter = panels.topCenter
@@ -376,8 +311,8 @@ function drawRacePanels (panels: Record<HudPanelKey, HudPanel>, data: RaceHudDat
       : telemetry.boosting
         ? 'BOOST · FLIGHT'
         : 'CRUISE · FLIGHT'
-  topCenter.text({ x: 320, y: 92, size: 18, align: 'center', color: '#dfeaff', value: status })
-  drawAttitudeScale(topCenter, frame.aimPitch, roll)
+  topCenter.text({ x: 320, y: 74, size: 18, align: 'center', color: COLORS.paleBlue, value: status })
+  drawAttitude(topCenter, frame.hullQuaternion, frame.aimPitch)
   topCenter.text({ x: 36, y: 278, size: 13, alpha: 0.55, value: `TURN ${signedPercent(frame.steer)} · STRAFE ${signedPercent(frame.strafe)} · AIM ${signedPercent(frame.aimPitch)}` })
   topCenter.button({ id: 'attitude-view', x: 500, y: 254, width: 108, height: 38, label: view, action: 'view', active: frame.cameraBlend > 0.5, size: 13 })
   topCenter.finish(frame.elapsed)
@@ -385,7 +320,7 @@ function drawRacePanels (panels: Record<HudPanelKey, HudPanel>, data: RaceHudDat
   const topRight = panels.topRight
   topRight.title = 'target'
   topRight.begin()
-  topRight.text({ x: 36, y: 98, size: 19, color: '#ffd8eb', value: frame.target ? `GATE ${frame.checkpointNumber} · ${frame.targetLabel}` : 'NO ROUTE TARGET' })
+  topRight.text({ x: 36, y: 98, size: 19, color: COLORS.paleMagenta, value: frame.target ? `GATE ${frame.checkpointNumber} · ${frame.targetLabel}` : 'NO ROUTE TARGET' })
   topRight.text({ x: 36, y: 132, size: 15, alpha: 0.62, value: `RANGE ${Math.round(targetDistance)} m · SPEED ${Math.round(telemetry.speed * 3.6)} km/h` })
   topRight.bar({ x: 36, y: 176, width: 390, height: 16, label: 'gate closure', value: targetClosure, color: COLORS.magenta, color2: COLORS.violet })
   topRight.button({ id: 'respawn', x: 456, y: 90, width: 142, height: 44, label: 'respawn', action: 'respawn', color: COLORS.magenta })
@@ -394,35 +329,39 @@ function drawRacePanels (panels: Record<HudPanelKey, HudPanel>, data: RaceHudDat
   topRight.finish(frame.elapsed)
 
   const bottomLeft = panels.bottomLeft
-  bottomLeft.title = 'defense'
+  // 'defense' was the battle panel's title worn by a mode with no hull model,
+  // no shields and nothing to defend against — it showed airframe data under a
+  // combat heading. Race calls it what it is.
+  bottomLeft.title = 'airframe'
   bottomLeft.begin()
   bottomLeft.bar({ x: 36, y: 104, width: 404, height: 18, label: 'surface alignment', value: upness, color: COLORS.cyan, color2: COLORS.blue })
-  bottomLeft.bar({ x: 36, y: 178, width: 404, height: 18, label: 'boost reserve', value: telemetry.boostMeter, color: COLORS.green, color2: '#d6f66c' })
-  bottomLeft.text({ x: 36, y: 246, size: 15, alpha: 0.64, value: `${telemetry.grounded ? 'SURFACE LOCK' : 'AIRBORNE'} · IMPACTS ${telemetry.crashSeq}` })
+  bottomLeft.bar({ x: 36, y: 178, width: 404, height: 18, label: 'boost reserve', value: telemetry.boostMeter, color: COLORS.green, color2: COLORS.lime })
+  bottomLeft.text({ x: 36, y: 246, size: 15, alpha: 0.64, value: `${telemetry.grounded ? 'SURFACE LOCK' : 'AIRBORNE'} · ${telemetry.gLoad.toFixed(1)}G · AIRBRAKE ${Math.round(telemetry.airbrake * 100)}% · IMPACTS ${telemetry.crashSeq}` })
   bottomLeft.button({ id: 'defense-reset', x: 466, y: 120, width: 132, height: 52, label: 'reset', action: 'respawn' })
   bottomLeft.finish(frame.elapsed)
 
   const bottomCenter = panels.bottomCenter
   bottomCenter.title = 'propulsion'
   bottomCenter.begin()
-  bottomCenter.bar({ x: 36, y: 118, width: 410, height: 22, label: 'throttle', value: frame.throttle, color: COLORS.violet, color2: COLORS.cyan })
-  bottomCenter.text({ x: 36, y: 196, size: 18, color: '#d9ccff', value: `${Math.round(telemetry.speed * 3.6)} / ${Math.round(data.targetSpeed * 3.6)} km/h` })
-  bottomCenter.text({ x: 36, y: 236, size: 14, alpha: 0.56, value: `TURN ${signedPercent(frame.steer)} · STRAFE ${signedPercent(frame.strafe)} · ${telemetry.boosting ? 'BOOST ACTIVE' : 'CRUISE'}` })
-  bottomCenter.button({ id: 'boost', x: 466, y: 116, width: 132, height: 54, label: 'boost', action: 'boost', kind: 'hold', active: telemetry.boosting, color: '#d5a8ff' })
+  bottomCenter.bar({ x: 36, y: 118, width: 410, height: 22, label: 'thrust', value: frame.throttle, color: COLORS.violet, color2: COLORS.cyan })
+  bottomCenter.text({ x: 36, y: 196, size: 18, color: COLORS.paleViolet, value: `${Math.round(telemetry.speed * 3.6)} / ${Math.round(data.targetSpeed * 3.6)} km/h` })
+  bottomCenter.text({ x: 36, y: 236, size: 14, alpha: 0.56, value: `CMD ${Math.round(frame.throttle * 100)}% · CLIMB ${telemetry.velocity.y >= 0 ? '+' : ''}${telemetry.velocity.y.toFixed(1)} m/s · ${telemetry.boosting ? 'BOOST ACTIVE' : 'CRUISE'}` })
+  bottomCenter.button({ id: 'boost', x: 466, y: 116, width: 132, height: 54, label: 'boost', action: 'boost', kind: 'hold', active: telemetry.boosting, color: COLORS.paleViolet })
   bottomCenter.finish(frame.elapsed)
 
   const bottomRight = panels.bottomRight
   bottomRight.title = 'race systems'
   bottomRight.begin()
   bottomRight.bar({ x: 36, y: 104, width: 404, height: 18, label: 'course', value: courseProgress, color: COLORS.amber, color2: COLORS.magenta })
-  bottomRight.bar({ x: 36, y: 178, width: 404, height: 18, label: 'target velocity', value: speedRatio, color: '#ffe99f', color2: '#6ff0d4' })
+  bottomRight.bar({ x: 36, y: 178, width: 404, height: 18, label: `zone ${data.zone} target`, value: speedRatio, color: COLORS.paleAmber, color2: COLORS.teal })
   bottomRight.text({ x: 36, y: 246, size: 15, alpha: 0.64, value: `${data.shipId.toUpperCase()} · ZONE ${data.zone} · LAP ${race.loop ? `${Math.min(race.currentLap, race.laps)}/${race.laps}` : 'SPRINT'} · ${formatHudRaceTime(data.clocks.lapElapsed)}` })
   bottomRight.button({ id: 'race-tuning', x: 466, y: 120, width: 132, height: 52, label: 'tune', action: 'tuning-toggle', active: data.tuningOpen, color: COLORS.amber })
   bottomRight.finish(frame.elapsed)
 
+  // No reticle here any more: the sight has to sit at a screen position and
+  // this facet is a surface in the world — see `hud/sight.ts`.
   const center = panels.center
   center.begin()
-  drawReticle(center, data, frame)
   center.text({ x: 280, y: 442, align: 'center', size: 15, alpha: 0.68, value: `LAP ${race.loop ? `${Math.min(race.currentLap, race.laps)}/${race.laps}` : 'SPRINT'} · ${formatHudRaceTime(data.clocks.elapsed)}` })
   center.text({ x: 280, y: 470, align: 'center', size: 13, alpha: 0.48, value: race.bestLap === null ? 'BEST --:--.---' : `BEST ${formatHudRaceTime(race.bestLap)}` })
   center.button({ id: 'center-boost', x: 208, y: 496, width: 144, height: 40, label: 'hold boost', action: 'boost', kind: 'hold', active: telemetry.boosting, color: COLORS.violet, size: 13 })
@@ -435,7 +374,6 @@ function drawBattlePanels (panels: Record<HudPanelKey, HudPanel>, data: BattleHu
   const tracking = battle.lockOn.phase === 'tracking'
   const health   = battle.myHealth / Math.max(1, battle.maxHealth)
   const target   = battle.roster.find(entry => entry.id === battle.lockOn.targetId)
-  const roll     = rollFrom(frame.hullQuaternion)
 
   const topLeft = panels.topLeft
   topLeft.title = 'tactical'
@@ -459,8 +397,8 @@ function drawBattlePanels (panels: Record<HudPanelKey, HudPanel>, data: BattleHu
       : battle.status === 'live'
         ? `COMBAT · ${formatHudClock(battle.timeLeft)}`
         : battle.status.toUpperCase()
-  topCenter.text({ x: 320, y: 92, size: 18, align: 'center', color: '#dfeaff', value: status })
-  drawAttitudeScale(topCenter, frame.aimPitch, roll)
+  topCenter.text({ x: 320, y: 74, size: 18, align: 'center', color: COLORS.paleBlue, value: status })
+  drawAttitude(topCenter, frame.hullQuaternion, frame.aimPitch)
 
   // NET reads real connection health now. It used to show a hash-match tally
   // from a verifier that compared the local sim against a hash the local sim
@@ -475,8 +413,8 @@ function drawBattlePanels (panels: Record<HudPanelKey, HudPanel>, data: BattleHu
   const topRight = panels.topRight
   topRight.title = 'target'
   topRight.begin()
-  topRight.text({ x: 36, y: 98, size: 19, color: '#ffd8eb', value: locked ? `LOCKED · ${battle.lockOn.name?.toUpperCase() ?? 'TARGET'}` : tracking ? `ACQUIRING · ${battle.lockOn.name?.toUpperCase() ?? 'TARGET'}` : 'NO HARD LOCK' })
-  topRight.text({ x: 36, y: 132, size: 15, alpha: 0.62, value: `RANGE ${battle.lockOn.distance || 0} m · ${target ? `${target.team.toUpperCase()} · K/D ${target.kills}/${target.deaths}` : 'NO CONTACT DATA'}` })
+  topRight.text({ x: 36, y: 98, size: 19, color: COLORS.paleMagenta, value: locked ? `LOCKED · ${battle.lockOn.name?.toUpperCase() ?? 'TARGET'}` : tracking ? `ACQUIRING · ${battle.lockOn.name?.toUpperCase() ?? 'TARGET'}` : 'NO HARD LOCK' })
+  topRight.text({ x: 36, y: 132, size: 15, alpha: 0.62, value: `RANGE ${Math.round(frame.sight && Number.isFinite(frame.sight.range) ? frame.sight.range : battle.lockOn.distance || 0)} m · ${target ? `${target.team.toUpperCase()} · K/D ${target.kills}/${target.deaths}` : 'NO CONTACT DATA'}` })
   topRight.bar({ x: 36, y: 176, width: 390, height: 16, label: 'lock signal', value: battle.lockOn.progress, color: COLORS.magenta, color2: COLORS.violet })
   topRight.button({ id: 'battle-respawn', x: 456, y: 90, width: 142, height: 44, label: 'respawn', action: 'respawn', color: COLORS.magenta })
   topRight.button({ id: 'battle-view-right', x: 456, y: 148, width: 142, height: 44, label: 'view', action: 'view', color: COLORS.magenta })
@@ -487,7 +425,7 @@ function drawBattlePanels (panels: Record<HudPanelKey, HudPanel>, data: BattleHu
   bottomLeft.title = 'defense'
   bottomLeft.begin()
   bottomLeft.bar({ x: 36, y: 104, width: 390, height: 18, label: 'hull', value: health, color: health < 0.3 ? COLORS.red : COLORS.cyan, color2: health < 0.3 ? COLORS.amber : COLORS.blue })
-  bottomLeft.bar({ x: 36, y: 178, width: 390, height: 18, label: 'boost', value: battle.myBoost, color: COLORS.green, color2: '#d6f66c' })
+  bottomLeft.bar({ x: 36, y: 178, width: 390, height: 18, label: 'boost', value: battle.myBoost, color: COLORS.green, color2: COLORS.lime })
   bottomLeft.text({ x: 36, y: 246, size: 15, alpha: 0.64, value: `HULL ${battle.myHealth}/${battle.maxHealth} · K/D ${battle.myKills}/${battle.myDeaths}` })
   bottomLeft.button({ id: 'battle-defense-respawn', x: 466, y: 120, width: 132, height: 52, label: 'respawn', action: 'respawn' })
   bottomLeft.text({ x: 598, y: 246, size: 13, align: 'right', color: battle.carrying ? TEAM_COLORS[battle.carrying] : COLORS.cyan, value: battle.carrying ? `${battle.carrying.toUpperCase()} CORE` : 'CORE BAY EMPTY' })
@@ -496,10 +434,10 @@ function drawBattlePanels (panels: Record<HudPanelKey, HudPanel>, data: BattleHu
   const bottomCenter = panels.bottomCenter
   bottomCenter.title = 'propulsion'
   bottomCenter.begin()
-  bottomCenter.bar({ x: 36, y: 118, width: 410, height: 22, label: 'throttle', value: frame.throttle, color: COLORS.violet, color2: COLORS.cyan })
-  bottomCenter.text({ x: 36, y: 196, size: 18, color: '#d9ccff', value: `${Math.round(frame.telemetry.speed * 3.6)} km/h` })
-  bottomCenter.text({ x: 36, y: 236, size: 14, alpha: 0.56, value: `TURN ${signedPercent(frame.steer)} · STRAFE ${signedPercent(frame.strafe)} · ${battle.myBoost < 0.15 ? 'BOOST CRITICAL' : 'ARMED'}` })
-  bottomCenter.button({ id: 'battle-boost', x: 466, y: 116, width: 132, height: 54, label: 'boost', action: 'boost', kind: 'hold', active: frame.telemetry.boosting, color: '#d5a8ff' })
+  bottomCenter.bar({ x: 36, y: 118, width: 410, height: 22, label: 'thrust', value: frame.throttle, color: COLORS.violet, color2: COLORS.cyan })
+  bottomCenter.text({ x: 36, y: 196, size: 18, color: COLORS.paleViolet, value: `${Math.round(frame.telemetry.speed * 3.6)} km/h` })
+  bottomCenter.text({ x: 36, y: 236, size: 14, alpha: 0.56, value: `CMD ${Math.round(frame.throttle * 100)}% · ${frame.telemetry.gLoad.toFixed(1)}G · ${battle.myBoost < 0.15 ? 'BOOST CRITICAL' : 'ARMED'}` })
+  bottomCenter.button({ id: 'battle-boost', x: 466, y: 116, width: 132, height: 54, label: 'boost', action: 'boost', kind: 'hold', active: frame.telemetry.boosting, color: COLORS.paleViolet })
   bottomCenter.finish(frame.elapsed)
 
   const primary     = battle.primary
@@ -533,7 +471,6 @@ function drawBattlePanels (panels: Record<HudPanelKey, HudPanel>, data: BattleHu
 
   const center = panels.center
   center.begin()
-  drawReticle(center, data, frame)
   center.text({ x: 280, y: 442, align: 'center', size: 15, color: battle.myTeam ? TEAM_COLORS[battle.myTeam] : COLORS.white, value: `${battle.myName?.toUpperCase() ?? 'PILOT'} · ${battle.myTeam?.toUpperCase() ?? 'UNASSIGNED'}` })
   center.text({ x: 280, y: 470, align: 'center', size: 13, alpha: 0.48, value: `${battle.scores.red} RED · ${formatHudClock(battle.timeLeft)} · BLUE ${battle.scores.blue}` })
   if (battle.primary)
@@ -566,18 +503,20 @@ function drawTargetGlyph (panel: HudPanel, active: boolean): void {
   context.stroke()
 }
 
-function headingFrom (quaternion: THREE.Quaternion): number {
-  _forward.set(0, 0, 1).applyQuaternion(quaternion)
-  return (THREE.MathUtils.radToDeg(Math.atan2(_forward.x, _forward.z)) + 360) % 360
-}
+/**
+ * How close the next gate is, 0..1.
+ *
+ * Normalised against the level's own gate spacing rather than a flat 600 m: on
+ * a tight track the old constant meant the bar sat pinned near 1 and never
+ * moved, and it was computed twice with two different colours.
+ */
+function gateClosure (frame: HudFrame): number {
+  if (!frame.target)
+    return 0
 
-function surfaceAlignment (quaternion: THREE.Quaternion): number {
-  return THREE.MathUtils.clamp(_up.set(0, 1, 0).applyQuaternion(quaternion)
-    .dot(WORLD_UP), 0, 1)
-}
-
-function rollFrom (quaternion: THREE.Quaternion): number {
-  return _euler.setFromQuaternion(quaternion, 'YXZ').z
+  const distance = frame.shipPosition.distanceTo(frame.target)
+  const span     = Math.max(frame.gateSpacing, 1)
+  return 1 - THREE.MathUtils.clamp(distance / span, 0, 1)
 }
 
 function signedPercent (value: number): string {

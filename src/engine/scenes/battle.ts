@@ -4,7 +4,11 @@ import { defineModule } from 'threejs-scene'
 import { apexArena, BATTLE_TEAMS, TEAM_COLORS } from '../battle/arena'
 import type { Scenery } from '../battle/scenery'
 import type { BattleTeam } from '../battle/arena'
-import { DEFAULT_BATTLE_CONFIG } from '../battle/sim'
+import type RAPIER from '@dimforge/rapier3d-compat'
+import { aimFrom, castArenaRay, muzzleFrom } from '../battle/aim'
+import { resolveBeamHits } from '../battle/hitscan'
+import type { HitCandidate } from '../battle/hitscan'
+import { AIM_MAX, DEFAULT_BATTLE_CONFIG } from '../battle/sim'
 import type { BattleEvent } from '../battle/types'
 import { DEFAULT_LOADOUT, WEAPONS } from '../battle/weapons'
 import type { Loadout, WeaponId } from '../battle/weapons'
@@ -33,6 +37,8 @@ import { activeControls } from '../input'
 import { createBattlePost } from '../battle/post'
 import type { CameraRig } from '../camera/rig'
 import { battleHudModule } from '../hud'
+import type { HudSight } from '../hud'
+import type { ShipVisualHandle } from '../modules/ship-visual'
 
 
 export type BattleState = {
@@ -183,6 +189,94 @@ export async function mountBattle (
   // threshold so it does not try to smooth across the arena.
   const provisionalSpawn = arena.spawns.red[0]
   let prediction: LocalPrediction | null = null
+
+  // Assigned inside `gameModuleFactory`; the sight reads them long afterwards.
+  let world: RAPIER.World | null  = null
+  let sightRay: RAPIER.Ray | null = null
+  type ShipVisualRefType = { current: ShipVisualHandle | null }
+
+  const shipVisualRef: ShipVisualRefType = { current: null }
+
+  /**
+   * Where the guns point and what the shot hits, for the HUD reticle.
+   *
+   * Built from `battle/aim.ts` — the same muzzle and aim functions the
+   * authoritative sim fires along — so the pipper cannot drift from the shot.
+   * The impact is the nearer of the arena ray and the nearest enemy hull, which
+   * is exactly what `fireBeam` computes as its reach and then throws away.
+   *
+   * Everything here is a PREDICTION: the local chassis is predicted and the
+   * remote hulls are interpolated ~100 ms in the past, so this says where a
+   * shot fired now would land, not where the server will decide it did.
+   */
+  const sight: HudSight = {
+    origin:     new THREE.Vector3(),
+    direction:  new THREE.Vector3(),
+    impact:     null,
+    range:      Number.POSITIVE_INFINITY,
+    onTarget:   false,
+    hardpoints: [],
+  }
+  const sightImpact                      = new THREE.Vector3()
+  const sightRotation                    = new THREE.Quaternion()
+  const sightHardpoints: THREE.Vector3[] = []
+  const hitCandidates: HitCandidate[]    = []
+
+  function readSight (): HudSight | null {
+    const chassis = prediction?.rig.chassis
+    if (!chassis || !world || !sightRay)
+      return null
+
+    const q = chassis.rotation()
+    sightRotation.set(q.x, q.y, q.z, q.w)
+    muzzleFrom(sight.origin, chassis.translation(), sightRotation)
+    aimFrom(sight.direction, sightRotation, prediction!.aimNormalised * AIM_MAX)
+
+    const store  = useBattleStore.getState()
+    const weapon = store.primary ? WEAPONS[store.primary.id] : WEAPONS[DEFAULT_LOADOUT.primary]
+    const reach  = weapon.range
+
+    const arenaToi = castArenaRay(world, sightRay, sight.origin, sight.direction, reach)
+    let distance = Math.min(arenaToi, reach)
+    let onTarget = false
+
+    const team = store.myTeam
+    if (team) {
+      hitCandidates.length = 0
+      for (const remote of transport.remotes()) {
+        // The RENDERED pose, not the snapshot's: remote ships are drawn ~100 ms
+        // in the past, and a reticle that marks where a ship is not is worse
+        // than no reticle. The server resolves the actual shot by rewinding to
+        // this same view, so agreeing with the screen is the correct choice.
+        const drawn = opponents.get(remote.id)?.root.position
+        if (drawn && remote.team !== team)
+          hitCandidates.push({ id: remote.id, team: remote.team, position: drawn })
+      }
+
+      const hit = resolveBeamHits({
+        origin:    sight.origin,
+        direction: sight.direction,
+        reach:     distance,
+        radius:    DEFAULT_BATTLE_CONFIG.hullRadius + (weapon.beamWidth ?? 0.2),
+        team,
+      }, hitCandidates)[0]
+
+      if (hit) {
+        distance = hit.distance
+        onTarget = true
+      }
+    }
+
+    sight.range    = distance
+    sight.onTarget = onTarget
+    sight.impact   = Number.isFinite(distance)
+      ? sightImpact.copy(sight.direction).multiplyScalar(distance)
+        .add(sight.origin)
+      : null
+    sight.hardpoints = shipVisualRef.current?.muzzleWorld(sightHardpoints) ?? sightHardpoints
+
+    return sight
+  }
 
   const post = createBattlePost()
 
@@ -503,6 +597,7 @@ export async function mountBattle (
     colliders:               arena.colliders,
     colliderOffset:          arena.colliderOffset,
     useDefaultVehicleModule: false,
+    shipVisualRef,
     // The trim is predicted locally and corrected against the server, because
     // a reticle that waits half a round trip to move feels broken; the hull and
     // camera mirror whatever elevation it settled on.
@@ -516,6 +611,11 @@ export async function mountBattle (
     post: post.options,
 
     gameModuleFactory: (physics, _isVehicleCollider, telemetry, controls, vehicleRef, rig) => {
+      // The sight casts against the same world the sim does, through one reused
+      // ray — it runs every frame the HUD redraws.
+      world    = physics.world
+      sightRay = new physics.RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })
+
       // The ONE body in this world besides the arena: the predicted local ship.
       // Everyone else is an interpolated transform with no physics at all,
       // because their motion is the server's to decide and simulating it here
@@ -601,6 +701,7 @@ export async function mountBattle (
           }
 
           const velocity       = local.chassis.linvel()
+          telemetry.velocity.set(velocity.x, velocity.y, velocity.z)
           telemetry.speed      = Math.hypot(velocity.x, velocity.z)
           telemetry.boostMeter = prediction?.boost ?? 1
           telemetry.boosting   = controls.boost
@@ -641,7 +742,7 @@ export async function mountBattle (
     },
 
     hudModuleFactory: (_shipRoot, telemetry, hudRef, controls) =>
-      battleHudModule(canvas, telemetry, controls, hudRef),
+      battleHudModule(canvas, telemetry, controls, hudRef, readSight),
 
     extraModules: [
       defineModule<BattleState>({

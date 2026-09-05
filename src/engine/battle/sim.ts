@@ -7,6 +7,7 @@ import type { Physics } from '../physics/world'
 import type { ShipId } from '@/lib/ship/registry'
 import { vehicleConfig } from '@/lib/utils'
 import { DEFAULT_TUNING } from '../state'
+import { aimFrom, castArenaRay, forwardFrom, muzzleFrom } from './aim'
 import { apexArena } from './arena'
 import type { ArenaTransform, BattleArena, BattleTeam, ControlPointDef } from './arena'
 import { botInput } from './bot'
@@ -103,8 +104,6 @@ const _toTarget = new Vector3()
 const _tmp3     = new Vector3()
 const _dir      = new Vector3()
 const _origin   = new Vector3()
-const _aimAxis  = new Vector3()
-const _aimQuat  = new Quaternion()
 const _tmpQuat  = new Quaternion()
 const UP        = new Vector3(0, 1, 0)
 
@@ -119,21 +118,11 @@ function mulberry32 (seed: number): () => number {
   }
 }
 
-/** Ray filter: arena geometry only. Ships never occlude a shot at another ship. */
-function isArena (collider: import('@dimforge/rapier3d-compat').Collider): boolean {
-  const body = collider.parent()
-  return !(body?.userData as { isVehicle?: boolean } | undefined)?.isVehicle
-}
-
 function distSq2D (ax: number, az: number, bx: number, bz: number): number {
   const dx = ax - bx
   const dz = az - bz
   return dx * dx + dz * dz
 }
-
-/** Muzzle height above the chassis origin — beams leave the nose, not the skirt. */
-const MUZZLE_Y = 0.45
-const MUZZLE_Z = 2.6
 
 /**
  * The headless battle sim.
@@ -502,41 +491,28 @@ export class BattleSim {
 
   // --- targeting ------------------------------------------------------------
 
-  /** Ship-forward unit vector, written into `out`. */
+  /**
+   * Ship-forward, aim and muzzle come from `battle/aim.ts`.
+   *
+   * They used to be private methods here, which left the client with no way to
+   * draw where the guns actually point — see the note at the top of that file.
+   */
   private forwardOf (player: BattlePlayer, out: Vector3): Vector3 {
     const q = player.chassis.rotation()
     _tmpQuat.set(q.x, q.y, q.z, q.w)
-    return out.set(0, 0, 1).applyQuaternion(_tmpQuat)
+    return forwardFrom(out, _tmpQuat)
   }
 
-  /**
-   * The aim vector: ship-forward tipped by the player's vertical trim.
-   *
-   * Kept separate from `forwardOf` rather than folded into it, because the
-   * muzzle position and the hull's own facing still want the true forward —
-   * only what the guns and the lock cone point AT should move.
-   */
   private aimOf (player: BattlePlayer, out: Vector3): Vector3 {
-    this.forwardOf(player, out)
-    if (!player.aimAngle)
-      return out
-
-    // Rotate about the ship's own lateral axis so the trim stays relative to
-    // the hull as it banks, instead of drifting when the ship rolls.
     const q = player.chassis.rotation()
     _tmpQuat.set(q.x, q.y, q.z, q.w)
-    _aimAxis.set(1, 0, 0).applyQuaternion(_tmpQuat)
-    // Negative: +X here is the ship's LEFT (forward is +Z), so a positive
-    // rotation about it drops the nose.
-    _aimQuat.setFromAxisAngle(_aimAxis, -player.aimAngle)
-    return out.applyQuaternion(_aimQuat).normalize()
+    return aimFrom(out, _tmpQuat, player.aimAngle)
   }
 
-  /** Muzzle position in world space, written into `out`. */
   private muzzleOf (player: BattlePlayer, out: Vector3): Vector3 {
-    const t = player.chassis.translation()
-    this.forwardOf(player, _tmp3)
-    return out.set(t.x + _tmp3.x * MUZZLE_Z, t.y + MUZZLE_Y + _tmp3.y * MUZZLE_Z, t.z + _tmp3.z * MUZZLE_Z)
+    const q = player.chassis.rotation()
+    _tmpQuat.set(q.x, q.y, q.z, q.w)
+    return muzzleFrom(out, player.chassis.translation(), _tmpQuat)
   }
 
   /**
@@ -548,16 +524,7 @@ export class BattleSim {
    * decoration.
    */
   private staticBlockerAt (from: Vector3, dir: Vector3, maxToi: number): number {
-    const ray    = this.ray
-    ray.origin.x = from.x
-    ray.origin.y = from.y
-    ray.origin.z = from.z
-    ray.dir.x    = dir.x
-    ray.dir.y    = dir.y
-    ray.dir.z    = dir.z
-
-    const hit = this.physics.world.castRay(ray, maxToi, true, undefined, undefined, undefined, undefined, isArena)
-    return hit ? hit.timeOfImpact : Number.POSITIVE_INFINITY
+    return castArenaRay(this.physics.world, this.ray, from, dir, maxToi)
   }
 
   /** True when nothing solid stands between the two ships. */

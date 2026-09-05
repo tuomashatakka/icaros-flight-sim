@@ -210,6 +210,10 @@ export function vehicleModule (
     // Applied force over weight — the load the airframe is actually carrying,
     // which is the number a g meter shows. Smoothed because a contact impulse
     // spikes it for one tick and an unfiltered needle reads as noise.
+    const v = chassis?.linvel()
+    if (v)
+      telemetry.velocity.set(v.x, v.y, v.z)
+
     const [ fx, fy, fz ] = result.netForce
     const g              = Math.hypot(fx, fy, fz) / (vehicleConfig.mass * 9.81)
     telemetry.gLoad     += (g - telemetry.gLoad) * G_SMOOTHING

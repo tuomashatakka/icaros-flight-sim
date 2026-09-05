@@ -3,6 +3,15 @@ import type { ShipTuning } from '../state'
 
 export const HUD_FONT = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'
 
+/**
+ * The HUD palette. Everything drawn on a facet, the overlay or a touch control
+ * comes from here.
+ *
+ * The `pale*` tints and the two accents below are not new colours — they were
+ * a dozen one-off hex literals scattered through `facets.ts` and `panel.ts`,
+ * each a near-duplicate of a token above it. A palette only holds a design
+ * together if the drawing code has no reason to reach past it.
+ */
 export const HUD_COLORS = {
   cyan:    '#58f7ef',
   blue:    '#74a7ff',
@@ -12,6 +21,37 @@ export const HUD_COLORS = {
   white:   '#e5ffff',
   green:   '#7fffd1',
   red:     '#ff5470',
+
+  // Readout tints: the same hues lifted toward white so body text stays legible
+  // against the glass without competing with an accent stroke.
+  paleCyan:    '#b9ffff',
+  paleBlue:    '#dfeaff',
+  paleViolet:  '#d9ccff',
+  paleMagenta: '#ffd8eb',
+  paleAmber:   '#ffe99f',
+
+  // Bar gradient partners.
+  lime: '#d6f66c',
+  teal: '#6ff0d4',
+} as const
+
+/** Ink and glass, as rgba strings. The chrome every panel and control shares. */
+export const HUD_SURFACES = {
+
+  /** Panel and control fill. */
+  ink: 'rgba(4, 14, 22, .62)',
+
+  /** Deeper fill, for anything that must stay readable over bright geometry. */
+  inkSolid: 'rgba(3, 9, 15, .90)',
+
+  /** Inactive stroke. */
+  edge: 'rgba(88, 247, 239, .34)',
+
+  /** Inner rule, one step in from the edge. */
+  edgeDim: 'rgba(88, 247, 239, .16)',
+
+  /** Bar troughs and disabled tracks. */
+  track: 'rgba(126, 168, 190, .16)',
 } as const
 
 export const HUD_PANEL_PERIOD   = 0.075

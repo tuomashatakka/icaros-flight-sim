@@ -175,6 +175,16 @@ export type Cannons = {
 
   /** Barrel size multiplier, on top of the hull-derived unit. */
   setScale(scale: number): void;
+
+  /**
+   * Muzzle tips in WORLD space, appended into `out` and returned.
+   *
+   * The drawn guns, not the simulation's. `BattleSim` fires everything from one
+   * synthetic point on the centreline, and moving it would change hit results
+   * on a server-authoritative sim — so the reticle draws the convergence these
+   * pods imply and the authority is left alone.
+   */
+  muzzleWorld(out: THREE.Vector3[]): THREE.Vector3[];
   setVisible(visible: boolean): void;
   dispose(): void;
 }
@@ -206,6 +216,7 @@ export function createCannons (): Cannons {
   let geometry: THREE.BufferGeometry | null = null
 
   const glowGeo = new THREE.SphereGeometry(0.013, 8, 6)
+  const _muzzle = new THREE.Vector3()
 
   function rebuild (): void {
     group.clear()
@@ -252,6 +263,21 @@ export function createCannons (): Cannons {
       scale = next
       for (const pod of group.children)
         pod.scale.setScalar((mounts[0]?.unit ?? 1) * scale)
+    },
+
+    muzzleWorld (out) {
+      out.length = 0
+      if (!group.visible)
+        return out
+
+      const z = muzzleZ(weapon)
+      for (const pod of group.children) {
+        // The pods carry the hull's fitted scale, so the muzzle offset has to
+        // ride through their matrix rather than being added in world units.
+        pod.updateWorldMatrix(true, false)
+        out.push(pod.localToWorld(_muzzle.set(0, 0, z).clone()))
+      }
+      return out
     },
 
     setVisible (visible) {
