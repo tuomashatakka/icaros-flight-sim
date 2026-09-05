@@ -1,0 +1,79 @@
+# The checks that would have caught the last two regressions.
+#
+# There was no CI in this repository at all: the netcode refactor — 204 files,
+# six packages — merged its pull request with nothing but a Vercel preview build
+# having looked at it, and a preview build is a weak signal. It compiles a Next
+# app; it does not run 258 tests, it does not typecheck the six workspace
+# packages (Next only ever sees the ones it transpiles), and it cannot notice
+# that a simulation stopped being reproducible.
+name: CI
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+
+# A new push supersedes an in-flight run on the same branch. Nobody needs the
+# result for a commit that is already three commits old.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned, not `latest`. This project cares about reproducibility more
+      # than most, and a toolchain that moves under it is the least interesting
+      # possible source of a failed run.
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.11
+
+      # `--frozen-lockfile` so a dependency cannot drift in CI without the
+      # lockfile change showing up in the diff.
+      - run: bun install --frozen-lockfile
+
+      # Typecheck covers the app AND all six packages. Their tsconfigs set
+      # `paths: {}`, so this is also what enforces the package boundaries — an
+      # `@/…` import inside a package fails here rather than at boot.
+      - run: bun run typecheck
+
+      - run: bun run lint
+
+      - run: bun run test
+
+      # Determinism is a feature, and it is the one property no other check
+      # would notice losing. Each of these replays a scripted input timeline
+      # twice and compares hashes; a divergence exits non-zero.
+      - name: Determinism (race)
+        run: |
+          for scenario in straight-line hard-corner turn-response strafe-response boost-jump respawn; do
+            bun run dev:scenario "$scenario" > /dev/null
+          done
+
+      - name: Determinism (battle)
+        run: |
+          bun run dev:replay point-blank > /dev/null
+          bun run dev:replay straight-fight > /dev/null
+
+      - run: bun run build
+
+      # Dev-only code is eliminated by `NODE_ENV`, and server-only packages
+      # should never reach a browser. Both are invariants that fail silently:
+      # the app still works, it is just shipping things it should not.
+      - name: No dev or server code in the client bundle
+        run: |
+          status=0
+          for needle in __dev colyseus/core drizzle-orm @neondatabase pglite; do
+            if grep -rl "$needle" .next/static > /dev/null 2>&1; then
+              echo "::error::'$needle' leaked into the client bundle"
+              grep -rl "$needle" .next/static | head -5
+              status=1
+            fi
+          done
+          exit $status

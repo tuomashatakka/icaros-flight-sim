@@ -368,6 +368,25 @@ Marketplace and it injects `DATABASE_URL` (pooled), `DATABASE_URL_UNPOOLED`, the
 Turn on preview branching while you are there, or every preview deployment
 writes to the production database, registrations included.
 
+Two secrets are **not** injected and have to be set by hand, on every
+environment that should be able to sign anyone in:
+
+```bash
+vercel env add AUTH_SECRET       production preview   # openssl rand -base64 32
+vercel env add GAME_TOKEN_SECRET production preview   # same again
+```
+
+Neither has a safe default and neither fails at build time — the deployment
+goes green and then answers 500 on `/api/auth/*` and `/api/game/ticket`, which
+is precisely what the first deploy of the netcode refactor did. `AUTH_SECRET`
+is Auth.js's signing key; `GAME_TOKEN_SECRET` signs the join ticket and must
+match the game server's copy exactly.
+
+The failure degrades as well as it can: a broken `AUTH_SECRET` seats guests
+rather than refusing everyone, and a missing `GAME_TOKEN_SECRET` answers 503
+naming itself rather than a bare 500. Guests can still play through both. But
+nobody can sign in until they are set.
+
 Then apply the migrations once, against the direct connection:
 
 ```bash

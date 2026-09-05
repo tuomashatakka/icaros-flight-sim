@@ -18,7 +18,17 @@ const GOOD   = 'correct-horse'
 // The ticket route reads the Auth.js session. Stubbing `auth()` rather than
 // standing up a whole sign-in keeps this a test of the ROUTE, not of Auth.js.
 let session: { user?: { id?: string; name?: string } } | null = null
-vi.mock('Δlib/auth', () => ({ auth: async () => session }))
+
+/** When set, `auth()` throws it — the shape of a missing `AUTH_SECRET`. */
+let sessionFailure: Error | null = null
+
+vi.mock('Δlib/auth', () => ({
+  auth: async () => {
+    if (sessionFailure)
+      throw sessionFailure
+    return session
+  },
+}))
 
 const post = (body: unknown) =>
   new Request('http://localhost/api/register', { method: 'POST', body: JSON.stringify(body) })
@@ -99,5 +109,42 @@ describe('GET /api/game/ticket', () => {
 
   it('refuses a forged ticket', async () => {
     expect(await verifyTicket('not.a.jwt', SECRET)).toBeNull()
+  })
+
+  it('still seats a guest when the session cannot be read at all', async () => {
+    // The shape of a deployment with no AUTH_SECRET. Nobody can be identified,
+    // which is a reason to seat a guest — not a reason to refuse everyone.
+    // This route answered 500 with an empty body on the first deploy after the
+    // netcode refactor, for exactly this.
+    sessionFailure = new Error('MissingSecret: Please define a `secret`.')
+
+    const { GET }  = await import('Δapp/api/game/ticket/route')
+    const response = await GET(new Request('http://localhost/api/game/ticket?name=Ghost'))
+    expect(response.status).toBe(200)
+
+    const body = await response.json() as { ticket: string; registered: boolean }
+    expect(body.registered).toBe(false)
+    expect(await verifyTicket(body.ticket, SECRET)).toEqual({ pilotId: null, name: 'Ghost' })
+
+    sessionFailure = null
+  })
+
+  it('answers 503 and names the variable when it cannot sign at all', async () => {
+    // An unsigned ticket is not a ticket, so this one genuinely cannot be
+    // worked around — but it is a configuration fault, and an anonymous 500
+    // tells an operator nothing.
+    session = null
+    const previous = process.env.GAME_TOKEN_SECRET
+    delete process.env.GAME_TOKEN_SECRET
+
+    try {
+      const { GET }  = await import('Δapp/api/game/ticket/route')
+      const response = await GET(new Request('http://localhost/api/game/ticket'))
+      expect(response.status).toBe(503)
+      expect(await response.json()).toMatchObject({ error: 'ticket-unavailable' })
+    }
+    finally {
+      process.env.GAME_TOKEN_SECRET = previous
+    }
   })
 })
