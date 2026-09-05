@@ -7,8 +7,8 @@ inside the cockpit.
 
 React renders menus and the hangar panel. Race and battle render one interactive canvas each; every
 in-session readout, control, modal, toast, and tuning surface belongs to the canvas-owned HUD.
-Everything inside the canvas is plain three.js driven by `src/engine/`, and
-`src/components/scene-canvas.tsx` is the only file where React and three.js meet. See
+Everything inside the canvas is plain three.js driven by `packages/engine/`, and
+`packages/ui/src/scene-canvas.tsx` is the only file where React and three.js meet. See
 [Architecture](#architecture).
 
 ## Run locally
@@ -20,6 +20,7 @@ bunx playwright install chromium   # once, for the dev CLI below
 ```
 
 ```bash
+bun run aliases:check  # every package tsconfig still matches scripts/aliases.mjs
 bun run test           # level geometry, nozzle inference, tuning source output
 bun run test:physics   # headless Rapier harness — the ship must stay upright
 bun run typecheck
@@ -68,8 +69,9 @@ mid-corner.
 
 ## Ships
 
-Ships are registered in one place — `src/lib/ship/registry.ts` (`SHIP_PRESETS`). The store,
-hangar selection grid, and runtime loader all derive from it, so adding a ship is a single entry.
+Ships are registered in one place — `packages/core/src/ship/registry.ts` (`SHIP_PRESETS`). The
+store, hangar selection grid, and runtime loader all derive from it, so adding a ship is a single
+entry.
 
 - **CB1** — GLTF model (`public/spaceship_-_cb1/`), fully recolourable in the hangar.
 - **Icaras** — procedurally rebuilt mesh with baked PBR livery (`public/icaras/`).
@@ -83,11 +85,11 @@ Ships carrying a baked livery (Icaras + the WipEout fleet, tagged `userData.pbrT
 top of the atlas, while `texturePreset` / `textureRepeat` stay inert and are disabled in the panel.
 CB1 is the only ship whose maps are generated from `texturePreset`, so it alone honours all eight
 fields. The emissive controls drive the `Glow` bucket only — a full-body emissive wash would flood
-the livery out of existence. See `applyShipConfig` in `src/lib/ship/materials.ts`.
+the livery out of existence. See `applyShipConfig` in `packages/engine/src/ship/materials.ts`.
 
 ### Afterburner
 
-Every hull carries an engine plume (`src/engine/fx/afterburner.ts`): two additive quads crossed
+Every hull carries an engine plume (`packages/engine/src/fx/afterburner.ts`): two additive quads crossed
 about the thrust axis, a nozzle flare and a short-range point light, per engine. In the race it
 tracks the throttle — idle floor, thrust, boost — and in the hangar it follows the `engines`
 toggle. `burnColor` / `burnIntensity` / `burnLength` / `nozzleSpread` are per-ship and persisted.
@@ -103,7 +105,7 @@ slider away from fixed.
 
 ### Working on the FBX hulls
 
-Two things about these scans are easy to get wrong (see `src/lib/ship/fbx-ship.ts`):
+Two things about these scans are easy to get wrong (see `packages/engine/src/ship/fbx-ship.ts`):
 
 - Each hull is **one mesh carrying a 4-material array** (`Body`/`Cockpit`/`Glass`/`Glow`) plus 5–29
   geometry groups, and **the array order differs per ship** — Feisar is `[Body, Glow, Cockpit,
@@ -120,41 +122,51 @@ samples only the green channel and would erase the red canopies (Qirex, AG-Syste
 ## Architecture
 
 The game is split between a browser client and an authoritative server, and the
-line between them runs through six workspace packages:
+line between them runs through eleven workspace packages plus the Next.js
+shell in `src/`. One glyph names each — `scripts/aliases.mjs` generates every
+`tsconfig.json`'s `paths` from a `GLYPH` table and a `DEPS` table of who may
+import whom, so an import of anything above a package in the DAG is a compile
+error rather than a boot-time surprise:
 
 ```
-packages/physics/      the hovercraft sim + the headless engine core
-packages/net/          the netcode: clock, interpolation, prediction, bit-packed codec
-packages/race/         RaceSim, track data, the race room
-packages/battle/       BattleSim, weapons, arena data, the battle room
-packages/data/         Drizzle over Neon (PGlite for tests)
-packages/server/       Colyseus boot — defines the two rooms
+packages/physics/      Φ  the hovercraft sim + the headless engine core (leaf)
+packages/net/          Ξ  the netcode: clock, interpolation, prediction, bit-packed codec (leaf)
+packages/data/         Ð  Drizzle over Neon; PGlite for tests (leaf)
+packages/race/         Λ  RaceSim, track data, the race room
+packages/battle/       Ψ  BattleSim, weapons, arena data, the battle room
+packages/core/         Ȼ  ship registry, palettes, tuning helpers, track metadata
+packages/state/        Ƨ  client state on threejs-scene stores
+packages/engine/       Σ  the client runtime — vanilla three.js, no React below this line
+  scenes/base.ts          the one composition root that stays here
+  net/                    the client's netcode binding + shared prediction
+  race/ battle/           per-mode transports and visuals
+  hud/                    the shared canvas-owned race and battle HUD (see below)
+  levels/                 the four tracks' MESHES (the data is in packages/race)
+  modules/                publish.ts, publish-battle.ts, ship-visual.ts, sun.ts, physics-step.ts
+  camera/rig.ts           chase + cockpit camera, as two blended stations
+  bridge.ts               client stores -> app state, one direction only
+  dev/                    dev-only debug harness; dropped from production builds
+packages/game/          Ɠ  composition roots: mountRace, mountBattle, mountHangar, mountCrashLab
+packages/ui/            Ʊ  React components and hooks; scene-canvas.tsx is the ONLY React<->three boundary
+packages/server/        §  Colyseus boot — defines the two rooms
 
-src/engine/            vanilla three.js — no React imports anywhere below this line
-  scenes/              composition roots: race.ts, battle.ts, hangar.ts
-  net/                 the client's netcode binding + shared prediction
-  race/ battle/        per-mode transports and visuals
-  hud/                 the shared canvas-owned race and battle HUD (see below)
-  levels/              the four tracks' MESHES (the data is in packages/race)
-  camera/rig.ts        chase + cockpit camera, as two blended stations
-  bridge.ts            client stores -> app state, one direction only
-  dev/                 dev-only debug harness; dropped from production builds
-src/components/scene-canvas.tsx   the ONLY React<->three boundary
-scripts/dev-cli.mjs    drive the running game from a shell (see below)
+scripts/dev-cli.mjs        drive the running game from a shell (see below)
+scripts/aliases.mjs        the `paths` generator — `bun run aliases` / `aliases:check`
 ```
 
-`physics`, `net`, `race` and `battle` each set `"paths": {}` in their tsconfig,
-so an `@/…` import inside one is a compile error. Nothing crosses from a package
-back into `src/`.
+`physics`, `net` and `data` are the only true leaves. Every other package's
+`paths` lists exactly its declared dependencies' glyphs, and none of them ever
+includes `Δ` — `src/`'s own glyph — so nothing crosses from a package back
+into `src/`.
 
-State flows one way: `src/state stores -> bridge -> app state -> module.update() -> scene`. Modules read
+State flows one way: `Ƨ` stores -> bridge -> app state -> `module.update()` -> scene. Modules read
 state and never write it. Engine *outputs* (speed, boost, lap times) travel back out through the
-publish module on a throttled schedule, and the two sets of fields are disjoint, so there is no
-feedback loop.
+publish modules (`publish.ts` for race, `publish-battle.ts` for battle) on a throttled schedule,
+and the two sets of fields are disjoint, so there is no feedback loop.
 
-**Simulation runs at a fixed 60 Hz and rendering is interpolated.** `src/engine/clock.ts` mirrors
-the library's fixed-step arithmetic but also exposes the leftover accumulator as `alpha()`; the
-root `render` hook samples each body's pose between its previous and current transform at that
+**Simulation runs at a fixed 60 Hz and rendering is interpolated.** `packages/physics/src/clock.ts`
+mirrors the library's fixed-step arithmetic but also exposes the leftover accumulator as `alpha()`;
+the root `render` hook samples each body's pose between its previous and current transform at that
 alpha. Without this the ship stair-steps on a 120 Hz display — sampling the raw
 `body.translation()` shows the same transform for two frames running.
 
@@ -165,8 +177,8 @@ Plain CSS. No utility framework, no component library, no preprocessor.
 - `src/app/globals.css` — design tokens and the reset. Colours are declared twice: a bare HSL
   triple (`--accent-hsl`) and a finished colour (`--accent`). The triple exists so a rule can
   compose an alpha variant, `hsl(var(--accent-hsl) / 0.3)`.
-- HUD presentation tokens live in `src/engine/hud/tokens.ts`; the race and battle adapters share
-  them without leaking game-state policy into the drawing primitives.
+- HUD presentation tokens live in `packages/engine/src/hud/tokens.ts`; the race and battle adapters
+  share them without leaking game-state policy into the drawing primitives.
 - `*.module.css` next to each component — scoped class names, no global collisions. Shared chrome
   within a file uses `composes:`.
 - Form controls (range, color, text, select) are styled once in `globals.css`, since nearly every
@@ -178,13 +190,19 @@ value.
 
 ## Physics & camera
 
-A Rapier **raycast vehicle controller repurposed as a hovercraft** — suspension rest length is the
-hover height. Tracks collide via **cuboid box strips**, not trimeshes: the vehicle controller's
-wheel raycasts do not register against a trimesh and the ship falls through.
+The ship is **a thruster rig, not a vehicle controller**: every control is a force applied at a
+point on the hull (`packages/physics/src/thrusters.ts` is the hardware, `vehicle-step.ts` decides
+each nozzle's throttle and applies `addForceAtPoint`), and four hover pads each cast their own ray
+straight down, suspension-style, to hold the hull off the deck. Nothing sets a velocity or an
+angular velocity to make the ship move — the only pose mutation left is a teleport. Tracks collide
+via **cuboid box strips** (`packages/physics/src/colliders.ts`), not trimeshes: a trimesh would
+have to register against the hover rays directly, and a thin strip is both cheaper and exact.
 
-The `setAngvel` block that aligns the ship to the surface normal is **load-bearing, not cosmetic**.
-With it removed, thrust torques the ship onto its back within a second. `test/vehicle-physics.mjs`
-asserts exactly that (`min up-dot after settle: 1.000`).
+Staying upright is **load-bearing, not cosmetic**: a PD controller allocates differential lift
+across the four hover pads on the ground, and an attitude couple in the air. Without it thrust
+torques the ship onto its back within a second — the rig has no other torque canceling that
+tendency. `bun run test:physics` (`scripts/vehicle-physics.ts`) asserts exactly that, upright checks
+at rest, under thrust, through a turn, and at the end of station keeping.
 
 Turn and strafe authority are also shared physics contracts, not per-input multipliers. Ground yaw
 peaks at `1.45 rad/s` and falls below 45°/s at maximum speed; strafe targets 14% of cruise speed with
@@ -193,7 +211,7 @@ two-second traces on The Flats, so keyboard, pointer, touch, race, and battle st
 
 ### Two stations, one rig
 
-`src/engine/camera/rig.ts` holds a single `PerspectiveCamera` and two **stations** — `CHASE` and
+`packages/engine/src/camera/rig.ts` holds a single `PerspectiveCamera` and two **stations** — `CHASE` and
 `COCKPIT` — that it lerps between over ~0.55 s. There is only one camera on purpose: `createApp`
 binds the camera it is given to its resize observer at construction, so a second camera swapped in
 later would never have its aspect corrected.
@@ -224,7 +242,7 @@ otherwise see is the inside of its back faces.
 
 ## The holographic HUD
 
-`src/engine/hud/` is a standalone canvas-owned GUI system shared by race and battle. It adapts each
+`packages/engine/src/hud/` is a standalone canvas-owned GUI system shared by race and battle. It adapts each
 mode into one `HudData` contract, then places seven interactive canvas readouts over one folded visor.
 Three upper readouts use open canopy brackets, three lower readouts use closed MFD surfaces, and the
 targeting pane recesses between them. Their independent bounds cluster both utility screens left, keep
@@ -234,7 +252,12 @@ so their sparse strokes and asymmetric tapers stay crisp without shipping a refe
 camera-locked screen plane owns transient layers:
 countdown, finish and scoreboard states, errors, toasts, tuning, crash flash, and touch controls.
 
-- `tokens.ts` is the semantic palette, typography, cadence, and tuning specification.
+- `tokens.ts` is the semantic palette — amber as the primary cockpit holo colour (the cockpit's own
+  light), cyan reserved as the contrast accent (targets, gates, friendlies), red for alerts and
+  enemies, green for locked/ready — plus typography, cadence, and the tuning specification.
+  `chrome.ts` turns those tokens into the visor's shared drawing vocabulary: cut-corner plates,
+  doubled strokes, corner brackets, glow, and the rolling scanline every panel, the overlay, and the
+  touch controls draw through, so the three surfaces read as one instrument rather than lookalikes.
 - `panel.ts` owns canvas textures, drawing primitives, and hit regions; `facets.ts` owns the seven
   live-data layouts; `layout.ts` owns the continuous visor topology; `overlay.ts` owns full-screen
   and touch layers.
@@ -259,8 +282,8 @@ the publish module exists to avoid.
 
 ### Race clocks
 
-`raceTimers` in `src/state/race.ts` is a plain mutable object, for the same reason
-`src/engine/telemetry.ts` is: the clocks advance every 60 Hz sim step, and writing them into a store
+`raceTimers` in `packages/state/src/race.ts` is a plain mutable object, for the same reason
+`packages/engine/src/telemetry.ts` is: the clocks advance every 60 Hz sim step, and writing them into a store
 at that rate forced 60 React commits a second — which quietly defeated the 15 Hz throttling
 elsewhere. The canvas HUD reads the live object and stays exact to the millisecond; the store mirrors
 it on a throttle for other consumers. Lap times are taken from the live clock at the instant of the
@@ -270,7 +293,8 @@ crossing, never from the throttled copy.
 
 The race HUD carries a canvas-native **tuning panel** over the seven physics knobs that used to live
 in Leva. It persists to `localStorage`, so a tuning session survives a reload, and **copy as TS**
-emits just the values that moved as a block you paste into `vehicleConfig` in `src/lib/utils.ts`.
+emits just the values that moved as a block you paste into `vehicleConfig` in
+`packages/physics/src/config.ts`.
 
 ## Debugging & dev tooling
 
@@ -280,7 +304,7 @@ listening on :9002 and starts one otherwise.
 
 ```bash
 bun run dev:probe --level flats             # full state snapshot as JSON
-bun run dev:shot /tmp/a.png --step 300 --overlay colliders,wheels
+bun run dev:shot /tmp/a.png --step 300 --overlay colliders,forces
 bun run dev:console --seconds 5             # errors, frame times, WebGL state
 bun run dev:eval -e '__dev.probe().ship.up'
 ```
@@ -336,21 +360,21 @@ that should have matched. Both harnesses now build a **fresh sim per run**, so
 there is no reset list to forget. The rule that replaced it: keep new sim state
 constructor-initialised.
 
-Underneath that, `test/determinism.test.ts` hashes rapier's own
+Underneath that, `packages/physics/test/determinism.test.ts` hashes rapier's own
 `world.takeSnapshot()` and asserts two runs match — the physics engine's
 cross-platform claim holds only for the enhanced-determinism build at an exact
 pin, so it is tested rather than trusted.
 
 ### Debug overlays
 
-`--overlay` (or `?overlay=` on the URL) draws rapier collider wireframes,
-suspension rays with wheel contact normals, contact manifolds, the ship's path,
-and a helper on the sun's shadow camera — the last being the direct check for
-"has the ship driven out of the shadow frustum again".
+`--overlay` (or `?overlay=` on the URL) draws rapier collider wireframes, the four hover rays with
+their hit points and surface normals, contact manifolds, the ship's path, per-thruster force
+vectors and the net force/torque, and a helper on the sun's shadow camera — the last being the
+direct check for "has the ship driven out of the shadow frustum again".
 
 ### URL overrides
 
-`?seed=` `?paused=1` `?overlay=colliders,wheels` `?nohud=1` `?tuning=<base64>`
+`?seed=` `?paused=1` `?overlay=colliders,forces` `?nohud=1` `?tuning=<base64>`
 — so any bug report can be a link that reproduces it exactly.
 
 None of this exists in production: it sits behind `NODE_ENV !== 'production'`

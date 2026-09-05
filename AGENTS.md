@@ -17,10 +17,12 @@ one has broken installs before, with `401 Unauthorized` from
 bun run dev          # next dev on :9002
 bun run dev:server   # the game server on :9003 (race AND battle)
 bun run dev:all      # both, output prefixed, and they stop together
-bun run typecheck    # tsc for the app and all six packages
-bun run lint         # eslint src packages scripts
+bun run aliases      # regenerate every package's tsconfig `paths` (scripts/aliases.mjs)
+bun run aliases:check # CI: fails on a hand-edited tsconfig or an import leaving a package's src/
+bun run typecheck    # tsc for the app and every package
+bun run lint         # eslint src packages scripts test
 bun run test         # vitest, one runner
-bun run test:physics # standalone Rapier vehicle harness
+bun run test:physics # standalone Rapier vehicle harness (scripts/vehicle-physics.ts)
 bun run db:generate  # drizzle-kit: schema -> packages/data/drizzle/*.sql
 bun run db:migrate   # apply them to Neon
 bun run build
@@ -32,23 +34,41 @@ The server is a separate Bun process in `packages/server`, and it must be,
 because it is a persistent stateful simulation: exactly what a serverless host
 cannot run.
 
-The workspace is `packages/*`, six of them, and the boundaries are enforced
-rather than agreed:
+`src/` is the Next.js app shell — routes, API handlers, the server-only
+helpers under `src/lib/`. Everything else is a workspace package under
+`packages/*`, eleven of them, and the boundaries are enforced rather than
+agreed. One glyph names each, `src/` included:
 
-```
-physics/  the simulation + the headless engine core. three + rapier, nothing else.
-net/      the netcode, mode-agnostic. Knows about ticks, not about laps or guns.
-race/     RaceSim, track data, the Colyseus race room.
-battle/   BattleSim, weapons, arena data, the Colyseus battle room.
-data/     Drizzle over Neon. PGlite for tests.
-server/   Colyseus boot. Defines the two rooms and gets out of the way.
-```
+| glyph | package | owns |
+| --- | --- | --- |
+| `Δ` | `src/` | the Next.js app shell |
+| `Ȼ` | `core` | ship registry, palettes, tuning helpers, track metadata, `CameraView` |
+| `Ƨ` | `state` | client state on `threejs-scene` stores |
+| `Σ` | `engine` | the client runtime: modules, HUD, netcode client, camera, FX, level meshes, ship assets |
+| `Ɠ` | `game` | composition roots: `mountRace`, `mountBattle`, `mountHangar`, `mountCrashLab` |
+| `Ʊ` | `ui` | React components and hooks |
+| `Φ` | `physics` | the simulation core: three + rapier, nothing else |
+| `Ξ` | `net` | the netcode, mode-agnostic: clock, codec, interpolation, rewind |
+| `Λ` | `race` | RaceSim, track data, the Colyseus race room |
+| `Ψ` | `battle` | BattleSim, weapons, arena data, the Colyseus battle room |
+| `Ð` | `data` | Drizzle over Neon; PGlite for tests |
+| `§` | `server` | Colyseus boot — defines the two rooms and gets out of the way |
 
-Each of `physics`, `net`, `race` and `battle` sets `"paths": {}` in its
-tsconfig, so an `@/…` or `Δ…` import inside one is a **compile error** rather
-than something noticed when the server first tries to boot. Every package
-publishes an `exports` map, which is what makes `@crash-velocity/race/room`
-resolve identically for bun, node and typescript.
+`scripts/aliases.mjs` is the single source of truth: its `GLYPH` table names
+each package and its `DEPS` table says who may import whom. From those two it
+generates every package's `tsconfig.json` `paths` — a package's direct
+dependencies, plus the transitive closure tsc needs to type what those pull
+in, and nothing from above it in the DAG. `bun run aliases` regenerates every
+`paths` block after adding a package or a dependency edge; `bun run
+aliases:check` (which CI runs) fails on a tsconfig edited by hand instead of
+generated, and on a relative import that leaves a package's own `src/` — a
+boundary hole no `paths` entry can close. `physics`, `net` and `data` are the
+only true leaves (their `paths` holds just themselves); every other package's
+`paths` lists exactly its declared dependencies, so an import of a package
+above it in the DAG — or of `Δ*`, `src/`'s own glyph — is a **compile error**
+rather than something noticed when the server first tries to boot. Every
+package also publishes an `exports` map, which is what makes
+`@crash-velocity/race/room` resolve identically for bun, node and typescript.
 
 **`packages/server` is Colyseus boot and nothing else.** It defines `race` and
 `battle`, mounts `/rooms` and `/health`, and installs the process's one database
@@ -79,17 +99,21 @@ interpolator.
 
 **`packages/physics` is the simulation, and it is a leaf.** It depends on
 `three` and `@dimforge/rapier3d-deterministic-compat` and nothing else — no React, no zustand,
-no DOM, no scene graph. Import it as `@crash-velocity/physics`. `bun run
-typecheck` checks it standalone with `paths: {}`, so an `@/…` import inside it
+no DOM, no scene graph. Import it as `Φ`. `bun run
+typecheck` checks it standalone with `paths: {}`, so a `Δ…` import inside it
 is a build error rather than a thing someone notices later. It ships TypeScript
 source and Next transpiles it (`transpilePackages`); there is no build step
 between it and its two consumers, so there is no stale-dist failure mode.
 
-**New code imports through `Δ`, not `@`.** Both aliases resolve to `src/`;
-`Δengine/battle/sim` is the one to use going forward. There is no slash after
-the `Δ` (the pattern substitutes `Δ*` → `./src/*`). The 40 files still on `@/`
-work fine and are a separate mechanical pass, not something to fold into
-unrelated work.
+**Every import goes through a glyph now — `@/…` and `@crash-velocity/*` import
+specifiers no longer exist anywhere in the tree.** `Δ` is `src/`'s own glyph
+(`Δlib/auth`); every workspace package answers to its own (`Φconfig`,
+`Ψweapons`, `Ƨreact`, …), per the table above. There is no slash after a glyph
+— the pattern substitutes `<glyph>*` → that package's `src/*`. A package with
+a bare `index.ts` export (`physics`, `net`, `data`, `race`, `battle`, `server`,
+`state`) also answers to the bare glyph (`Φ`, `Ξ`, `Ð`, `Λ`, `Ψ`, `§`, `Ƨ`);
+`core`, `engine`, `game` and `ui` have no `index.ts` and are reached only
+through `<glyph>*`.
 
 ## Debugging the live app
 
@@ -99,7 +123,7 @@ a dev server already listening on :9002 and starts one otherwise.
 
 ```bash
 bun run dev:probe --level flats             # full state snapshot, one JSON object
-bun run dev:shot /tmp/a.png --step 300 --overlay colliders,wheels
+bun run dev:shot /tmp/a.png --step 300 --overlay colliders,forces
 bun run dev:shot /tmp/b.png --level battle --at 0,3,-190   # frame a spot directly
 bun run dev:console --seconds 5             # errors, frame times, WebGL state
 bun run dev:eval -e '__dev.probe().ship.up'
@@ -142,12 +166,12 @@ bun run test:lab                      # all of them, twice, hashes compared
 Eight atomic physics cases, each in its own lane: a wall slam under boost, a
 figure eight, a ramp jump, station keeping on a slope, brake-into-reverse, a
 strafe off a ledge, a turbine-blown tube, and a stack of crates to shoulder
-through. They live in `src/engine/sim/lab/`.
+through. They live in `packages/physics/src/lab/`.
 
 **One definition, two consumers.** `cases.ts` is pure data — geometry, spawn,
 input timeline, and the checks — with no rapier, no rendering and no test
 framework in it. `run.ts` runs a case headless and records EVERY tick, not a
-sample. `test/crash-dummies.test.ts` turns the checks into assertions;
+sample. `packages/physics/test/crash-dummies.test.ts` turns the checks into assertions;
 `/crash-lab` renders the same traces. If the watchable thing and the green thing
 could disagree about what a case is, neither is worth much.
 
@@ -189,12 +213,15 @@ held axes). Every one of those was found by diffing two runs that should have
 matched. The headless harness builds a fresh sim per run instead, so there is
 no reset list to forget.
 
-`summary.flipped` (orientation failure) and `summary.fellThrough` (went below
-the track) are separate on purpose — different causes, different fixes. A run
-with `fellThrough: true` and `minUp` near 1 drove off an edge; it did not lose
-control. Thresholds are constants at the top of `src/engine/dev/scenario.ts`.
+The CLI runs a script twice and diffs the hashes; `deterministic: false` is the
+bug to chase before anything else the summary says, because nothing past it
+means anything. Beyond that, race's summary carries each racer's `position`,
+`lap`, `gates`, `bestLap` and `finished`; battle's carries `scores` and each
+player's `health`/`kills`/`deaths`. Whether the *ship itself* stayed upright
+through a case is a different question, answered by the crash lab's own named
+checks (`bun run lab`), not by a scenario summary field.
 
-URL overrides in dev: `?seed=`, `?paused=1`, `?overlay=colliders,wheels`,
+URL overrides in dev: `?seed=`, `?paused=1`, `?overlay=colliders,forces`,
 `?nohud=1`, `?tuning=<base64>`. (`?scenario=` is gone with the browser runner.) Any reproduction can be
 handed over as a link rather than a procedure.
 
@@ -227,6 +254,13 @@ Two harnesses, same shape, no browser in either:
 - `packages/race/src/dev/replay.ts` — `bun run dev:scenario`
 - `packages/battle/src/dev/replay.ts` — `bun run dev:replay`
 
+Argument parsing, the run-twice-and-compare-hashes loop and the JSON/summary
+printer are one shared `runReplayCli` in `packages/net/src/dev/replay-cli.ts`
+(deliberately not in the `Ξ` barrel — a script, not something a sim imports);
+`packages/race/src/dev/replay-cli.ts` and `packages/battle/src/dev/replay-cli.ts`
+are now thin callers naming only what a script IS, how to run one, and which
+extra summary fields belong to that mode.
+
 Both feed a scripted input timeline to a sim with no wall clock at all and hash
 the result; two runs of one script must match. A differing hash is the bug to
 chase before any other, because **the client predicts these simulations** — it
@@ -237,7 +271,7 @@ reconciliation keeps the two halves in step.
 Underneath both sits the physics engine itself. Rapier's cross-platform
 determinism is a vendor claim that holds only for the enhanced-determinism
 build, at an identical version, with identical construction and step order — so
-`test/determinism.test.ts` hashes `world.takeSnapshot()` and asserts two runs
+`packages/physics/test/determinism.test.ts` hashes `world.takeSnapshot()` and asserts two runs
 match, rather than trusting it. (The architecture document cites
 `createSnapshot()`, which is the name in Rapier's *Rust* docs; the JavaScript
 binding calls it `takeSnapshot()`.) That test also asserts the dependency is
@@ -255,20 +289,23 @@ this the same way.
 
 These are the constraints that are expensive to rediscover.
 
-**Data flows one way.** `Δstate` stores → `app.setState` (via `src/engine/bridge.ts`) →
-modules read state. Modules never write state. Sim *outputs* go the other way
-through `src/engine/modules/publish.ts`, throttled to 15 Hz — writing telemetry
-into a store at 60 Hz costs 60 React commits a second.
+**Data flows one way.** `Ƨ` stores → `app.setState` (via
+`packages/engine/src/bridge.ts`) → modules read state. Modules never write
+state. Sim *outputs* go the other way through
+`packages/engine/src/modules/publish.ts` (race) and `publish-battle.ts`
+(battle), throttled to their own cadence — writing telemetry into a store at
+60 Hz costs 60 React commits a second.
 
-**Client state is `threejs-scene` state.** Every store in `src/state/` is the
-library's `createStore`, the same primitive each `App` keeps its own state in,
-wrapped once by `defineStore` for slice subscriptions and localStorage. There is
-no zustand. The layout is fixed: every state *type* is in `src/state/types.ts`,
-every initial value and constant in `src/state/defaults.ts`, and each domain
-file holds its store plus the actions that write it (`raceStore` +
-`raceActions`). React reads a store with `useStoreState` from `Δstate/react`;
-the engine reads it with `store.get()` and subscribes with `store.select`.
-A type or constant declared anywhere else is a duplicate waiting to drift.
+**Client state is `threejs-scene` state.** Every store in `packages/state/src/`
+is the library's `createStore`, the same primitive each `App` keeps its own
+state in, wrapped once by `defineStore` for slice subscriptions and
+localStorage. There is no zustand. The layout is fixed: every state *type* is
+in `packages/state/src/types.ts`, every initial value and constant in
+`defaults.ts`, and each domain file holds its store plus the actions that
+write it (`raceStore` + `raceActions`). React reads a store with
+`useStoreState` from `Ƨreact`; the engine reads it with `store.get()` and
+subscribes with `store.select`. A type or constant declared anywhere else is a
+duplicate waiting to drift.
 
 **Controls.** `Q/E` and the arrows turn, `A/D` strafe, `R/F` walk the vertical
 aim, `Backspace` respawns. `R` used to be respawn and `F` used to be battle's
@@ -280,8 +317,8 @@ which is what lock acquisition and both weapons aim along; `forwardOf` stays the
 true hull facing and is what the muzzle position uses.
 
 **The ship is a thruster rig, not a vehicle controller.** Every control is a
-force applied at a point on the hull — `src/engine/sim/thrusters.ts` is the
-hardware, `vehicle-step.ts` decides each nozzle's throttle and applies
+force applied at a point on the hull — `packages/physics/src/thrusters.ts` is
+the hardware, `vehicle-step.ts` decides each nozzle's throttle and applies
 `addForceAtPoint`. Nothing sets a velocity or an angular velocity to make the
 ship move; the only pose mutation left is a teleport. It used to be a rapier
 `DynamicRayCastVehicleController` with `setLinvel` for strafe and `setAngvel`
@@ -293,7 +330,7 @@ above the COM, so a strafe cannot happen without also yawing the nose into it,
 banking into it, and dipping the nose — all three fall out of `tau = r x F`.
 There is no downstream code adding those effects, so moving a mount point
 changes how the ship drives and nothing else will notice.
-`test/thrusters.test.ts` pins the signs; change a position and read what it says.
+`packages/physics/test/thrusters.test.ts` pins the signs; change a position and read what it says.
 
 **Handling authority lives in shared physics.** Race and battle both call
 `stepHovercraft`, so turn/strafe feel belongs in `vehicleConfig`,
@@ -301,8 +338,10 @@ changes how the ship drives and nothing else will notice.
 with the `turn-response` and `strafe-response` scenarios and `bun run
 test:physics`; do not tune keyboard, pointer, and touch independently.
 
-**Forces must accumulate before `world.step()`**, so the `vehicle` module has to
-precede `physics-step` in the module array. This is the same class of ordering
+**Forces must accumulate before `world.step()`**, so each mode's prediction
+module (`race-net` / `battle-net` in `packages/game/src/{race,battle}.ts`,
+which calls `stepHovercraft` via `LocalPrediction.step`) has to precede
+`physics-step` in the module array. This is the same class of ordering
 constraint as `postProcessing` being last, and it fails the same way: silently,
 with the ship simply not responding.
 
@@ -321,7 +360,7 @@ downforce term in `DRAG`/`DOWNFORCE` is what plants it. Removing it looks like
 tidying and turns the track into a launch ramp.
 
 **Touch is a third path onto the same `Controls` object.** The standalone spatial
-HUD (`src/engine/hud/`) draws twin sticks and action buttons into its screen
+HUD (`packages/engine/src/hud/`) draws twin sticks and action buttons into its screen
 plane, then writes through native pointer listeners — never React state, because
 a `useState` per pointermove re-renders at thumb rate. Weapon triggers live on
 `Controls` (`fire`, `fireSecondary`) rather than in `battle.ts` so keys, mouse,
@@ -329,7 +368,7 @@ and touch agree. `?touch=1` forces the canvas controls on in dev, and `dev-cli
 --query touch=1` reaches them.
 
 **Post-processing extends through `BaseSceneConfig.postEffects`.** Battle's chain
-lives in `src/engine/battle/post.ts`. Two traps it documents: nothing may sample
+lives in `packages/engine/src/battle/post.ts`. Two traps it documents: nothing may sample
 the composer's shared depth texture (it is attached to both render targets, so
 binding it while writing renders the frame black with no error — this is why
 there is no motion blur), and `createGodRaysPass` without a dedicated occlusion
@@ -349,12 +388,14 @@ stepped last" is unsatisfiable as a module.
 **There is no vehicle module any more.** `modules/vehicle.ts` owned the ship —
 built the body, stepped it, wrote telemetry, drove the camera — and both modes
 are network-backed now, so neither uses it. The body belongs to the prediction
-and the motion belongs to the server. What survived is `src/engine/vehicle.ts`:
-the `VehicleHandle` the rest of the engine reaches the local ship through, and
-the `VehicleDebug` payload the force overlay draws.
+and the motion belongs to the server. What survived is
+`packages/engine/src/vehicle.ts`: the `VehicleHandle` the rest of the engine
+reaches the local ship through, and the `VehicleDebug` payload the force
+overlay draws.
 
-**Fixed timestep, manual interpolation.** `STEP = 1/60` in `src/engine/clock.ts`
-is the clock step, `world.timestep`, and the vehicle `dt` simultaneously.
+**Fixed timestep, manual interpolation.** `STEP = 1/60` in
+`packages/physics/src/clock.ts` is the clock step, `world.timestep`, and the
+vehicle `dt` simultaneously.
 Rendering samples `BodyInterpolator.sample(clock.alpha(), …)` — never the raw
 body, or poses stair-step above 60 Hz. After any `setTranslation`/`setRotation`,
 call `interpolator.teleport()` or the ship visibly smears to the new pose.
@@ -372,7 +413,7 @@ defeats the point of the overlay. It must be a pure function of tick and pose
 upstream or determinism goes with it.
 
 **Colliders must be cuboids.** Track collision is box strips
-(`src/engine/physics/colliders.ts`), not a trimesh.
+(`packages/physics/src/colliders.ts`), not a trimesh.
 
 **And a strip box is sunk by its own half-thickness**, so its TOP face is flush
 with the ribbon the mesh draws (`boxColliderFromRing`). Centring it on the
@@ -394,11 +435,11 @@ cannot go back to being a `setAngvel`: overwriting angular velocity means no
 other torque on the hull can do anything, which is what made every other force
 decorative.
 
-**Yaw sign lives in the vehicle.** `steer` is negated exactly once, in
-`vehicle.ts`. +Y rotation is a LEFT turn.
+**Yaw sign lives in the vehicle step.** `steer` is negated exactly once, in
+`packages/physics/src/vehicle-step.ts`. +Y rotation is a LEFT turn.
 
 **Shadows need both halves.** The sun module follows the ship
-(`src/engine/modules/sun.ts`) because a fixed shadow frustum loses it once the
+(`packages/engine/src/modules/sun.ts`) because a fixed shadow frustum loses it once the
 ship drives out; and `castShadow` has to be set on every path that builds ship
 geometry, not just the glTF one.
 
@@ -444,8 +485,8 @@ tick (30 Hz).
 **Remote ships render ~100 ms in the past, on server time.** Never apply a
 snapshot straight to a remote transform — that is what makes a clean 30 Hz
 stream look like a stuttering one. `NetBodyInterpolator.sampleAt` brackets the
-two snapshots around `serverNow() − interpDelay`; `net-clock.ts` estimates
-`serverNow()` and **slews** corrections rather than jumping them, because an
+two snapshots around `serverNow() − interpDelay`; `packages/net/src/clock.ts`'s
+`NetClock` estimates `serverNow()` and **slews** corrections rather than jumping them, because an
 offset applied instantly teleports every ship on screen.
 
 **Prediction corrects in three tiers, and not more often.** Rapier's controllers
@@ -454,7 +495,7 @@ after a hard reset restarts from a state close to but not the server's —
 correcting 30 times a second fights the solver continuously. Inside the deadband
 the body is left alone; above it the correction replays unacknowledged input and
 the visible jump decays away; past three metres continuity is a fiction and
-everything snaps. See `src/engine/net/prediction.ts`, shared by both modes.
+everything snaps. See `packages/engine/src/net/prediction.ts`, shared by both modes.
 
 **A replayed frame must go through the same converter the server applies.**
 `toBattleInput` / `toRaceInput` live in their packages and are imported by both
@@ -511,72 +552,45 @@ preprocessor. Tailwind was removed on purpose.
 
 ```
 src/app/          Next routes. /levels/[level], /hangar, /lobby, /battle,
-                  /crash-lab.
-src/components/   React. scene-canvas.tsx is the ONLY React↔three boundary.
-src/engine/       The game's CLIENT half. Vanilla three + threejs-scene, no React.
-                  Everything here is presentation or prediction; no rules.
-  scenes/         Composition roots (mountRace, mountHangar, mountBattle).
-  net/            Shared client netcode: room-link.ts (the Colyseus binding),
-                  prediction.ts, remote-hull.ts, ticket.ts.
-  race/           transport.ts — joins the two channels into one view.
-  battle/         transport.ts, projectiles.ts, plus the visual half of the
-                  arena, the scenery and the post chain.
-  levels/         The four tracks' MESHES. The data is in packages/race.
-  modules/        AppModules: publish, sun, ship-visual, physics-step.
-  dev/            Dev-only harness. Excluded from production builds.
-  hud/            Continuous visor GUI: live facets, overlays, hit testing, touch.
-  vehicle.ts      VehicleHandle / VehicleDebug — the handle the engine reaches
-                  the local ship through.
+                  /crash-lab, /editor.
 src/app/api/      Route handlers, and the only server-side code in the Next app:
                   auth/[...nextauth] (Auth.js), register, game/ticket.
-src/state/        Client state on threejs-scene stores: types.ts, defaults.ts,
-                  one file per domain, react.ts for the hook.
-src/hooks/        React-only hooks. HUD slices only — remote positions never
-                  reach React.
 src/lib/auth.ts   Auth.js configuration.
 src/lib/net/      Browser-side account helpers.
 src/lib/server/   Server-only. Never import from a client component.
-scripts/          dev-cli.mjs, dev-all.mjs.
+scripts/          aliases.mjs (the glyph/DAG generator), dev-cli.mjs, dev-all.mjs,
+                  crash-lab.ts, vehicle-physics.ts.
 
-packages/physics/ The simulation, plus the headless engine core.
-  src/config.ts   `vehicleConfig`. Re-exported by `@/lib/utils`.
+packages/physics/ The simulation, plus the headless engine core. A leaf —
+                  depends only on three + rapier.
+  src/config.ts   `vehicleConfig`.
   src/thrusters.ts  The rig as data — the geometry IS the handling model.
   src/vehicle-step.ts  One tick: sense, control, allocate, apply.
+  src/rng.ts      `mulberry32` — the one seeded generator every sim draws from.
   src/{rapier,clock,world,colliders,interpolation}.ts
-                  Moved out of src/engine when both modes went server-side: a
-                  rapier world, a fixed clock and a collider helper are the
-                  simulation's, not the browser's.
-  src/ships.ts    The hull roster, as identity only. `SHIP_PRESETS` is typed
+                  A rapier world, a fixed clock, a collider helper and the
+                  render-interpolation buffer — the simulation's, not the
+                  browser's.
+  src/ships.ts    The hull roster, as identity only. `SHIP_PRESETS` in
+                  `packages/core/src/ship/registry.ts` is typed
                   `Record<ShipId, …>`, so an id with no preset and a preset
                   with no id are both compile errors.
   src/lab/        The eight crash dummies and the headless runner.
 
-packages/net/     The architecture document, as code.
+packages/net/     The architecture document, as code. A leaf.
   src/codec/      bits, quantize (smallest-three quaternions), ship-state,
-                  snapshot (delta vs the client's last ack), input.
+                  snapshot (delta vs the client's last ack, `buildSnapshot`), input.
   src/clock.ts    NTP-shaped offset estimate. Slews, never jumps.
+  src/room-clock.ts  `pongFor` — the PING/PONG handshake, identical for every room.
   src/interpolation.ts  Buffered entity interpolation, 250 ms extrapolation clamp.
   src/prediction.ts     Pending-input ring + the three-tier error smoother.
   src/rewind.ts   Lag compensation, generic over the entity.
   src/seats.ts    Per-connection input bookkeeping and baseline history.
   src/rates.ts    Every rate, with the reason attached.
+  src/dev/replay-cli.ts  `runReplayCli` — the shared CLI shell race's and
+                  battle's own `dev/replay-cli.ts` call into. Not in the barrel.
 
-packages/race/    Race's rules and world.
-  src/sim.ts      RaceSim: N ships, N lap states, one rapier world.
-  src/rules.ts    The lap state machine, as a pure reducer.
-  src/track.ts    TrackSpec + gates as an analytic plane test.
-  src/levels/     The four tracks, as data (+ the ribbon geometry).
-  src/room.ts     The Colyseus room. Server-only; not in the barrel.
-  src/dev/        Headless replay harness.
-  scenarios/      Replay scripts.
-
-packages/battle/  Battle's rules and world. Same shape as race.
-  src/sim.ts, weapons.ts, hitscan.ts, bot.ts, bots.ts, arena.ts
-  src/projectiles.ts  The deterministic salvo, run by BOTH halves.
-  src/room.ts, state.ts, snapshot.ts, rewind.ts
-  src/dev/, scenarios/
-
-packages/data/    Accounts and persistence, shared by Next and the server.
+packages/data/    Accounts and persistence, shared by Next and the server. A leaf.
   src/schema.ts   Every table, as Drizzle.
   src/client.ts   One `db` factory, three drivers (neon-http, neon-ws, pglite).
   src/repositories/  pilots, matches, stats.
@@ -584,13 +598,94 @@ packages/data/    Accounts and persistence, shared by Next and the server.
   src/runtime.ts  The process's one database handle.
   drizzle/        Generated migrations. `bun run db:generate` writes them.
 
+packages/race/    Depends on physics, net, data. Race's rules and world.
+  src/sim.ts      RaceSim: N ships, N lap states, one rapier world.
+  src/rules.ts    The lap state machine, as a pure reducer.
+  src/track.ts, track-geometry.ts  TrackSpec + gates as an analytic plane test,
+                  and `boxColliderFromRing`.
+  src/levels/     The four tracks, as data (+ the ribbon geometry).
+  src/room.ts     The Colyseus room. Server-only; not in the barrel.
+  src/dev/        Headless replay harness + `dev/replay-cli.ts`.
+  scenarios/      Replay scripts.
+
+packages/battle/  Depends on physics, net, data. Battle's rules and world.
+  src/sim.ts      The orchestrator: spawning, weapons, lag compensation.
+  src/{zones,respawn,lock-on,scoring}.ts  Pure subsystems lifted out of
+                  `sim.ts`, each a function of `(state, input, tick)` with its
+                  own test file.
+  src/weapons.ts, hitscan.ts, bot.ts, backfill.ts (bot backfill policy), arena.ts
+  src/projectiles.ts  The deterministic salvo, run by BOTH halves.
+  src/room.ts, state.ts, snapshot.ts, rewind.ts
+  src/dev/, scenarios/
+
+packages/core/    Depends on physics, battle. Domain configuration shared by
+                  every layer above it.
+  src/ship/       registry.ts (`SHIP_PRESETS`, one entry per ship), palettes.ts,
+                  random-ranges.ts (the hangar's randomize ranges).
+  src/camera.ts   `CameraView` (`'chase' | 'cockpit'`).
+  src/levels.ts   Menu-facing level metadata (name, tagline, card accent).
+  src/tuning.ts   Pure helpers behind the tuning panel's footer buttons.
+
+packages/state/   Depends on core, physics, battle, race. Client state on
+                  threejs-scene stores.
+  src/types.ts    Every state type.
+  src/defaults.ts Every initial value and constant.
+  src/store.ts    `defineStore` — `createStore` wrapped with slice
+                  subscriptions (`select`) and a localStorage envelope.
+  src/react.ts    `useStoreState`, the only React entry point (`Ƨreact`).
+  src/{gameplay,race,battle,ship,tuning,camera-view,hangar-view}.ts
+                  One store plus the actions that write it, per domain.
+
+packages/engine/  Depends on state, core, physics, net, race, battle. The
+                  game's CLIENT half. Vanilla three + threejs-scene, no React.
+                  Everything here is presentation or prediction; no rules.
+  scenes/base.ts  The one composition root that stayed here — the shared scene
+                  skeleton every mode's `mountX` in `packages/game/` builds on.
+  net/            Shared client netcode: room-link.ts (the Colyseus binding),
+                  prediction.ts, remote-hull.ts, ticket.ts, telemetry-publish.ts.
+  race/           transport.ts — joins the two channels into one view.
+  battle/         transport.ts, pools.ts, opponents.ts, projectiles.ts,
+                  visuals.ts, plus the scenery and the post chain.
+  levels/         The four tracks' MESHES. The data is in packages/race.
+  modules/        AppModules: publish.ts, publish-battle.ts, sun.ts,
+                  ship-visual.ts, physics-step.ts.
+  ship/           FBX/generated hull loading and materials: cannons.ts,
+                  fbx-ship.ts, icaras-generated.ts, materials.ts.
+  hud/            Continuous visor GUI: tokens.ts (the amber cockpit palette,
+                  `HUD_THEME`), chrome.ts (the shared drawing vocabulary —
+                  plates, brackets, glow), panel.ts, facets.ts, layout.ts,
+                  overlay.ts, spatial-hud.ts, index.ts (thin race/battle
+                  adapters).
+  dev/            Dev-only harness (harness.ts, overlay.ts, params.ts,
+                  trace.ts). Excluded from production builds.
+  camera/rig.ts   Chase + cockpit camera, as two blended stations.
+  vehicle.ts      VehicleHandle / VehicleDebug — the handle the engine reaches
+                  the local ship through.
+  bridge.ts       Client stores -> app state, one direction only.
+
+packages/game/    Depends on engine + everything below it. Composition roots.
+  src/race.ts     `mountRace`.
+  src/battle.ts   `mountBattle` — pools, opponents and the post chain wired
+                  through `packages/engine/src/battle/`, store writes through
+                  `modules/publish-battle.ts`.
+  src/hangar.ts   `mountHangar`.
+  src/crash-lab.ts  `mountCrashLab` — plays back `packages/physics/src/lab/`
+                  traces; does not simulate.
+
+packages/ui/      Depends on game + everything below it. React: the
+                  components and hooks the Next.js routes render.
+  src/scene-canvas.tsx   The ONLY React<->three boundary.
+  src/main-menu.tsx, crash-lab.tsx, session-provider.tsx, scene-lifecycle.ts.
+  src/hangar/, src/editor/   Panel components per route.
+  src/hooks/      React-only hooks (use-gauge-animation.ts).
+
 packages/server/  Colyseus boot. Defines the rooms and gets out of the way.
 ```
 
 **Nothing crosses from a package back into `src/`.** The server used to import
 engine code over the boundary (`Δengine/battle/sim` and friends) because the sim
-lived in `src/`; it does not any more, and the empty `paths` in each package's
-tsconfig is what keeps it that way.
+lived in `src/`; it does not any more, and the generated `paths` in each
+package's tsconfig — which never includes `Δ*` — is what keeps it that way.
 
 ## Conventions
 
@@ -618,3 +713,9 @@ tsconfig is what keeps it that way.
   `packages/race/test/room.test.ts` is the shape that catches it: a real
   Colyseus room, a real Postgres, and an assertion about the number a player
   would actually see.
+
+## Project agents
+
+`.claude/agents/` defines this repo's subagents: `refactor-mechanic`,
+`sim-surgeon`, `hud-artist`, `docs-sync` and `verifier`, each scoped to one
+kind of change. Reach for the matching one rather than doing its job ad hoc.
