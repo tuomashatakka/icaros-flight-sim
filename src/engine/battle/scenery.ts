@@ -14,6 +14,7 @@
 
 import * as THREE from 'three'
 import { createHoloMaterial, HOLO } from '../hud/materials'
+import { freezeStatic, reportDrawInventory } from '../render/static-scene'
 import type { HoloMaterial } from '../hud/materials'
 
 
@@ -251,9 +252,10 @@ function buildWallPanels (half: number, wallIn: number): BuildWallPanelsReturnTy
     [ -(inner - 0.4), 0, Math.PI / 2 ],
   ]
 
-  faces.forEach(([ x, z, rot ], i) => {
+  const geometry = new THREE.PlaneGeometry(half * 2, 5)
+  for (let parity = 0; parity < 2; parity++) {
     const material = createHoloMaterial({
-      color:     i % 2 === 0 ? HOLO.cyan : HOLO.violet,
+      color:     parity === 0 ? HOLO.cyan : HOLO.violet,
       opacity:   0.38,
       scan:      70,
       gain:      0.7,
@@ -261,11 +263,18 @@ function buildWallPanels (half: number, wallIn: number): BuildWallPanelsReturnTy
     })
     materials.push(material)
 
-    const panel = new THREE.Mesh(new THREE.PlaneGeometry(half * 2, 5), material)
-    panel.position.set(x, 47, z)
-    panel.rotation.y = rot
-    group.add(panel)
-  })
+    const panels   = new THREE.InstancedMesh(geometry, material, 2)
+    const matrix   = new THREE.Matrix4()
+    const position = new THREE.Vector3()
+    const rotation = new THREE.Quaternion()
+    const scale    = new THREE.Vector3(1, 1, 1)
+    faces.filter((_, i) => i % 2 === parity).forEach(([ x, z, rot ], i) => {
+      rotation.setFromAxisAngle(new THREE.Vector3(0, 1, 0), rot)
+      panels.setMatrixAt(i, matrix.compose(position.set(x, 47, z), rotation, scale))
+    })
+    panels.instanceMatrix.needsUpdate = true
+    group.add(panels)
+  }
 
   return { group, materials }
 }
@@ -440,6 +449,21 @@ export function buildScenery (
   const panels  = buildWallPanels(opts.half, opts.wallIn)
 
   scene.add(sky, skyline, debris, trim, panels.group)
+  for (const root of [ sky, skyline, trim, panels.group ])
+    freezeStatic(root)
+  // Debris is the sole moving scenery hierarchy; its immutable instances and
+  // buffer bounds are still finalised while the parent rotation stays live.
+  debris.traverse(child => {
+    if (child instanceof THREE.InstancedMesh) {
+      child.computeBoundingBox()
+      child.computeBoundingSphere()
+      child.matrixAutoUpdate = false
+    }
+  })
+
+  const inventory = new THREE.Group()
+  inventory.add(sky.clone(), skyline.clone(), debris.clone(), trim.clone(), panels.group.clone())
+  reportDrawInventory('apex basin scenery', inventory)
 
   return {
     update (elapsed) {

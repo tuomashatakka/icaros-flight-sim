@@ -1,6 +1,9 @@
 import * as THREE from 'three'
 import type { SeededRng } from 'threejs-scene'
 
+
+export { finaliseStaticScene } from '../render/static-scene'
+
 /**
  * Glossy tarmac.
  *
@@ -80,6 +83,8 @@ export function guideRail (
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
   geometry.setIndex(indices)
   geometry.computeVertexNormals()
+  geometry.computeBoundingBox()
+  geometry.computeBoundingSphere()
 
   const mesh = new THREE.Mesh(
     geometry,
@@ -123,6 +128,8 @@ export function starfield (rng: SeededRng, count = 6000, inner = 430, outer = 57
 
   const geometry = new THREE.BufferGeometry()
   geometry.setAttribute('position', new THREE.BufferAttribute(positions, 3))
+  geometry.computeBoundingBox()
+  geometry.computeBoundingSphere()
 
   return new THREE.Points(
     geometry,
