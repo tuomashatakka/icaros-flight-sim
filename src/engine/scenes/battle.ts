@@ -42,6 +42,7 @@ import { activeControls } from '../input'
 import { toBattleInput } from '@crash-velocity/battle/input'
 import { buildRemoteHull } from '../net/remote-hull'
 import { createBattlePost } from '../battle/post'
+import { resolveRendererQuality } from '../renderer-quality'
 import { arenaEnvironment, buildArenaVisual } from '../battle/arena-visuals'
 import { ProjectileField } from '../battle/projectiles'
 import type { CameraRig } from '../camera/rig'
@@ -228,7 +229,8 @@ export async function mountBattle (
     return sight
   }
 
-  const post = createBattlePost()
+  const postQuality = resolveRendererQuality()
+  const post        = createBattlePost(postQuality, arena.bloom)
 
   // Built inside `buildGeometry`, ticked from `onFrame`: the sky panels and the
   // debris drift need a clock, and nothing else in the arena does.
@@ -560,20 +562,20 @@ export async function mountBattle (
 
   const app = await mountBaseScene<BattleState>({
     canvas,
-    initialState:   initialBattleState(),
-    environment:    arenaEnvironment(arena),
-    bloom:          arena.bloom,
-    colliders:      arena.colliders,
-    colliderOffset: arena.colliderOffset,
+    initialState:    initialBattleState(),
+    environment:     arenaEnvironment(arena),
+    rendererQuality: postQuality,
+    colliders:       arena.colliders,
+    colliderOffset:  arena.colliderOffset,
     shipVisualRef,
     // The trim is predicted locally and corrected against the server, because
     // a reticle that waits half a round trip to move feels broken; the hull and
     // camera mirror whatever elevation it settled on.
-    aimPitchSource: () => prediction?.aimNormalised ?? 0,
+    aimPitchSource:  () => prediction?.aimNormalised ?? 0,
     // The deck's diagonal is ~850 units; the race rig's 400 far plane would
     // clip the far wall clean off.
-    cameraFar:      1600,
-    buildGeometry:  ctx => {
+    cameraFar:       1600,
+    buildGeometry:   ctx => {
       scenery = buildArenaVisual(ctx, arena)
     },
     post: post.options,

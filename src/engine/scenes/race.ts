@@ -146,7 +146,7 @@ export async function mountRace (
     levelId:        trackId,
     levelSpec:      track,
     initialState:   initialRaceState(),
-    bloom:          track.bloom,
+    post:           { bloom: track.bloom },
     colliders:      track.colliders,
     colliderOffset: track.colliderOffset,
     environment:    TRACK_VISUALS[trackId].environment,

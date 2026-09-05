@@ -27,6 +27,8 @@ import type { EnvironmentOverrides } from './environment'
 import { publishModule } from '../modules/publish'
 import type { PublishHandle } from '../modules/publish'
 import { attachBridge } from '../bridge'
+import { RENDERER_QUALITY } from '../renderer-quality'
+import type { RendererQuality } from '../renderer-quality'
 
 
 const SEED = 7
@@ -75,7 +77,7 @@ const MAX_AIM_PITCH = 0.31
 type AppContext<TState extends object> = Parameters<AppModule<TState>['build']>[0]
 
 /** The slice of the post module a scene is allowed to fill in. */
-export type ScenePost = Pick<PostProcessingOptions, 'depth' | 'effects' | 'onFrame' | 'onResize'>
+export type ScenePost = Pick<PostProcessingOptions, 'bloom' | 'depth' | 'effects' | 'onFrame' | 'onResize'>
 
 export type BaseSceneConfig<TState extends object> = {
   canvas:       HTMLCanvasElement;
@@ -93,10 +95,10 @@ export type BaseSceneConfig<TState extends object> = {
    * `background` outright: a bare clear colour with no fog to match it is what
    * made every level state the same two values twice.
    */
-  environment?:    EnvironmentOverrides;
-  bloom?:          { threshold: number; strength: number; radius: number };
-  colliders?:      readonly BoxCollider[];
-  colliderOffset?: readonly [number, number, number];
+  environment?:     EnvironmentOverrides;
+  rendererQuality?: RendererQuality;
+  colliders?:       readonly BoxCollider[];
+  colliderOffset?:  readonly [number, number, number];
 
   /**
    * Normalised vertical aim, -1..1, if the scene owns it.
@@ -111,9 +113,8 @@ export type BaseSceneConfig<TState extends object> = {
   /**
    * Extra post passes and their per-frame uniform hooks.
    *
-   * `bloom` stays a separate field because it is the composer's own, built
-   * before anything here. Everything in this slot lands between the bloom and
-   * the OutputPass, which is what keeps the grade in linear HDR.
+   * Omit this entirely for a direct renderer draw. Everything in this slot
+   * lands between optional bloom and the OutputPass.
    */
   post?: ScenePost;
 
@@ -160,7 +161,6 @@ export async function mountBaseScene<TState extends object> (
   const {
     canvas,
     initialState,
-    bloom = { threshold: 0.8, strength: 0.4, radius: 0.4 },
     colliders,
     colliderOffset,
     aimPitchSource,
@@ -172,6 +172,8 @@ export async function mountBaseScene<TState extends object> (
     onFrame,
     onDispose,
   } = config
+
+  const quality = config.rendererQuality ?? 'high'
 
   const environment = resolveEnvironment(config.environment)
 
@@ -284,22 +286,23 @@ export async function mountBaseScene<TState extends object> (
       },
     }),
 
-    ...extraModules,
+    ...extraModules
+  )
 
-    postProcessing<TState>({
-      bloom,
-      depth:    post?.depth,
-      onFrame:  post?.onFrame,
-      onResize: post?.onResize,
+  if (post)
+    modules.push(postProcessing<TState>({
+      bloom:    post.bloom ?? false,
+      depth:    post.depth,
+      onFrame:  post.onFrame,
+      onResize: post.onResize,
       effects:  ctx => {
         // The composer is captured here rather than in `build` because this is
         // the only callback the module hands it out from, and `renderFrame`
         // needs it to draw at all.
         composer = ctx.composer
-        return post?.effects?.(ctx) ?? []
+        return post.effects?.(ctx) ?? []
       },
-    })
-  )
+    }))
 
   const app = createApp<TState>(canvas, {
     state:    initialState,
@@ -307,8 +310,12 @@ export async function mountBaseScene<TState extends object> (
     clock,
     camera:   rig.camera,
     scene:    { background: environment.background },
-    renderer: { shadows: true },
-    use:      modules,
+    renderer: {
+      shadows:       true,
+      pixelRatioMax: Math.min(2, typeof window === 'undefined' ? 1 : window.devicePixelRatio) *
+        RENDERER_QUALITY[quality].resolutionScale,
+    },
+    use: modules,
 
     render (frame) {
       if (skipRender)
