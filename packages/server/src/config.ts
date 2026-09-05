@@ -12,7 +12,7 @@
  * invisible to the other.
  */
 
-import { STEP } from 'Δengine/clock'
+import { STEP } from '@crash-velocity/physics/clock'
 
 
 function int (name: string, fallback: number): number {

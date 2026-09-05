@@ -1,0 +1,17 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    // A leaf, and the empty `paths` is the enforcement: an `@/…` or `Δ…` import
+    // in here is a build error rather than a thing someone notices once the
+    // server tries to boot.
+    //
+    // `types` is node's and ONLY node's — the headless replay CLI reads files,
+    // but a stray `Bun.*` must still fail to compile: this package runs under
+    // Bun on the game server AND under Node in vitest.
+    "noEmit": true,
+    "types":  [ "node" ],
+    "paths":  {}
+  },
+  "include": [ "src/**/*.ts", "test/**/*.ts" ],
+  "exclude": [ "node_modules" ]
+}

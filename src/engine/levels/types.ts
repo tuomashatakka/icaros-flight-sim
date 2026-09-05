@@ -1,7 +1,7 @@
 import type * as THREE from 'three'
 import type { SceneContext } from 'threejs-scene'
-import type { BoxCollider } from '@/lib/track/build-track'
-import type { Physics } from '../physics/world'
+import type { BoxCollider } from '@crash-velocity/physics/colliders'
+import type { Physics } from '@crash-velocity/physics/world'
 
 /**
  * A level, as data.

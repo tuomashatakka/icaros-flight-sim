@@ -1,9 +1,0 @@
-{
-  "name": "straight-line",
-  "level": "flats",
-  "duration": 12,
-  "sampleEvery": 0.5,
-  "timeline": [
-    { "at": 0, "input": { "throttle": true } }
-  ]
-}

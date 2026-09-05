@@ -1,3 +1,5 @@
+import { SHIP_IDS } from '@crash-velocity/physics/ships'
+import type { ShipId } from '@crash-velocity/physics/ships'
 // Single source of truth for every selectable ship.
 //
 // Adding a ship = one entry in SHIP_PRESETS. Everything downstream derives from
@@ -169,7 +171,14 @@ const WIPEOUT_LOOK: Partial<ShipCustomization> = {
   textureRepeat:     1,
 }
 
-export const SHIP_PRESETS = {
+/**
+ * Every hull's appearance, keyed by the roster in `@crash-velocity/physics`.
+ *
+ * The `Record<ShipId, …>` annotation is the point: the simulation owns the id
+ * list, and a preset that names an unknown ship — or a ship with no preset —
+ * fails to compile rather than showing up as an invisible hull.
+ */
+export const SHIP_PRESETS: Record<ShipId, ShipPreset> = {
   'cb1': {
     kind:          'gltf',
     path:          '/spaceship_-_cb1/scene.gltf',
@@ -286,9 +295,8 @@ export const SHIP_PRESETS = {
   },
 } satisfies Record<string, ShipPreset>
 
-export type ShipId = keyof typeof SHIP_PRESETS
-
-export const SHIP_IDS = Object.keys(SHIP_PRESETS) as ShipId[]
+export { SHIP_IDS }
+export type { ShipId }
 
 export interface ShipConfig extends ShipCustomization {
   shipId: ShipId;

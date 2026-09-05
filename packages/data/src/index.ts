@@ -1,37 +1,32 @@
 /**
- * Accounts and persistence, as a package.
+ * The data package's public surface.
  *
- * Everything in here depends on `node:crypto` and `@neondatabase/serverless` and
- * nothing else — no Bun builtins, no DOM, no `Δ…` reach into the app. That is
- * the point of it being a package rather than a directory, and its tsconfig
- * enforces it with empty `types` and `paths`: this code has to run unchanged in
- * a Next route handler on Vercel's Node runtime and in the Bun battle server,
- * and neither is allowed to be special.
- *
- * The SQLite adapter is the one deliberate exception. It imports `bun:sqlite`,
- * so it stays in `packages/server` and layers itself on top of `openStore`.
+ * `./migrate` is deliberately absent from this barrel: it reads the generated
+ * SQL from disk at import time, and this file is imported by Next route
+ * handlers that have no business touching the filesystem. Reach it as
+ * `@crash-velocity/data/migrate`.
  */
 
-export { MemoryStore } from './store/memory'
-export { NeonStore } from './store/neon'
-export { DEFAULT_DB_PATH, openStore, resolveDriver, storeDescription } from './store/open'
-export { SESSION_TTL_MS } from './store/store'
+export { connectionStringOf, describeDatabase, openDatabase, resolveDriver } from './client'
+export type { Database, DatabaseDriver, DatabaseHandle, DatabaseOptions } from './client'
 
-export type { StoreDriver, StoreOptions } from './store/open'
-export type {
-  Account,
-  AccountStats,
-  MatchPlayerRecord,
-  MatchRecord,
-  Session,
-  Store,
-} from './store/store'
+export * as schema from './schema'
+export { matchPlayers, matches, oauthAccounts, raceResults, sessions, users, verificationTokens } from './schema'
+export type { MatchPlayerRow, MatchRow, RaceResultRow, UserRow } from './schema'
 
-export { login, register, validCredentials } from './auth/accounts'
-export type { AuthResult } from './auth/accounts'
+export { createPilot, findPilot, pilotById } from './repositories/pilots'
+export type { Pilot, PilotWithSecret } from './repositories/pilots'
+
+export { recordMatchEnd, recordMatchPlayers, recordMatchStart, recordRaceResults } from './repositories/matches'
+export type { MatchPlayerRecord, MatchRecord, RaceResultRecord } from './repositories/matches'
+
+export { statsFor } from './repositories/stats'
+export type { PilotStats } from './repositories/stats'
+
+export { authenticatePilot, registerPilot, validCredentials } from './auth/credentials'
+export type { CredentialResult } from './auth/credentials'
 
 export { dummyHash, hashPassword, verifyPassword } from './auth/hash'
 
-// `./migrate` is deliberately NOT re-exported: it reads `schema.postgres.sql`
-// off disk when the module loads, and this barrel is what a Next route handler
-// imports. Reach it as `@crash-velocity/data/migrate` from a real process.
+export { TICKET_TTL_SECONDS, mintTicket, verifyTicket } from './auth/ticket'
+export type { Ticket } from './auth/ticket'

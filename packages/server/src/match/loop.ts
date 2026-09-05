@@ -1,7 +1,7 @@
 /**
  * The fixed-rate driver every room ticks on.
  *
- * The timestep arithmetic is `createSimClock` from `Δengine/clock` — the same
+ * The timestep arithmetic is `createSimClock` from `@crash-velocity/physics/clock` — the same
  * accumulator the browser runs, not a second implementation that drifts from it
  * by a subtle detail. It is importable here because it is pure: its only import
  * is a `type`.
@@ -13,7 +13,7 @@
  * deadline.
  */
 
-import { createSimClock } from 'Δengine/clock'
+import { createSimClock } from '@crash-velocity/physics/clock'
 
 
 export type LoopStats = {
@@ -53,7 +53,7 @@ export type LoopOptions = {
   cancel?:   (handle: unknown) => void;
 }
 
-/** Matches `MAX_SUB_STEPS` in `Δengine/clock`; a full batch means time was dropped. */
+/** Matches `MAX_SUB_STEPS` in `@crash-velocity/physics/clock`; a full batch means time was dropped. */
 const OVERFLOW_STEPS = 5
 
 export function createLoop (options: LoopOptions): Loop {

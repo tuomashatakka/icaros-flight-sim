@@ -1,11 +1,11 @@
 import * as THREE from 'three'
-import type RAPIER from '@dimforge/rapier3d-compat'
+import type RAPIER from '@dimforge/rapier3d-deterministic-compat'
 import { defineModule } from 'threejs-scene'
 import type { AppModule } from 'threejs-scene'
 import { useRaceStore } from '@/hooks/use-race-store'
 import type { Transform } from '@/hooks/use-race-store'
 import type { RaceState } from '../state'
-import type { Physics } from '../physics/world'
+import type { Physics } from '@crash-velocity/physics/world'
 import type { LevelSpec } from '../levels/types'
 
 

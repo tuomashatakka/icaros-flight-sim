@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { useRaceStore } from '@/hooks/use-race-store'
 import { useTuningStore } from '@/hooks/use-tuning-store'
-import { STEP } from '../clock'
+import { STEP } from '@crash-velocity/physics/clock'
 import { resetTelemetry } from '../telemetry'
 import type { Controls } from '../input'
 import type {

@@ -1,0 +1,24 @@
+{
+  "name": "@crash-velocity/battle",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "main": "src/index.ts",
+  "types": "src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@colyseus/schema": "^5.0.8",
+    "@crash-velocity/net": "workspace:*",
+    "@crash-velocity/physics": "workspace:*"
+  },
+  "peerDependencies": {
+    "@dimforge/rapier3d-deterministic-compat": "0.19.2",
+    "three": "^0.185.1"
+  }
+}

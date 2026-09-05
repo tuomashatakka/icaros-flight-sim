@@ -25,7 +25,7 @@
  */
 
 import { Vector3 } from 'three'
-import { STEP } from '../clock'
+import { STEP } from '@crash-velocity/physics/clock'
 import { stepHovercraft } from '@crash-velocity/physics/vehicle-step'
 import type { VehicleDebug } from '../modules/vehicle'
 
@@ -38,7 +38,7 @@ import type { ArenaTransform } from './arena'
 import type { HovercraftState } from '@crash-velocity/physics/vehicle-step'
 import type { BattleInput } from './types'
 import type { InputFrame, SnapshotPlayer } from './protocol'
-import type RAPIER from '@dimforge/rapier3d-compat'
+import type RAPIER from '@dimforge/rapier3d-deterministic-compat'
 
 
 /**

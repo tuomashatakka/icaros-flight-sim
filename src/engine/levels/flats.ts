@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import type { BoxCollider } from '@/lib/track/build-track'
+import type { BoxCollider } from '@crash-velocity/physics/colliders'
 import type { LevelSpec } from './types'
 
 
