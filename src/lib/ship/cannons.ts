@@ -2,8 +2,8 @@
 
 import * as THREE from 'three'
 import { mergeGeometries } from 'three/addons/utils/BufferGeometryUtils.js'
-import { WEAPONS } from '@/engine/battle/weapons'
-import type { WeaponId } from '@/engine/battle/weapons'
+import { WEAPONS } from '@crash-velocity/battle/weapons'
+import type { WeaponId } from '@crash-velocity/battle/weapons'
 
 
 /**

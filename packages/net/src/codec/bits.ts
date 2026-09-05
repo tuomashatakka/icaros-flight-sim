@@ -41,7 +41,7 @@ export class BitWriter {
       const take      = Math.min(8 - offset, remaining)
 
       this.ensure(byteIndex)
-      this.bytes[byteIndex] |= ((rest & ((1 << take) - 1)) << offset) & 0xff
+      this.bytes[byteIndex] |= (rest & (1 << take) - 1) << offset & 0xff
 
       rest      >>>= take
       remaining  -= take
@@ -74,7 +74,8 @@ export class BitWriter {
 
   /** Length-prefixed UTF-8. Names only — nothing hot enough to want a table. */
   writeString (value: string, maxBytes = 255): void {
-    const encoded = new TextEncoder().encode(value).subarray(0, maxBytes)
+    const encoded = new TextEncoder().encode(value)
+      .subarray(0, maxBytes)
     this.writeBits(encoded.length, 8)
     for (const byte of encoded)
       this.writeBits(byte, 8)
@@ -85,7 +86,7 @@ export class BitWriter {
   }
 
   get byteLength (): number {
-    return (this.bitPos + 7) >> 3
+    return this.bitPos + 7 >> 3
   }
 
   /** A copy, sized to what was written. Safe to hand to `send()`. */
@@ -110,7 +111,7 @@ export class BitReader {
       const offset    = this.bitPos & 7
       const take      = Math.min(8 - offset, remaining)
       const byte      = byteIndex < this.bytes.length ? this.bytes[byteIndex] : 0
-      const chunk     = (byte >>> offset) & ((1 << take) - 1)
+      const chunk     = byte >>> offset & (1 << take) - 1
 
       // `|` would sign-flip at bit 31; the unsigned add cannot.
       value      += chunk * 2 ** shift
@@ -128,7 +129,7 @@ export class BitReader {
 
   readSigned (bits: number): number {
     const raw = this.readBits(bits)
-    return raw >= 1 << (bits - 1) ? raw - (1 << bits) : raw
+    return raw >= 1 << bits - 1 ? raw - (1 << bits) : raw
   }
 
   readFloat32 (): number {

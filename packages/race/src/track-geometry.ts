@@ -32,6 +32,7 @@ export interface TrackGeometry {
 
 import type { BoxCollider } from '@crash-velocity/physics/colliders'
 
+
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
 
 

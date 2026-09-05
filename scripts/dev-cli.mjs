@@ -12,23 +12,31 @@
  * context window unless somebody explicitly asked for it.
  *
  *   node scripts/dev-cli.mjs probe --level flats
- *   node scripts/dev-cli.mjs scenario hard-corner
- *   node scripts/dev-cli.mjs scenario hard-corner --json --out /tmp/trace.json
  *   node scripts/dev-cli.mjs shot /tmp/a.png --step 300 --overlay colliders,wheels
  *   node scripts/dev-cli.mjs console --seconds 5
  *   node scripts/dev-cli.mjs eval -e '__dev.probe().ship.position'
+ *
+ * `scenario` is NOT here any more. It used to drive the real app with rendering
+ * switched off, which meant booting a browser and a WebGL context to prove a
+ * simulation was deterministic. That harness is headless now and lives with the
+ * sim it tests:
+ *
+ *   bun run dev:scenario straight-line     (race)
+ *   bun run dev:replay point-blank         (battle)
+ *
+ * Both run in tens of milliseconds instead of tens of seconds, and neither can
+ * be perturbed by however long the page happened to be open first.
  */
 import { spawn } from 'node:child_process'
-import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { mkdir, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
 
 
-const ROOT      = resolve(dirname(fileURLToPath(import.meta.url)), '..')
-const PORT      = Number(process.env.DEV_PORT ?? 9002)
-const ORIGIN    = `http://localhost:${PORT}`
-const SCENARIOS = resolve(ROOT, 'public/scenarios')
+const ROOT   = resolve(dirname(fileURLToPath(import.meta.url)), '..')
+const PORT   = Number(process.env.DEV_PORT ?? 9002)
+const ORIGIN = `http://localhost:${PORT}`
 
 /** How long to wait for `__dev.ready`. Rapier WASM + FBX loading is not instant. */
 const READY_TIMEOUT = 60_000
@@ -37,13 +45,26 @@ const READY_TIMEOUT = 60_000
 const SERVER_TIMEOUT = 90_000
 
 /**
- * The battle server's port and how long to wait for it.
+ * How long a screenshot may take.
  *
- * Battle mode is network-only, so `--level battle` needs a second process. It
+ * Playwright's 30 s default is a browser-automation number and this is not a
+ * browser: capturing a post-processed WebGL canvas through ANGLE-on-SwiftShader
+ * costs seconds, not milliseconds — measured at ~7 s for one 1280x720 frame in
+ * a sandbox with no GPU, against ~0.6 s for the same page with the canvas
+ * removed. Raising it is the fix; the software renderer is the environment, not
+ * a bug to chase.
+ */
+const SHOT_TIMEOUT = 120_000
+
+/**
+ * The game server's port and how long to wait for it.
+ *
+ * EVERY mode is network-only now — race included — so any level needs a second
+ * process, not just `--level battle`. It
  * starts far faster than `next dev` — no bundler, just a bun entry point — so
  * the timeout is a fraction of the client's.
  */
-const BATTLE_PORT    = Number(process.env.BATTLE_PORT ?? 9003)
+const BATTLE_PORT    = Number(process.env.GAME_PORT ?? process.env.BATTLE_PORT ?? 9003)
 const BATTLE_ORIGIN  = `http://localhost:${BATTLE_PORT}`
 const BATTLE_TIMEOUT = 15_000
 
@@ -97,7 +118,7 @@ async function serverIsUp () {
  * hit, which would dominate every single command. Reusing the running server
  * also means what the CLI sees is what the human sees in their browser.
  */
-async function battleServerIsUp () {
+async function gameServerIsUp () {
   try {
     const response = await fetch(`${BATTLE_ORIGIN}/health`, { signal: AbortSignal.timeout(1000) })
     return response.ok
@@ -108,30 +129,30 @@ async function battleServerIsUp () {
 }
 
 /**
- * Bring up the battle server for `--level battle`, reusing one already running.
+ * Bring up the game server, reusing one already running.
  *
  * `DEV_COMMANDS=1` is what makes `window.__devBattle.place()` and `.face()`
  * work: they are server requests now, and the server ignores them without it.
  */
 async function ensureBattleServer () {
-  if (await battleServerIsUp())
+  if (await gameServerIsUp())
     return { spawned: false, stop: async () => {} }
 
-  process.stderr.write(`[dev-cli] no battle server on ${BATTLE_ORIGIN}, starting one…\n`)
+  process.stderr.write(`[dev-cli] no game server on ${BATTLE_ORIGIN}, starting one…\n`)
 
   const child = spawn('bun', [ 'run', 'dev:server' ], {
     cwd:   ROOT,
     stdio: 'ignore',
-    // `STORE_DRIVER=memory` on purpose: a probe or a screenshot must not write
+    // `DB_DRIVER=pglite` on purpose: a probe or a screenshot must not write
     // to a real database, and must not fail because a `DATABASE_URL` happens to
     // be exported in whatever shell started it.
-    env:   { ...process.env, DEV_COMMANDS: '1', STORE_DRIVER: 'memory' },
+    env:   { ...process.env, DB_DRIVER: 'pglite', GAME_TOKEN_SECRET: process.env.GAME_TOKEN_SECRET ?? 'dev-only-ticket-secret' },
   })
 
   const deadline = Date.now() + BATTLE_TIMEOUT
   while (Date.now() < deadline) {
     await new Promise(r => setTimeout(r, 250))
-    if (await battleServerIsUp())
+    if (await gameServerIsUp())
       return {
         spawned: true,
         stop:    async () => {
@@ -141,7 +162,7 @@ async function ensureBattleServer () {
   }
 
   child.kill('SIGTERM')
-  fail(`battle server did not come up on ${BATTLE_ORIGIN} within ${BATTLE_TIMEOUT / 1000}s`)
+  fail(`game server did not come up on ${BATTLE_ORIGIN} within ${BATTLE_TIMEOUT / 1000}s`)
 }
 
 async function ensureServer () {
@@ -209,11 +230,9 @@ function buildUrl (args, extra = {}) {
 async function withPage (args, fn, { urlExtra = {}} = {}) {
   const server = await ensureServer()
 
-  // Battle is network-only: without the authoritative server the scene mounts
-  // an empty arena and `__dev.ready` never sees a match.
-  const battle = args.level === 'battle'
-    ? await ensureBattleServer()
-    : { spawned: false, stop: async () => {} }
+  // EVERY mode is network-only now, race included: without the authoritative
+  // server a scene mounts an empty world and `__dev.ready` never sees a match.
+  const battle = await ensureBattleServer()
 
   // Sandboxes and CI images often ship a chromium that does not match the build
   // playwright pinned; point at it with CHROMIUM_PATH rather than re-downloading
@@ -263,24 +282,6 @@ async function withPage (args, fn, { urlExtra = {}} = {}) {
   }
 }
 
-// ---------------------------------------------------------------- scenarios
-
-async function loadScenario (nameOrPath) {
-  const candidates = nameOrPath.endsWith('.json')
-    ? [ resolve(process.cwd(), nameOrPath), resolve(ROOT, nameOrPath) ]
-    : [ resolve(SCENARIOS, `${nameOrPath}.json`) ]
-
-  for (const candidate of candidates)
-    try {
-      return JSON.parse(await readFile(candidate, 'utf8'))
-    }
-    catch (cause) {
-      if (cause.code !== 'ENOENT')
-        throw new Error(`${candidate}: ${cause.message}`)
-    }
-  throw new Error(`scenario not found: ${nameOrPath} (looked in ${SCENARIOS})`)
-}
-
 // ---------------------------------------------------------------- commands
 
 const commands = {
@@ -289,38 +290,6 @@ const commands = {
     out(result)
   },
 
-  async scenario (args) {
-    const name = args._[0]
-    if (!name)
-      fail('usage: dev-cli scenario <name|path.json> [--json] [--out FILE]')
-
-    const script = await loadScenario(name)
-    const level  = args.level ?? script.level ?? 'flats'
-
-    const trace = await withPage({ ...args, level }, page =>
-      page.evaluate(s => window.__dev.scenario(s), script))
-
-    if (args.out) {
-      await mkdir(dirname(resolve(args.out)), { recursive: true })
-      await writeFile(resolve(args.out), JSON.stringify(trace, null, 2))
-      process.stderr.write(`[dev-cli] full trace -> ${resolve(args.out)}\n`)
-    }
-
-    // Default to the summary. The full trace is available but never the default,
-    // because printing 120 sample rows is the exact cost this tool exists to avoid.
-    out(args.json
-      ? trace
-      : {
-        name:    trace.name,
-        level:   trace.level,
-        seed:    trace.seed,
-        ticks:   trace.ticks,
-        wallMs:  trace.wallMs,
-        samples: trace.samples.length,
-        summary: trace.summary,
-        events:  trace.events,
-      })
-  },
 
   async shot (args) {
     const target = args._[0]
@@ -340,7 +309,7 @@ const commands = {
           n => window.__crashLab?.setFrame?.(n),
           Number(args.step ?? 0)
         )
-        await page.screenshot({ path, animations: 'disabled' })
+        await page.screenshot({ path, animations: 'disabled', timeout: SHOT_TIMEOUT })
         return { lab: true, frame: Number(args.step ?? 0) }
       }
 
@@ -373,7 +342,7 @@ const commands = {
       // so the call just times out once a match goes live. Cancelling them also
       // makes the capture deterministic, which is the whole point of pausing
       // and snapping the camera above.
-      await page.screenshot({ path, animations: 'disabled' })
+      await page.screenshot({ path, animations: 'disabled', timeout: SHOT_TIMEOUT })
       return result
     }, { urlExtra: args.nohud ? {} : {}})
 

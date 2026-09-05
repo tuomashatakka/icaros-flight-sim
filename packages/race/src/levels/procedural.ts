@@ -17,7 +17,6 @@ import type { Vec3Tuple } from '../track'
 
 
 export function proceduralTrack (): TrackBundle {
-
   const segmentLength               = 20
   const verts: number[]             = []
   const idxs: number[]              = []
@@ -154,19 +153,19 @@ export function proceduralTrack (): TrackBundle {
   return {
     geometry,
     spec: {
-      id:         'procedural',
-      name:       'Procedural Sprint',
-      background: '#171720',
+      id:             'procedural',
+      name:           'Procedural Sprint',
+      background:     '#171720',
       // The shared 20-80 canvas fog this inherited under R3F would have
       // swallowed a ~3000-unit sprint; given a range that matches the track.
-      fog:        [ '#171720', 120, 900 ],
-      waypoints:  waypoints.map(p => [ p.x, p.y, p.z ] as Vec3Tuple),
-      width:      20,
-      laps:       1,
-      loop:       false,
+      fog:            [ '#171720', 120, 900 ],
+      waypoints:      waypoints.map(p => [ p.x, p.y, p.z ] as Vec3Tuple),
+      width:          20,
+      laps:           1,
+      loop:           false,
       colliders:      [ ...ribbonBoxColliders(vertices, { stride: 1 }), ...mergeBridgeColliders ],
       colliderOffset: [ 0, -0.05, 0 ],
-      bloom: { strength: 0.3, threshold: 0.9, radius: 0.45 },
+      bloom:          { strength: 0.3, threshold: 0.9, radius: 0.45 },
     },
   }
 }

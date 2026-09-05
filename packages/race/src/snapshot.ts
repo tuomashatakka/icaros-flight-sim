@@ -32,10 +32,19 @@ export function raceSnapshotOf (sim: RaceSim, netIndexOf: (id: string) => number
 
     ships.push({
       id: netIndexOf(racer.id),
-      x: t.x, y: t.y, z: t.z,
-      qx: r.x, qy: r.y, qz: r.z, qw: r.w,
-      vx: v.x, vy: v.y, vz: v.z,
-      wx: w.x, wy: w.y, wz: w.z,
+      x:  t.x,
+      y:  t.y,
+      z:  t.z,
+      qx: r.x,
+      qy: r.y,
+      qz: r.z,
+      qw: r.w,
+      vx: v.x,
+      vy: v.y,
+      vz: v.z,
+      wx: w.x,
+      wy: w.y,
+      wz: w.z,
 
       // Race has no damage, so health carries the BOOST meter instead — the one
       // per-ship scalar the HUD needs at snapshot rate. Documented rather than

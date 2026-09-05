@@ -1,6 +1,10 @@
 /**
  * Client-side prediction and reconciliation for the local ship.
  *
+ * Shared by race and battle. Both run the SAME `stepHovercraft` the server
+ * does, at the same `STEP`, on their own rapier body — so neither mode's
+ * controls wait a round trip, and both correct against the same three tiers.
+ *
  * The local player must not wait a round trip to see their own controls
  * respond, so the client runs `stepHovercraft` — the SAME handling authority
  * the server runs, at the same `STEP` — on its own rapier body, and corrects
@@ -27,17 +31,16 @@
 import { Vector3 } from 'three'
 import { STEP } from '@crash-velocity/physics/clock'
 import { stepHovercraft } from '@crash-velocity/physics/vehicle-step'
-import type { VehicleDebug } from '../modules/vehicle'
+import type { VehicleDebug } from '../vehicle'
 
 
 const COLLECT_FORCES = process.env.NODE_ENV !== 'production'
 import { vehicleConfig } from 'Δlib/utils'
 import { DEFAULT_TUNING } from '../state'
-import { AIM_MAX, AIM_RATE } from './sim'
-import type { ArenaTransform } from './arena'
+import type { Transform } from '@crash-velocity/physics/types'
 import type { HovercraftState } from '@crash-velocity/physics/vehicle-step'
-import type { BattleInput } from './types'
-import type { InputFrame, SnapshotPlayer } from './protocol'
+
+import type { InputFrame } from '@crash-velocity/net'
 import type RAPIER from '@dimforge/rapier3d-deterministic-compat'
 
 
@@ -58,6 +61,44 @@ const SMOOTH_HALF_LIFE = 0.055
 
 /** Trim divergence tolerated before the reticle is pulled to the server's. */
 const AIM_EPSILON = 0.02
+
+/**
+ * Aim trim bounds. Duplicated from the sims rather than imported from one of
+ * them, because importing battle's would make race's prediction depend on
+ * battle — and the two agree by construction: one wire format, one ±1 range.
+ */
+export const AIM_MAX  = Math.PI / 4
+export const AIM_RATE = 1.1
+
+/**
+ * What the prediction needs from a control frame. Structural, so both
+ * `BattleInput` and `RaceInput` satisfy it without either package knowing.
+ */
+export type PredictInput = {
+  steer:     number;
+  throttle:  boolean;
+  brake:     boolean;
+  boost:     boolean;
+  reverse?:  boolean;
+  strafe?:   number;
+  fire?:     boolean;
+  aimPitch?: number;
+  resetSeq:  number;
+}
+
+/** What it needs back from the server. Both modes' merged views satisfy it. */
+export type ServerPose = {
+  x:            number;
+  y:            number;
+  z:            number;
+  qx:           number;
+  qy:           number;
+  qz:           number;
+  qw:           number;
+  aimAngle:     number;
+  boost:        number;
+  respawnIndex: number;
+}
 
 export type PredictionRig = {
   chassis: RAPIER.RigidBody;
@@ -140,7 +181,7 @@ export class LocalPrediction {
    * the caller can pass its best guess rather than the authoritative lane —
    * the server's answer arrives in the next snapshot and corrects it.
    */
-  step (input: BattleInput, spawn: ArenaTransform, allowDrive: boolean): void {
+  step (input: PredictInput, spawn: Transform, allowDrive: boolean): void {
     let resetRequested = false
     if (input.resetSeq !== this.lastResetSeq) {
       this.lastResetSeq = input.resetSeq
@@ -193,7 +234,13 @@ export class LocalPrediction {
    *
    * @param replay frames the server has not acknowledged, oldest first
    */
-  reconcile (server: SnapshotPlayer, replay: readonly InputFrame[], spawn: ArenaTransform, allowDrive: boolean): PredictionResult {
+  reconcile (
+    server: ServerPose,
+    replay: readonly InputFrame[],
+    toInput: (frame: InputFrame) => PredictInput,
+    spawn: Transform,
+    allowDrive: boolean,
+  ): PredictionResult {
     const body = this.rig.chassis
     const t    = body.translation()
 
@@ -223,9 +270,12 @@ export class LocalPrediction {
     // Replay only makes sense for a correction we are smoothing over. After a
     // respawn the input the player was holding was for a ship that no longer
     // exists where it was.
+    // Replayed through the SAME converter the server applies frames with — the
+    // mode passes it in — so a re-simulated tick is bit-identical to the one
+    // being corrected against.
     if (!hard)
       for (const frame of replay)
-        this.step(frame, spawn, allowDrive)
+        this.step(toInput(frame), spawn, allowDrive)
 
     if (hard) {
       this.offset.set(0, 0, 0)
@@ -236,7 +286,7 @@ export class LocalPrediction {
     return { correctionM: error, snapped: hard }
   }
 
-  private applyServerPose (server: SnapshotPlayer): void {
+  private applyServerPose (server: ServerPose): void {
     const body = this.rig.chassis
     body.setTranslation({ x: server.x, y: server.y, z: server.z }, true)
     body.setRotation({ x: server.qx, y: server.qy, z: server.qz, w: server.qw }, true)

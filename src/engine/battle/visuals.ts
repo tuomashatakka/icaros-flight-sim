@@ -1,8 +1,8 @@
 import * as THREE from 'three'
-import { NEUTRAL_COLOR, TEAM_COLORS } from './arena'
-import type { BattleTeam } from './arena'
-import { WEAPONS } from './weapons'
-import type { WeaponId } from './weapons'
+import { NEUTRAL_COLOR, TEAM_COLORS } from '@crash-velocity/battle/arena'
+import type { BattleTeam } from '@crash-velocity/battle/arena'
+import { WEAPONS } from '@crash-velocity/battle/weapons'
+import type { WeaponId } from '@crash-velocity/battle/weapons'
 
 
 const UP    = new THREE.Vector3(0, 1, 0)

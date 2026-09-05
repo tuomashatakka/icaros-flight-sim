@@ -22,18 +22,18 @@ export type InputFrame = {
   clientTick: number;
 
   /** Held axes, −1..1. `pitch` is the vertical aim trim, not a rate. */
-  steer:      number;
-  pitch:      number;
-  strafe:     number;
+  steer:  number;
+  pitch:  number;
+  strafe: number;
 
   /** 0..1. */
-  throttle:   number;
-  brake:      number;
+  throttle: number;
+  brake:    number;
 
-  buttons:    number;
+  buttons: number;
 
   /** Wrapping counter; an increment is a respawn request. */
-  resetSeq:   number;
+  resetSeq: number;
 }
 
 export const InputButton = {
@@ -44,11 +44,13 @@ export const InputButton = {
 } as const
 
 export type InputPacket = {
-  frames:          InputFrame[];
+  frames: InputFrame[];
+
   /** The newest snapshot the client holds; the server deltas against it. */
   lastAckSnapshot: number;
+
   /** Server time the client is rendering remotes at, for lag compensation. */
-  interpTick:      number;
+  interpTick: number;
 }
 
 const AXIS_BITS  = 10
@@ -90,7 +92,7 @@ export function decodeInputPacket (bytes: Uint8Array): InputPacket {
 
   const frames: InputFrame[] = []
 
-  for (let i = 0; i < count; i++) {
+  for (let i = 0; i < count; i++)
     frames.push({
       seq:        reader.readBits(32),
       clientTick: reader.readBits(32),
@@ -102,7 +104,6 @@ export function decodeInputPacket (bytes: Uint8Array): InputPacket {
       buttons:    reader.readBits(8),
       resetSeq:   reader.readBits(8),
     })
-  }
 
   return { frames, lastAckSnapshot, interpTick }
 }

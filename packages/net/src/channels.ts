@@ -20,19 +20,25 @@ import { pack, unpack } from 'msgpackr'
 
 /** Message keys. Single characters: Colyseus puts the key on every message. */
 export const MessageType = {
+
   /** C→S, unreliable-ish: the bundled input packet. Binary. */
-  INPUT:    'i',
+  INPUT: 'i',
+
   /** S→C, unreliable-ish: the delta-compressed snapshot. Binary. */
   SNAPSHOT: 's',
+
   /** S→C, reliable-ordered: gameplay events. MessagePack. */
-  EVENTS:   'e',
+  EVENTS: 'e',
+
   /** C→S, reliable-ordered: a fire request. MessagePack. */
-  FIRE:     'f',
+  FIRE: 'f',
+
   /** Both ways, unreliable-ish: clock synchronisation. */
-  PING:     'p',
-  PONG:     'q',
+  PING: 'p',
+  PONG: 'q',
+
   /** C→S, dev only. */
-  DEV:      'd',
+  DEV: 'd',
 } as const
 
 export type MessageKey = typeof MessageType[keyof typeof MessageType]

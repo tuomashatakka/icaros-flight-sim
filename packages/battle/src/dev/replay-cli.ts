@@ -46,6 +46,7 @@ catch {
   process.stderr.write(`no such scenario: ${path}\n`)
   process.exit(1)
 }
+
 const results: ReplaySummary[] = []
 
 for (let run = 0; run < runs; run++)

@@ -88,16 +88,18 @@ const WORLD_UP = new Vector3(0, 1, 0)
  */
 export function buildCheckpoints (track: TrackSpec): Checkpoint[] {
   const { waypoints, loop, width } = track
-  const n = waypoints.length
+  const n                          = waypoints.length
 
   return waypoints.map((wp, i) => {
     _p.set(wp[0], wp[1], wp[2])
+
     const a = waypoints[(i + 1) % n]
     const b = waypoints[(i - 1 + n) % n]
     _ahead.set(a[0], a[1], a[2])
     _behind.set(b[0], b[1], b[2])
 
-    _forward.copy(_ahead).sub(loop ? _p : _behind).normalize()
+    _forward.copy(_ahead).sub(loop ? _p : _behind)
+      .normalize()
     if (_forward.lengthSq() < 1e-6)
       _forward.set(0, 0, -1)
 
@@ -112,10 +114,10 @@ export function buildCheckpoints (track: TrackSpec): Checkpoint[] {
     const quaternion = quaternionFromBasis(_right, _up, _forward)
 
     return {
-      index:     i,
-      transform: { position: [ wp[0], wp[1] + GATE_LIFT, wp[2] ], quaternion },
-      position:  [ wp[0], wp[1] + GATE_LIFT, wp[2] ],
-      forward:   [ _forward.x, _forward.y, _forward.z ],
+      index:      i,
+      transform:  { position: [ wp[0], wp[1] + GATE_LIFT, wp[2] ], quaternion },
+      position:   [ wp[0], wp[1] + GATE_LIFT, wp[2] ],
+      forward:    [ _forward.x, _forward.y, _forward.z ],
       halfWidth:  width / 2 + 2,
       halfHeight: GATE_HEIGHT / 2,
     }
@@ -147,13 +149,13 @@ export function crossedGate (gate: Checkpoint, from: Vec3Tuple, to: Vec3Tuple): 
   const cz = from[2] + (to[2] - from[2]) * t
 
   // Lateral distance from the gate centre, measured in the plane.
-  const dx = cx - px
-  const dy = cy - py
-  const dz = cz - pz
+  const dx    = cx - px
+  const dy    = cy - py
+  const dz    = cz - pz
   const along = dx * fx + dy * fy + dz * fz
-  const lx = dx - along * fx
-  const ly = dy - along * fy
-  const lz = dz - along * fz
+  const lx    = dx - along * fx
+  const ly    = dy - along * fy
+  const lz    = dz - along * fz
 
   if (Math.abs(ly) > gate.halfHeight)
     return false
@@ -162,9 +164,15 @@ export function crossedGate (gate: Checkpoint, from: Vec3Tuple, to: Vec3Tuple): 
 }
 
 function quaternionFromBasis (right: Vector3, up: Vector3, forward: Vector3): [number, number, number, number] {
-  const m00 = right.x,   m01 = up.x, m02 = forward.x
-  const m10 = right.y,   m11 = up.y, m12 = forward.y
-  const m20 = right.z,   m21 = up.z, m22 = forward.z
+  const m00   = right.x,
+    m01       = up.x,
+    m02       = forward.x
+  const m10   = right.y,
+    m11       = up.y,
+    m12       = forward.y
+  const m20   = right.z,
+    m21       = up.z,
+    m22       = forward.z
   const trace = m00 + m11 + m22
 
   if (trace > 0) {
@@ -179,6 +187,7 @@ function quaternionFromBasis (right: Vector3, up: Vector3, forward: Vector3): [n
     const s = 2 * Math.sqrt(1 + m11 - m00 - m22)
     return [ (m01 + m10) / s, 0.25 * s, (m12 + m21) / s, (m02 - m20) / s ]
   }
+
   const s = 2 * Math.sqrt(1 + m22 - m00 - m11)
   return [ (m02 + m20) / s, (m12 + m21) / s, 0.25 * s, (m10 - m01) / s ]
 }

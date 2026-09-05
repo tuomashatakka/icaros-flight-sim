@@ -15,8 +15,8 @@ import { SignJWT, jwtVerify } from 'jose'
 
 
 export type Ticket = {
-  pilotId:  string | null;
-  name:     string;
+  pilotId: string | null;
+  name:    string;
 }
 
 export const TICKET_TTL_SECONDS = 60

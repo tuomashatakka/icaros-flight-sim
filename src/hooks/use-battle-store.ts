@@ -1,7 +1,7 @@
 import { create } from 'zustand'
-import type { BattleStatus } from '@/engine/battle/sim'
-import type { BattleTeam } from '@/engine/battle/arena'
-import type { LockPhase, WeaponId } from '@/engine/battle/weapons'
+import type { BattleStatus } from '@crash-velocity/battle/sim'
+import type { BattleTeam } from '@crash-velocity/battle/arena'
+import type { LockPhase, WeaponId } from '@crash-velocity/battle/weapons'
 
 
 export type BattleRosterEntry = {
@@ -193,7 +193,7 @@ export const useBattleStore = create<BattleSessionState & {
   setAimPitch:  (aim: number) => void;
   setWeapons:   (primary: WeaponView, secondary: WeaponView) => void;
   setNetStats:  (net: NetHealth) => void;
-  applyEvent:   (e: import('@/engine/battle/sim').BattleEvent, names?: Map<string, string>) => void;
+  applyEvent:   (e: import('@crash-velocity/battle/types').BattleEvent, names?: Map<string, string>) => void;
   clearToast:   (key: string) => void;
   resetSession: () => void;
 }>(set => ({

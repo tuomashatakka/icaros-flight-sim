@@ -28,13 +28,15 @@ export const RacerState = schema({
   nextCheckpoint: t.uint8().default(0),
   finished:       t.boolean().default(false),
 
-  // Clocks tick continuously, so they ride the unreliable lane: a dropped
-  // update costs one stale readout rather than stalling the ordered stream.
-  elapsed:    t.number().default(0).unreliable(),
-  lapElapsed: t.number().default(0).unreliable(),
+  // Clocks tick continuously. They were briefly marked `.unreliable()`, but an
+  // unreliable field over a WEBSOCKET transport is never patched at all — the
+  // lane only exists on `@colyseus/h3-transport` (WebTransport), and Colyseus
+  // warns about it at boot. Reliable at 20 Hz costs a handful of bytes.
+  elapsed:    t.number().default(0),
+  lapElapsed: t.number().default(0),
 
-  /** −1 rather than null: the wire has no nullable number, and a best lap of
-   *  minus one second is not a value anything can mistake for a real one. */
+  // −1 rather than null: the wire has no nullable number, and a best lap of
+  //  minus one second is not a value anything can mistake for a real one.
   bestLap: t.number().default(-1),
 }, 'RacerState')
 
@@ -51,7 +53,7 @@ export const RaceState = schema({
 }, 'RaceState')
 
 export type RacerStateType = SchemaType<typeof RacerState>
-export type RaceStateType  = SchemaType<typeof RaceState>
+export type RaceStateType = SchemaType<typeof RaceState>
 
 /** Mirror a sim snapshot into the synchronised state. Poses never touch this. */
 export function syncRaceState (
@@ -91,8 +93,8 @@ export function syncRaceState (
       state.racers.delete(id)
 }
 
-/** Millisecond precision. Finer than anything displayed, and it stops float
- *  noise from marking a field dirty on every patch. */
+// Millisecond precision. Finer than anything displayed, and it stops float
+//  noise from marking a field dirty on every patch.
 function round (value: number): number {
   return Math.round(value * 1000) / 1000
 }

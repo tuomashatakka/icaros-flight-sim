@@ -35,23 +35,25 @@ export function neonCanyonTrack (): TrackBundle {
     geometry,
     curve,
     spec: {
-      id:         'neon-canyon',
-      name:       'Neon Canyon',
-      background: '#1a0a14',
-      fog:        [ '#1a0a14', 140, 620 ],
-      waypoints:  sampleCurve(curve, 10),
-      width:      26,
-      laps:       3,
-      loop:       true,
+      id:             'neon-canyon',
+      name:           'Neon Canyon',
+      background:     '#1a0a14',
+      fog:            [ '#1a0a14', 140, 620 ],
+      waypoints:      sampleCurve(curve, 10),
+      width:          26,
+      laps:           3,
+      loop:           true,
       colliders:      ribbonBoxColliders(vertices, { stride: 1 }),
       colliderOffset: [ 0, -0.05, 0 ],
-      bloom: { strength: 0.5, threshold: 0.85, radius: 0.5 },
+      bloom:          { strength: 0.5, threshold: 0.85, radius: 0.5 },
     },
   }
 }
 
 /** Waypoints as tuples, not `Vector3`: a track goes over the wire on join. */
-export function sampleCurve (curve: { getPointAt (t: number): Vector3 }, count: number): Vec3Tuple[] {
+type CurveType = { getPointAt (t: number): Vector3 }
+
+export function sampleCurve (curve: CurveType, count: number): Vec3Tuple[] {
   return Array.from({ length: count }, (_, i) => {
     const p = curve.getPointAt(i / count)
     return [ p.x, p.y, p.z ] as Vec3Tuple

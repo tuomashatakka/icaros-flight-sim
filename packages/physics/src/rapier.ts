@@ -19,6 +19,10 @@ let pending: Promise<Rapier> | null = null
  */
 export function initRapier (): Promise<Rapier> {
   pending ??= import('@dimforge/rapier3d-deterministic-compat').then(async module => {
+    // `init()` takes no arguments, whatever the "using deprecated parameters
+    // for the initialization function" notice on stderr suggests: that comes
+    // from rapier's own vendored wasm-bindgen glue calling its internal
+    // initialiser positionally. Passing anything here is a type error.
     await module.init()
     return module
   })

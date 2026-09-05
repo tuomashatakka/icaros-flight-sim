@@ -27,7 +27,7 @@ export async function POST (request: Request): Promise<Response> {
   }
 
   const { username, password } = (body ?? {}) as { username?: unknown; password?: unknown }
-  const result = await registerPilot(
+  const result                 = await registerPilot(
     await serverDb(),
     typeof username === 'string' ? username : '',
     typeof password === 'string' ? password : '',

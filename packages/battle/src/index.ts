@@ -30,5 +30,6 @@ export type { BattleStateType, PlayerStateType } from './state'
 export { AIM_NORMALISER, battleSnapshotOf } from './snapshot'
 
 export { battlePose, createBattleRewind } from './rewind'
+export { fromBattleInput, toBattleInput } from './input'
 export { botInput } from './bot'
 export { DEFAULT_BACKFILL, rebalanceBots, teamForJoin } from './bots'

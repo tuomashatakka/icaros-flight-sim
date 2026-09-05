@@ -22,11 +22,20 @@ async function makeSim (overrides: Partial<BattleConfig> = {}) {
   return BattleSim.create(apexArena(), { ...DEFAULT_BATTLE_CONFIG, ...overrides })
 }
 
-function step (sim: BattleSim, ticks: number) {
+/**
+ * Run the sim and collect what it emitted.
+ *
+ * `ticks` is a CEILING, not a target: `until` stops early. A case that asserts
+ * a match ended learns nothing from the minutes after it did, and simulating
+ * them anyway is most of this file's runtime.
+ */
+function step (sim: BattleSim, ticks: number, until?: (sim: BattleSim) => boolean) {
   const events: ReturnType<BattleSim['drainEvents']> = []
   for (let i = 0; i < ticks; i++) {
     sim.step(STEP)
     events.push(...sim.drainEvents())
+    if (until?.(sim))
+      break
   }
   return events
 }
@@ -682,7 +691,7 @@ describe('match lifecycle', () => {
     sim.addBot('blue')
     sim.start(0)
 
-    const events = step(sim, 420 * 60) // up to 7 sim minutes
+    const events = step(sim, 420 * 60, s => s.status === 'finished') // up to 7 sim minutes
     expect(events.find(e => e.type === 'matchEnd')).toBeTruthy()
     expect(sim.status).toBe('finished')
     expect(sim.scores.red + sim.scores.blue).toBeGreaterThanOrEqual(4)

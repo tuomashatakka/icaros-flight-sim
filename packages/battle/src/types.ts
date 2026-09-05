@@ -195,14 +195,17 @@ export type BattleSnapshot = {
     y:         number;
     z:         number;
   }>;
-  beams:    Beam[];
 }
 
 export type BattleEvent =
   // Carries everything needed to REPRODUCE the salvo, not just to play a
   // muzzle flash. This is the document's FireEvent, and it is why missiles are
   // no longer networked entities — see `projectiles.ts`.
-  | { type: 'fire'; id: string; weapon: WeaponId; x: number; y: number; z: number; team: BattleTeam; spawn: ProjectileSpawn | null } |
+  // Carries everything needed to REPRODUCE the shot, not just to play a muzzle
+  // flash: a salvo's spawn for a launcher, the resolved segment for a beam.
+  // This is the document's FireEvent, and it is why neither missiles nor beams
+  // are networked entities any more — see `projectiles.ts`.
+  | { type: 'fire'; id: string; weapon: WeaponId; x: number; y: number; z: number; team: BattleTeam; spawn: ProjectileSpawn | null; beam: Beam | null } |
 
   // The authoritative end of one projectile. A client integrating its own copy
   //  needs this to remove it; inferring the end from a `hit` would strand every

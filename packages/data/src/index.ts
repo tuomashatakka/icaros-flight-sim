@@ -28,5 +28,7 @@ export type { CredentialResult } from './auth/credentials'
 
 export { dummyHash, hashPassword, verifyPassword } from './auth/hash'
 
+export { getDatabase, setDatabase, withDatabase } from './runtime'
+
 export { TICKET_TTL_SECONDS, mintTicket, verifyTicket } from './auth/ticket'
 export type { Ticket } from './auth/ticket'

@@ -1,13 +1,13 @@
 import * as THREE from 'three'
 import type { App, AppModule } from 'threejs-scene'
 import { defineModule } from 'threejs-scene'
-import { apexArena, BATTLE_TEAMS, TEAM_COLORS } from '../battle/arena'
+import { apexArena, BATTLE_TEAMS, TEAM_COLORS } from '@crash-velocity/battle/arena'
 import type { Scenery } from '../battle/scenery'
-import type { BattleTeam } from '../battle/arena'
-import { DEFAULT_BATTLE_CONFIG } from '../battle/sim'
-import type { BattleEvent } from '../battle/types'
-import { DEFAULT_LOADOUT, WEAPONS } from '../battle/weapons'
-import type { Loadout, WeaponId } from '../battle/weapons'
+import type { BattleTeam } from '@crash-velocity/battle/arena'
+import { DEFAULT_BATTLE_CONFIG } from '@crash-velocity/battle/sim'
+import type { BattleEvent } from '@crash-velocity/battle/types'
+import { DEFAULT_LOADOUT, WEAPONS } from '@crash-velocity/battle/weapons'
+import type { Loadout, WeaponId } from '@crash-velocity/battle/weapons'
 import {
   buildBeamPool,
   buildCaretMarker,
@@ -20,8 +20,8 @@ import {
 import type { CaretMarker, Nameplate, ObjectiveVisual, ZoneVisual } from '../battle/visuals'
 import { BattleTransport } from '../battle/transport'
 import type { NetRemote } from '../battle/transport'
-import type { SnapshotPlayer } from '../battle/protocol'
-import { LocalPrediction } from '../battle/prediction'
+import type { ViewPlayer } from '../battle/transport'
+import { LocalPrediction } from '../net/prediction'
 import { createHovercraft, createHovercraftState } from '@crash-velocity/physics/vehicle-step'
 import { BodyInterpolator } from '@crash-velocity/physics/interpolation'
 import { useBattleStore } from '@/hooks/use-battle-store'
@@ -30,7 +30,11 @@ import type { ShipId } from '@/lib/ship/registry'
 import { vehicleConfig } from '@/lib/utils'
 import { mountBaseScene } from './base'
 import { activeControls } from '../input'
+import { toBattleInput } from '@crash-velocity/battle/input'
+import { buildRemoteHull } from '../net/remote-hull'
 import { createBattlePost } from '../battle/post'
+import { buildArenaVisual } from '../battle/arena-visuals'
+import { ProjectileField } from '../battle/projectiles'
 import type { CameraRig } from '../camera/rig'
 import { battleHudModule } from '../hud'
 
@@ -66,65 +70,6 @@ const BLAST_POOL   = 24
  * hulls, and the FBX path clones geometry AND textures per instance. This is
  * one draw call's worth of boxes that still reads as a ship at 100 m.
  */
-function buildShipHull (team: BattleTeam): THREE.Group {
-  const color = new THREE.Color(TEAM_COLORS[team])
-  const root  = new THREE.Group()
-
-  // Sized to the actual collider (1.0 × 0.225 × 2.65 half-extents) rather than
-  // eyeballed: a hull visibly wider than the body it wraps makes every near
-  // miss look like a hit.
-  const chassis = new THREE.Mesh(
-    new THREE.BoxGeometry(1.7, 0.55, 2.6),
-    new THREE.MeshStandardMaterial({ color: color.clone().multiplyScalar(0.4), metalness: 0.6, roughness: 0.38 })
-  )
-  chassis.position.y = 0.5
-  root.add(chassis)
-
-  const nose = new THREE.Mesh(
-    new THREE.ConeGeometry(0.55, 1.3, 6),
-    new THREE.MeshStandardMaterial({ color: color.clone().multiplyScalar(0.75), metalness: 0.45, roughness: 0.4 })
-  )
-  nose.rotation.x = Math.PI / 2
-  nose.position.set(0, 0.5, 1.7)
-  root.add(nose)
-
-  const canopy = new THREE.Mesh(
-    new THREE.SphereGeometry(0.4, 12, 8),
-    new THREE.MeshStandardMaterial({ color: '#0d0f18', metalness: 0.9, roughness: 0.12 })
-  )
-  canopy.scale.set(0.85, 0.7, 1.2)
-  canopy.position.set(0, 0.78, 0.2)
-  root.add(canopy)
-
-  for (const x of [ -1.05, 1.05 ]) {
-    const fin = new THREE.Mesh(
-      new THREE.BoxGeometry(0.45, 0.18, 1.7),
-      new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.35, metalness: 0.5, roughness: 0.4 })
-    )
-    fin.position.set(x, 0.4, -0.3)
-    root.add(fin)
-  }
-
-  const skirt = new THREE.Mesh(
-    new THREE.BoxGeometry(1.25, 0.1, 2.2),
-    new THREE.MeshStandardMaterial({ color: '#05060a', metalness: 0.2, roughness: 0.8 })
-  )
-  skirt.position.y = 0.08
-  root.add(skirt)
-
-  const glow = new THREE.Mesh(
-    new THREE.PlaneGeometry(1.1, 0.3),
-    new THREE.MeshBasicMaterial({ color, transparent: true, opacity: 0.9, side: THREE.DoubleSide, toneMapped: false })
-  )
-  glow.position.set(0, 0.45, -1.35)
-  root.add(glow)
-
-  root.traverse(o => {
-    o.castShadow    = true
-    o.receiveShadow = true
-  })
-  return root
-}
 
 type Opponent = {
   root:      THREE.Group;
@@ -189,6 +134,15 @@ export async function mountBattle (
   // Built inside `buildGeometry`, ticked from `onFrame`: the sky panels and the
   // debris drift need a clock, and nothing else in the arena does.
   let scenery: Scenery | null = null
+
+  /**
+   * Missiles in flight, integrated locally from fire events.
+   *
+   * Lives beside the transport rather than inside it because a projectile is a
+   * gameplay object with a lifetime, not a packet — and because the render
+   * pass, not the network pass, is what has a `dt` to step it with.
+   */
+  const projectiles = new ProjectileField()
 
   // Triggers themselves live on the shared `Controls` surface (`input.ts`), so
   // keyboard, mouse and the on-screen touch buttons all drive one set of flags.
@@ -267,7 +221,7 @@ export async function mountBattle (
     if (entry)
       return entry
 
-    const root      = buildShipHull(remote.team)
+    const root      = buildRemoteHull(TEAM_COLORS[remote.team])
     const nameplate = buildNameplate()
     const caret     = buildCaretMarker()
     root.add(nameplate.sprite)
@@ -291,7 +245,7 @@ export async function mountBattle (
   }
 
   /** The ship a snapshot id refers to, whoever owns it. */
-  function playerIn (id: string): SnapshotPlayer | undefined {
+  function playerIn (id: string): ViewPlayer | undefined {
     return transport.latest()?.players.find(p => p.id === id)
   }
 
@@ -320,11 +274,20 @@ export async function mountBattle (
   function reactTo (e: BattleEvent, rig: CameraRig) {
     switch (e.type) {
       case 'fire':
+        // The server's confirmation. It REPLACES whatever the client spawned
+        // optimistically for this shot rather than adding to it — see
+        // `ProjectileField.confirm`.
+        if (e.spawn)
+          projectiles.confirm(e.spawn)
+
         if (e.id === transport.localId())
           rig.shake(WEAPONS[e.weapon].needsLock ? 0.5 : 0.22)
         break
+      case 'detonate':
+        projectiles.detonate(e.id)
+        break
       case 'hit':
-        burstAt(e.target, TEAM_COLORS[playerIn(e.hitBy)?.team ?? 'red'], 1.1)
+        burstAt(e.target, TEAM_COLORS[playerIn(e.hitBy)?.team as BattleTeam ?? 'red'], 1.1)
         if (e.target === transport.localId()) {
           rig.shake(0.7)
           post.pulse(0.55, '#ff5470')
@@ -360,7 +323,7 @@ export async function mountBattle (
    * cone test, and a client that decided its own would disagree with the
    * authority about who it was shooting.
    */
-  function publishHud (server: SnapshotPlayer, snapshot: NonNullable<ReturnType<BattleTransport['latest']>>): void {
+  function publishHud (server: ViewPlayer, snapshot: NonNullable<ReturnType<BattleTransport['latest']>>): void {
     const store  = useBattleStore.getState()
     const target = server.lockTarget ? playerIn(server.lockTarget) : undefined
 
@@ -477,16 +440,17 @@ export async function mountBattle (
     })
     beamPool.hideFrom(snapshot.beams.length)
 
-    // Missiles carry velocity, so they are dead-reckoned forward from the
-    // snapshot that described them instead of stepping between packets.
-    const ahead = Math.max(0, Math.min(0.25, transport.stats().snapshotAgeMs / 1000))
-    snapshot.missiles.forEach((m, i) => {
+    // Missiles are NOT in the snapshot any more — they are spawned from a fire
+    // event and integrated locally, so this draws whatever the field stepped
+    // this frame rather than dead-reckoning from a packet that is already old.
+    const live = projectiles.live
+    live.forEach((m, i) => {
       missilePool.show(i,
-                       { x: m.x + m.vx * ahead, y: m.y + m.vy * ahead, z: m.z + m.vz * ahead },
-                       { x: m.vx, y: m.vy, z: m.vz },
+                       { x: m.position[0], y: m.position[1], z: m.position[2] },
+                       { x: m.velocity[0], y: m.velocity[1], z: m.velocity[2] },
                        m.weapon)
     })
-    missilePool.hideFrom(snapshot.missiles.length)
+    missilePool.hideFrom(live.length)
 
     zoneVisuals.forEach((visual, i) => {
       const z = snapshot.zones[i]
@@ -497,21 +461,20 @@ export async function mountBattle (
 
   const app = await mountBaseScene<BattleState>({
     canvas,
-    initialState:            initialBattleState(),
-    background:              new THREE.Color(arena.background),
-    bloom:                   arena.bloom,
-    colliders:               arena.colliders,
-    colliderOffset:          arena.colliderOffset,
-    useDefaultVehicleModule: false,
+    initialState:   initialBattleState(),
+    background:     new THREE.Color(arena.background),
+    bloom:          arena.bloom,
+    colliders:      arena.colliders,
+    colliderOffset: arena.colliderOffset,
     // The trim is predicted locally and corrected against the server, because
     // a reticle that waits half a round trip to move feels broken; the hull and
     // camera mirror whatever elevation it settled on.
-    aimPitchSource:          () => prediction?.aimNormalised ?? 0,
+    aimPitchSource: () => prediction?.aimNormalised ?? 0,
     // The deck's diagonal is ~850 units; the race rig's 400 far plane would
     // clip the far wall clean off.
-    cameraFar:               1600,
-    buildGeometry:           ctx => {
-      scenery = arena.buildVisual(ctx)
+    cameraFar:      1600,
+    buildGeometry:  ctx => {
+      scenery = buildArenaVisual(ctx, arena)
     },
     post: post.options,
 
@@ -553,7 +516,7 @@ export async function mountBattle (
         },
       }
 
-      transport.connect({ name, shipId, loadout, match: options.match, url: options.server })
+      transport.connect({ name, shipId, loadout, match: options.match, server: options.server })
 
       let clientTick    = 0
       let lastSnapshot  = 0
@@ -582,7 +545,7 @@ export async function mountBattle (
           // eventually acknowledge is the same object applied locally, so
           // reconciliation replays exactly what was predicted.
           const frame = transport.pushInput(input, clientTick)
-          prediction?.step(frame, provisionalSpawn, true)
+          prediction?.step(toBattleInput(frame), provisionalSpawn, true)
           transport.flushInput(transport.serverTick())
 
           // A new snapshot is the only thing that can correct the prediction,
@@ -591,7 +554,7 @@ export async function mountBattle (
           if (prediction && server && transport.serverTick() !== lastSnapshot) {
             lastSnapshot = transport.serverTick()
 
-            const result = prediction.reconcile(server, transport.unacknowledged(), provisionalSpawn, true)
+            const result = prediction.reconcile(server, transport.unacknowledged(), toBattleInput, provisionalSpawn, true)
             transport.noteCorrection(result.correctionM)
 
             if (result.snapped) {
@@ -623,9 +586,9 @@ export async function mountBattle (
 
           publishHud(server, snapshot)
 
-          // Battle disables the default vehicle module, which is the only thing
-          // that ever writes `telemetry.shake` — so the base `impact` module has
-          // been idling since the mode was built. Drive the rig directly.
+          // Nothing writes `telemetry.shake` any more — the module that used to
+          // is gone with the local simulation — so the base `impact` module
+          // idles and the rig is driven directly from the event stream.
           const events = transport.drainEvents()
           if (events.length) {
             const names = nameOf()
@@ -669,12 +632,25 @@ export async function mountBattle (
 
       renderRemotes(elapsed)
 
+      // Stepped on the RENDER delta, not the sim step: these are visuals whose
+      // authoritative outcome the server already decided, and a missile that
+      // stutters between physics ticks reads as a dropped frame.
+      projectiles.step(frame.delta, id => {
+        const remote = transport.remotes().find(r => r.id === id)
+        if (remote)
+          return { x: remote.state.x, y: remote.state.y, z: remote.state.z }
+
+        const local = transport.localState()
+        return local && local.id === id ? { x: local.x, y: local.y, z: local.z } : null
+      })
+
       const snapshot = transport.latest()
       if (snapshot)
         renderWorld(snapshot, elapsed)
     },
 
     onDispose: () => {
+      projectiles.clear()
       canvas.removeEventListener('pointerdown', onPointerDown)
       canvas.removeEventListener('pointerup', onPointerUp)
       canvas.removeEventListener('contextmenu', onContextMenu)
@@ -714,7 +690,7 @@ export async function mountBattle (
           scores:    snapshot?.scores ?? { red: 0, blue: 0 },
           lock:      server ? { phase: server.lockPhase, targetId: server.lockTarget, progress: server.lockMeter } : null,
           beams:     snapshot?.beams.length ?? 0,
-          missiles:  snapshot?.missiles.length ?? 0,
+          missiles:  projectiles.count,
           players:   (snapshot?.players ?? []).map(p => ({
             id:   p.id,
             team: p.team,
@@ -731,18 +707,9 @@ export async function mountBattle (
         }
       },
 
-      // Drop an enemy at a spot. Returns the id asked for, not a confirmation:
-      //  the move lands on the server and arrives back in a later snapshot.
-      place: (id: string | null, x: number, y: number, z: number) => {
-        transport.sendDev({ cmd: 'place', id: id ?? undefined, x, y, z })
-        return id
-      },
-
-      /** Aim the local ship at a world point, so a lock can be driven from a script. */
-      face: (x: number, z: number) => {
-        transport.sendDev({ cmd: 'face', x, z })
-        return Math.atan2(x, z)
-      },
+      // `place` and `face` are gone with the hand-rolled protocol. They existed
+      //  to poke a running match from a script; `@colyseus/playground` joins a
+      //  real room and does it without a bespoke message family in the wire.
     }
 
   return app

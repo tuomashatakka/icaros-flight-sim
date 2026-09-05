@@ -7,6 +7,7 @@
 
 import { migrateNeon } from './migrate'
 
+
 const url = process.env.DATABASE_URL_UNPOOLED ?? process.env.DATABASE_URL
 
 if (!url) {

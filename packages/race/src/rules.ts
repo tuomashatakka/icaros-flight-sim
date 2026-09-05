@@ -93,7 +93,7 @@ export function passCheckpoint (
   if (progress.finished || index !== progress.nextCheckpoint)
     return { counted: false }
 
-  const count = rules.checkpointCount
+  const count      = rules.checkpointCount
   progress.respawn = transform
   progress.gatesCleared++
 
@@ -105,7 +105,7 @@ export function passCheckpoint (
 
   const lapTime = progress.lapElapsed
   progress.lapTimes.push(lapTime)
-  progress.bestLap   = progress.bestLap === null ? lapTime : Math.min(progress.bestLap, lapTime)
+  progress.bestLap    = progress.bestLap === null ? lapTime : Math.min(progress.bestLap, lapTime)
   progress.lapElapsed = 0
 
   if (progress.lap >= rules.laps) {
@@ -121,7 +121,7 @@ export function passCheckpoint (
 
 /** Send a racer back to the last gate they cleared. */
 export function respawnAt (progress: RaceProgress): Transform {
-  progress.respawnIndex = (progress.respawnIndex + 1) & 0xff
+  progress.respawnIndex = progress.respawnIndex + 1 & 0xff
   return progress.respawn
 }
 

@@ -119,22 +119,33 @@ samples only the green channel and would erase the red canopies (Qirex, AG-Syste
 
 ## Architecture
 
+The game is split between a browser client and an authoritative server, and the
+line between them runs through six workspace packages:
+
 ```
+packages/physics/      the hovercraft sim + the headless engine core
+packages/net/          the netcode: clock, interpolation, prediction, bit-packed codec
+packages/race/         RaceSim, track data, the race room
+packages/battle/       BattleSim, weapons, arena data, the battle room
+packages/data/         Drizzle over Neon (PGlite for tests)
+packages/server/       Colyseus boot — defines the two rooms
+
 src/engine/            vanilla three.js — no React imports anywhere below this line
-  scenes/              composition roots: race.ts, hangar.ts
-  modules/             AppModules: vehicle, physics-step, race, ship-visual, sun, publish
+  scenes/              composition roots: race.ts, battle.ts, hangar.ts
+  net/                 the client's netcode binding + shared prediction
+  race/ battle/        per-mode transports and visuals
   hud/                 the shared canvas-owned race and battle HUD (see below)
-  levels/              the four tracks, as LevelSpec data
-  physics/             Rapier world + collider helpers
+  levels/              the four tracks' MESHES (the data is in packages/race)
   camera/rig.ts        chase + cockpit camera, as two blended stations
-  fx/afterburner.ts    engine plume
-  clock.ts             fixed-step clock that exposes its residual (see below)
   bridge.ts            zustand -> app state, one direction only
   dev/                 dev-only debug harness; dropped from production builds
 src/components/scene-canvas.tsx   the ONLY React<->three boundary
-public/scenarios/      scripted input timelines for the dev CLI
 scripts/dev-cli.mjs    drive the running game from a shell (see below)
 ```
+
+`physics`, `net`, `race` and `battle` each set `"paths": {}` in their tsconfig,
+so an `@/…` import inside one is a compile error. Nothing crosses from a package
+back into `src/`.
 
 State flows one way: `zustand -> bridge -> app state -> module.update() -> scene`. Modules read
 state and never write it. Engine *outputs* (speed, boost, lap times) travel back out through the
@@ -177,7 +188,7 @@ asserts exactly that (`min up-dot after settle: 1.000`).
 
 Turn and strafe authority are also shared physics contracts, not per-input multipliers. Ground yaw
 peaks at `1.45 rad/s` and falls below 45°/s at maximum speed; strafe targets 14% of cruise speed with
-an eased response. `public/scenarios/turn-response.json` and `strafe-response.json` pin their
+an eased response. `packages/race/scenarios/turn-response.json` and `strafe-response.json` pin their
 two-second traces on The Flats, so keyboard, pointer, touch, race, and battle stay aligned.
 
 ### Two stations, one rig
@@ -242,7 +253,7 @@ The race and battle routes intentionally render no interactive DOM outside the W
 Accessibility metadata lives on the canvas itself, while keyboard, mouse, pen, and touch all write
 the same mutable `Controls` object used by the simulation.
 
-State is read **imperatively** — `telemetry` directly, and `useRaceStore.getState()` per frame.
+State is read **imperatively** — `telemetry` directly, and the HUD store's `getState()` per frame.
 Subscribing would put a React commit in the render path, which is the exact thing the throttling in
 the publish module exists to avoid.
 
@@ -269,50 +280,66 @@ listening on :9002 and starts one otherwise.
 
 ```bash
 bun run dev:probe --level flats             # full state snapshot as JSON
-bun run dev:scenario straight-line          # deterministic scripted run
-bun run dev:scenario hard-corner --json --out /tmp/trace.json
-bun run dev:scenario turn-response           # two-second steering authority trace
-bun run dev:scenario strafe-response         # two-second lateral authority trace
 bun run dev:shot /tmp/a.png --step 300 --overlay colliders,wheels
 bun run dev:console --seconds 5             # errors, frame times, WebGL state
 bun run dev:eval -e '__dev.probe().ship.up'
 ```
 
+Determinism checks are headless and never open a browser:
+
+```bash
+bun run dev:scenario straight-line           # race, run twice, hashes compared
+bun run dev:scenario turn-response           # isolated steering authority
+bun run dev:replay point-blank               # battle, same
+```
+
 ### Scenarios
 
-A scenario is a JSON input timeline in `public/scenarios/` — "throttle at 0 s,
-hard left at 5 s, straighten at 7 s". The runner disables rendering and pumps
-the sim with `app.tick()`, so **12 sim seconds complete in about 30 ms**, and
-because the simulation is deterministic two runs produce byte-identical traces.
-A handling change becomes a diff rather than an opinion.
+A scenario is a JSON input timeline — "throttle at 0 s, hard left at 5 s,
+straighten at 7 s" — replayed against a fresh sim with no wall clock and no
+browser. Twelve sim seconds complete in tens of milliseconds, and because the
+simulation is deterministic two runs produce byte-identical traces. A handling
+change becomes a diff rather than an opinion.
+
+```
+packages/race/scenarios/     straight-line, hard-corner, turn-response, …
+packages/battle/scenarios/   point-blank, straight-fight
+```
 
 ```jsonc
 {
   "name": "hard-corner",
-  "level": "neon-canyon",
-  "duration": 16,          // sim seconds
-  "sampleEvery": 0.5,      // sim seconds per trace row
-  "start": { "position": [0, 2, 0], "yaw": 0 },   // optional
-  "tuning": { "thrust": 1200 },                    // optional
+  "track": "neon-canyon",
+  "ticks": 960,            // 16 sim seconds at 60 Hz
+  "countdown": 0,
+  "racers": [
+    { "name": "Probe", "shipId": "icaras", "at": [0, 2, 0], "yaw": 0 }
+  ],
   "timeline": [
-    { "at": 0, "input": { "throttle": true } },
-    { "at": 5, "input": { "steer": -1, "strafe": 0.5 } },
-    { "at": 7, "input": { "steer": 0, "strafe": 0, "boost": true } }
+    { "tick": 0,   "racer": 0, "input": { "throttle": true } },
+    { "tick": 300, "racer": 0, "input": { "steer": -1, "strafe": 0.5 } },
+    { "tick": 420, "racer": 0, "input": { "steer": 0, "boost": true } }
   ]
 }
 ```
 
-The default output is a summary. `minUp` is the flip detector (1 = level,
-0 = on its side, -1 = inverted); `flipped` and `fellThrough` are deliberately
-separate, because driving off a canyon edge perfectly level and losing attitude
-control are different bugs with different fixes. `airborneRatio` being high is
-normal — this ship is meant to leave the ground.
+The default output is a summary — the hash, whether two runs agreed, and where
+each racer ended up. `--json` prints everything; `--runs N` replays more than
+twice.
 
-Reproducibility is maintained rather than inherited: the runner resets the body
-pose, the race store, telemetry and the publish accumulator, then runs 60 settle
-ticks to wash out rapier's warm-start impulses, before the timeline starts. If
-you add simulation state that persists across ticks, reset it there too or
-scenarios touching it quietly stop being reproducible.
+**Reproducibility is maintained rather than inherited**, and the way it is paid
+for changed. Race's scenarios used to run *in the page*, so every run inherited
+whatever state the tab had accumulated and the runner had to explicitly reset
+six things first — body pose, settle ticks, the race store, telemetry, a zone
+accumulator, two held axes — every one of which was found by diffing two runs
+that should have matched. Both harnesses now build a **fresh sim per run**, so
+there is no reset list to forget. The rule that replaced it: keep new sim state
+constructor-initialised.
+
+Underneath that, `test/determinism.test.ts` hashes rapier's own
+`world.takeSnapshot()` and asserts two runs match — the physics engine's
+cross-platform claim holds only for the enhanced-determinism build at an exact
+pin, so it is tested rather than trusted.
 
 ### Debug overlays
 
@@ -324,7 +351,7 @@ and a helper on the sun's shadow camera — the last being the direct check for
 ### URL overrides
 
 `?seed=` `?paused=1` `?overlay=colliders,wheels` `?nohud=1` `?tuning=<base64>`
-`?scenario=<name>` — so any bug report can be a link that reproduces it exactly.
+— so any bug report can be a link that reproduces it exactly.
 
 None of this exists in production: it sits behind `NODE_ENV !== 'production'`
 and loads through a dynamic import, so the whole chunk is dropped from the
@@ -341,30 +368,37 @@ Marketplace and it injects `DATABASE_URL` (pooled), `DATABASE_URL_UNPOOLED`, the
 Turn on preview branching while you are there, or every preview deployment
 writes to the production database, registrations included.
 
-Then apply the schema once, against the direct connection:
+Then apply the migrations once, against the direct connection:
 
 ```bash
-DATABASE_URL_UNPOOLED='postgres://…' bun run db:push
+bun run db:generate                                   # only after a schema edit
+DATABASE_URL_UNPOOLED='postgres://…' bun run db:migrate
 ```
 
-It is `CREATE TABLE IF NOT EXISTS` throughout, so it is safe to re-run — and it
-has to be re-run for each preview branch that needs a schema the parent did not
-have. It is deliberately *not* in the build command: a migration that fails
-should not fail an otherwise-fine build, and there is no rollback.
+`db:generate` turns `packages/data/src/schema.ts` into SQL under
+`packages/data/drizzle/`; `db:migrate` applies whatever has not been applied.
+Migrations are deliberately *not* in the build command: one that fails should
+not fail an otherwise-fine build, and there is no rollback. Each preview branch
+needs its own run.
 
-**The battle server goes anywhere that runs a long-lived process** — Fly,
-Railway, a box. It is a persistent stateful simulation, which is exactly what a
-serverless host cannot run. Give it:
+**The game server goes anywhere that runs a long-lived process** — Fly, Railway,
+a box. It is a persistent stateful simulation looping at 60 Hz, which is exactly
+what a serverless host cannot run. Give it:
 
-- `DATABASE_URL` — the *same* Neon database as Vercel. Sessions are minted by
-  the Next app and read by this process; two different databases means every
-  sign-in succeeds and every lobby connection still lands as a guest.
-- `ORIGIN_ALLOWLIST` — optional, and matched exactly, so listing only the
-  production origin locks every Vercel preview out of the lobby socket.
+- `GAME_TOKEN_SECRET` — the *same* value as Vercel. The Next app mints a
+  sixty-second join ticket with it and this process verifies it. A mismatch
+  does not error anywhere: every sign-in still succeeds and every pilot silently
+  lands as a guest.
+- `DATABASE_URL` — the same Neon database as Vercel, so a match recorded here
+  shows up in the stats served there. Without it the server falls back to
+  PGlite and match history goes away with the process.
 
-And tell the client where it is, with `NEXT_PUBLIC_BATTLE_SERVER_URL=wss://…`
-on Vercel. `wss://`, not `ws://`, or the browser blocks the socket as mixed
+And tell the client where it is, with `NEXT_PUBLIC_GAME_SERVER_URL=wss://…` on
+Vercel. `wss://`, not `ws://`, or the browser blocks the socket as mixed
 content.
+
+Colyseus handles CORS and origin checking itself, so there is no allowlist to
+keep in sync with Vercel's preview hostnames any more.
 
 `.env.example` documents every variable either half reads.
 

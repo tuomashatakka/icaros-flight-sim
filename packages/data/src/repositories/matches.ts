@@ -59,7 +59,8 @@ export async function recordMatchEnd (
   winner: string | null,
   scores: Record<string, number>,
 ): Promise<void> {
-  await db.update(matches).set({ endedAt, winner, scores }).where(eq(matches.id, id))
+  await db.update(matches).set({ endedAt, winner, scores })
+    .where(eq(matches.id, id))
 }
 
 /**

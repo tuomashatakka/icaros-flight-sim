@@ -1,25 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { flatsLevel } from '@/engine/levels/flats'
-import { neonCanyonLevel } from '@/engine/levels/neon-canyon'
-import { orbitalRingLevel } from '@/engine/levels/orbital-ring'
-import { proceduralLevel } from '@/engine/levels/procedural'
-import type { LevelSpec } from '@/engine/levels/types'
+import { TRACK_IDS, trackBundle } from '../src/levels'
+import { buildCheckpoints } from '../src/track'
 
 /**
- * Level geometry is pure data, so it is the one part of the engine that can be
- * asserted without a WebGL context. These lock in the numbers that came out of
- * the R3F components, so a refactor of the generation walk can't silently move
- * the track.
+ * Track geometry is pure data — that is the whole reason it moved into this
+ * package — so it is asserted without a WebGL context, and now without a
+ * browser at all. These lock in the numbers the generation walks produce, so a
+ * refactor of one cannot silently move the track out from under the colliders
+ * the server is running.
  */
-const levels: Array<[string, () => LevelSpec]> = [
-  [ 'flats', flatsLevel ],
-  [ 'neon-canyon', neonCanyonLevel ],
-  [ 'orbital-ring', orbitalRingLevel ],
-  [ 'procedural', proceduralLevel ],
-]
-
-describe.each(levels)('level: %s', (id, build) => {
-  const level = build()
+describe.each(TRACK_IDS.map(id => [ id ] as const))('track: %s', id => {
+  const level = trackBundle(id).spec
 
   it('is internally consistent', () => {
     expect(level.id).toBe(id)
@@ -42,8 +33,10 @@ describe.each(levels)('level: %s', (id, build) => {
   })
 
   it('has finite waypoints', () => {
+    // Tuples, not `Vector3`: a track is serialisable because it goes over the
+    // wire on join.
     for (const p of level.waypoints)
-      expect(Number.isFinite(p.x) && Number.isFinite(p.y) && Number.isFinite(p.z)).toBe(true)
+      expect(p.every(n => Number.isFinite(n))).toBe(true)
   })
 
   it('declares sane bloom', () => {
@@ -61,17 +54,17 @@ describe.each(levels)('level: %s', (id, build) => {
   })
 })
 
-describe('level: flats', () => {
+describe('track: flats', () => {
   it('is an even ellipse of 16 gates', () => {
-    const level = flatsLevel()
+    const level = trackBundle('flats').spec
     expect(level.waypoints).toHaveLength(16)
     expect(level.laps).toBe(3)
     expect(level.loop).toBe(true)
   })
 })
 
-describe('level: procedural', () => {
-  const level = proceduralLevel()
+describe('track: procedural', () => {
+  const level = trackBundle('procedural').spec
 
   it('is a one-lap sprint, not a circuit', () => {
     expect(level.laps).toBe(1)
@@ -90,5 +83,22 @@ describe('level: procedural', () => {
     // Waypoints follow the main route only — the shortcut and jump are skipped,
     // so checkpoints stay orderable.
     expect(level.waypoints.length).toBeGreaterThanOrEqual(10)
+  })
+})
+
+describe('checkpoints', () => {
+  it.each(TRACK_IDS.map(id => [ id ] as const))('%s builds a well-formed gate per waypoint', id => {
+    const { spec } = trackBundle(id)
+    const gates    = buildCheckpoints(spec)
+
+    expect(gates).toHaveLength(spec.waypoints.length)
+
+    for (const gate of gates) {
+      // A zero-length forward would make the plane test meaningless, and a
+      // non-unit quaternion would tilt whatever the gate marker is drawn with.
+      expect(Math.hypot(...gate.forward)).toBeCloseTo(1, 6)
+      expect(Math.hypot(...gate.transform.quaternion)).toBeCloseTo(1, 6)
+      expect(gate.halfWidth).toBeGreaterThan(0)
+    }
   })
 })

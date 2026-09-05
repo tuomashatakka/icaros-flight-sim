@@ -8,7 +8,7 @@
  */
 
 import * as THREE from 'three'
-import { NEUTRAL_COLOR, TEAM_COLORS } from '@crash-velocity/battle/arena'
+import { BATTLE_TEAMS, NEUTRAL_COLOR, TEAM_COLORS, plateauColliders } from '@crash-velocity/battle/arena'
 
 import { buildScenery, createDeckTexture } from './scenery'
 
@@ -19,9 +19,10 @@ import type { Scenery } from './scenery'
 
 // Dimensions the meshes need. They mirror the arena data rather than importing
 //  private constants from it; `apexArena().half` is the authority for collision.
-const HALF     = 300
-const WALL_IN  = 6
-const FOG: [string, number, number] = [ '#0d1120', 340, 1500 ]
+const HALF                                 = 300
+const WALL_IN                              = 6
+const WALL_H                               = 26 // half-height: a 52-unit cliff no ramp launch clears
+const FOG: [string, number, number]        = [ '#0d1120', 340, 1500 ]
 const SUN_ANCHOR: [number, number, number] = [ -430, 300, 1150 ]
 
 /** Build the scene content for an arena. */

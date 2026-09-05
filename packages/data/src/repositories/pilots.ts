@@ -55,13 +55,15 @@ export async function findPilot (db: Database, username: string): Promise<PilotW
   const rows = await db
     .select({ ...publicColumns, passwordHash: users.passwordHash })
     .from(users)
-    .where(sql`lower(${users.username}) = lower(${username}::text)`)
+    .where(sql `lower(${users.username}) = lower(${username}::text)`)
     .limit(1)
 
   return rows[0] ?? null
 }
 
 export async function pilotById (db: Database, id: string): Promise<Pilot | null> {
-  const rows = await db.select(publicColumns).from(users).where(eq(users.id, id)).limit(1)
+  const rows = await db.select(publicColumns).from(users)
+    .where(eq(users.id, id))
+    .limit(1)
   return rows[0] ?? null
 }

@@ -12,7 +12,7 @@ import type { Vec3Tuple } from '../track'
 export const FLATS_HALF = 200
 
 const WALL_H = 10 // half-height: generous, because a hovercraft at 50 m/s rides
-                  //  up a short barrier and straight over the top
+//  up a short barrier and straight over the top
 const WALL_T = 3
 
 /**
@@ -60,11 +60,11 @@ export function flatsTrack (): TrackBundle {
 
   return {
     spec: {
-      id:         'flats',
-      name:       'The Flats',
-      background: '#0a0c14',
+      id:             'flats',
+      name:           'The Flats',
+      background:     '#0a0c14',
       // The shared 20-80 fog would swallow a 400-unit deck; give it real range.
-      fog:        [ '#0a0c14', 150, 500 ],
+      fog:            [ '#0a0c14', 150, 500 ],
       waypoints,
       width:          18,
       laps:           3,
@@ -74,7 +74,7 @@ export function flatsTrack (): TrackBundle {
       // NOTE: `createBloom` is UnrealBloomPass-shaped, so `threshold` is a HARD
       // knee in linear space — not pmndrs' soft `luminanceThreshold`. These
       // values are tuned by eye, not translated.
-      bloom: { strength: 0.32, threshold: 0.92, radius: 0.45 },
+      bloom:          { strength: 0.32, threshold: 0.92, radius: 0.45 },
     },
   }
 }

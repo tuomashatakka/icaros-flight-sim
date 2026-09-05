@@ -24,10 +24,19 @@ import type { BitReader, BitWriter } from './bits'
 
 export type ShipState = {
   id:           number;
-  x:            number;  y: number;  z: number;
-  qx:           number; qy: number; qz: number; qw: number;
-  vx:           number; vy: number; vz: number;
-  wx:           number; wy: number; wz: number;
+  x:            number;
+  y:            number;
+  z:            number;
+  qx:           number;
+  qy:           number;
+  qz:           number;
+  qw:           number;
+  vx:           number;
+  vy:           number;
+  vz:           number;
+  wx:           number;
+  wy:           number;
+  wz:           number;
   health:       number;
   flags:        number;
   respawnIndex: number;
@@ -84,11 +93,24 @@ export const DEFAULT_SHIP_CODEC: ShipCodecConfig = {
 
 export function emptyShipState (id = 0): ShipState {
   return {
-    id, x: 0, y: 0, z: 0,
-    qx: 0, qy: 0, qz: 0, qw: 1,
-    vx: 0, vy: 0, vz: 0,
-    wx: 0, wy: 0, wz: 0,
-    health: 0, flags: 0, respawnIndex: 0, aim: 0,
+    id,
+    x:            0,
+    y:            0,
+    z:            0,
+    qx:           0,
+    qy:           0,
+    qz:           0,
+    qw:           1,
+    vx:           0,
+    vy:           0,
+    vz:           0,
+    wx:           0,
+    wy:           0,
+    wz:           0,
+    health:       0,
+    flags:        0,
+    respawnIndex: 0,
+    aim:          0,
   }
 }
 
@@ -99,9 +121,9 @@ export function emptyShipState (id = 0): ShipState {
  * reconstruct the identical number anyway, so the bits would buy nothing.
  */
 export function changedFields (previous: ShipState, next: ShipState, config = DEFAULT_SHIP_CODEC): number {
-  const posStep = (2 * config.positionBounds) / ((1 << config.positionBits) - 1)
-  const velStep = (2 * config.velocityBounds) / ((1 << config.velocityBits) - 1)
-  const angStep = (2 * config.angularBounds) / ((1 << config.angularBits) - 1)
+  const posStep = 2 * config.positionBounds / ((1 << config.positionBits) - 1)
+  const velStep = 2 * config.velocityBounds / ((1 << config.velocityBits) - 1)
+  const angStep = 2 * config.angularBounds / ((1 << config.angularBits) - 1)
 
   let mask = 0
 

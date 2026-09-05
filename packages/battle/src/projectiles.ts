@@ -37,9 +37,10 @@ import type { WeaponId, WeaponSpec } from './weapons'
  * `Math.random()` inside the spawn would desync every client silently.
  */
 export type ProjectileSpawn = {
-  shooterId:  string;
-  team:       BattleTeam;
-  weapon:     WeaponId;
+  shooterId: string;
+  team:      BattleTeam;
+  weapon:    WeaponId;
+
   /** First projectile id of the salvo; the rest follow consecutively. */
   firstId:    number;
   origin:     [number, number, number];
@@ -49,11 +50,11 @@ export type ProjectileSpawn = {
   targetId:   string | null;
 }
 
-const UP     = new Vector3(0, 1, 0)
-const _dir   = new Vector3()
-const _fan   = new Vector3()
-const _to    = new Vector3()
-const _head  = new Vector3()
+const UP    = new Vector3(0, 1, 0)
+const _dir  = new Vector3()
+const _fan  = new Vector3()
+const _to   = new Vector3()
+const _head = new Vector3()
 
 /**
  * The salvo, as a pure function of the spawn.
@@ -63,10 +64,10 @@ const _head  = new Vector3()
  * desync waiting for a busy firefight.
  */
 export function spawnProjectiles (spawn: ProjectileSpawn): Missile[] {
-  const spec   = WEAPONS[spawn.weapon]
-  const speed  = spec.speed ?? 240
-  const spread = spec.spread ?? 0
-  const life   = spec.life ?? 3.5
+  const spec           = WEAPONS[spawn.weapon]
+  const speed          = spec.speed ?? 240
+  const spread         = spec.spread ?? 0
+  const life           = spec.life ?? 3.5
   const out: Missile[] = []
 
   _dir.set(spawn.dir[0], spawn.dir[1], spawn.dir[2]).normalize()
@@ -101,7 +102,9 @@ export function spawnProjectiles (spawn: ProjectileSpawn): Missile[] {
  * A straight lerp would let the missile slow down mid-turn; keeping it a
  * rotation means the speed stays whatever the rack launched at.
  */
-export function homeToward (missile: Missile, target: { x: number; y: number; z: number }, spec: WeaponSpec, dt: number): void {
+type TargetType = { x: number; y: number; z: number }
+
+export function homeToward (missile: Missile, target: TargetType, spec: WeaponSpec, dt: number): void {
   _to.set(target.x - missile.position[0], target.y + 0.5 - missile.position[1], target.z - missile.position[2])
   if (_to.lengthSq() <= 1e-6)
     return

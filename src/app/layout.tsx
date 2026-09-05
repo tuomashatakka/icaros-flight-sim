@@ -1,6 +1,7 @@
 import type { Metadata } from 'next'
 import './globals.css'
 import { PropsWithChildren } from 'react'
+import Session from '@/components/session-provider'
 
 
 export const metadata: Metadata = {
@@ -11,7 +12,7 @@ export const metadata: Metadata = {
 export default function RootLayout ({ children }: Readonly<PropsWithChildren>) {
   return <html lang="en">
     <body>
-      {children}
+      <Session>{ children }</Session>
     </body>
   </html>
 }

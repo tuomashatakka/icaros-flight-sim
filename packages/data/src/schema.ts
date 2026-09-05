@@ -25,7 +25,8 @@ import { bigint, index, integer, jsonb, pgTable, primaryKey, real, text, timesta
 export const users = pgTable('users', {
   // `text`, not `uuid`: callers round-trip the exact string `randomUUID()`
   // produced, and `uuid` normalises casing.
-  id:            text('id').primaryKey().$defaultFn(() => crypto.randomUUID()),
+  id: text('id').primaryKey()
+    .$defaultFn(() => crypto.randomUUID()),
 
   // Auth.js's own columns. `email` is nullable and unused today — this is a
   // game login, not an identity provider — but the adapter reads it, and
@@ -36,17 +37,17 @@ export const users = pgTable('users', {
   image:         text('image'),
 
   // Ours. Nullable so an OAuth account added later needs no password.
-  username:      text('username').notNull(),
-  passwordHash:  text('password_hash'),
+  username:     text('username').notNull(),
+  passwordHash: text('password_hash'),
 
   // Epoch milliseconds, not `timestamptz`: every caller compares against
   // `Date.now()`, so a timestamp column would buy nothing and cost a
   // conversion at each edge.
-  createdAt:     bigint('created_at', { mode: 'number' }).notNull(),
+  createdAt: bigint('created_at', { mode: 'number' }).notNull(),
 }, table => [
   // Case-insensitive, so `Pilot` and `pilot` cannot both be registered and then
   // be confused for one another in a roster.
-  uniqueIndex('users_username').on(sql`lower(${table.username})`),
+  uniqueIndex('users_username').on(sql `lower(${table.username})`),
 ])
 
 /**
@@ -55,7 +56,8 @@ export const users = pgTable('users', {
  * provider later should be a config line, not a migration scramble.
  */
 export const oauthAccounts = pgTable('oauth_accounts', {
-  userId:            text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
+  userId: text('user_id').notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
   type:              text('type').notNull(),
   provider:          text('provider').notNull(),
   providerAccountId: text('provider_account_id').notNull(),
@@ -67,7 +69,7 @@ export const oauthAccounts = pgTable('oauth_accounts', {
   id_token:          text('id_token'),
   session_state:     text('session_state'),
 }, table => [
-  primaryKey({ columns: [ table.provider, table.providerAccountId ] }),
+  primaryKey({ columns: [ table.provider, table.providerAccountId ]}),
 ])
 
 /**
@@ -77,8 +79,9 @@ export const oauthAccounts = pgTable('oauth_accounts', {
  */
 export const sessions = pgTable('sessions', {
   sessionToken: text('session_token').primaryKey(),
-  userId:       text('user_id').notNull().references(() => users.id, { onDelete: 'cascade' }),
-  expires:      timestamp('expires', { mode: 'date' }).notNull(),
+  userId:       text('user_id').notNull()
+    .references(() => users.id, { onDelete: 'cascade' }),
+  expires: timestamp('expires', { mode: 'date' }).notNull(),
 })
 
 export const verificationTokens = pgTable('verification_tokens', {
@@ -86,14 +89,14 @@ export const verificationTokens = pgTable('verification_tokens', {
   token:      text('token').notNull(),
   expires:    timestamp('expires', { mode: 'date' }).notNull(),
 }, table => [
-  primaryKey({ columns: [ table.identifier, table.token ] }),
+  primaryKey({ columns: [ table.identifier, table.token ]}),
 ])
 
 
 // ------------------------------------------------------------------- games
 
 export const matches = pgTable('matches', {
-  id:        text('id').primaryKey(),
+  id: text('id').primaryKey(),
 
   // 'battle' or 'race'. Free text rather than an enum: a new mode should not
   // need a migration before it can record a single match.
@@ -102,23 +105,28 @@ export const matches = pgTable('matches', {
   startedAt: bigint('started_at', { mode: 'number' }).notNull(),
   endedAt:   bigint('ended_at', { mode: 'number' }),
   winner:    text('winner'),
-  scores:    jsonb('scores').$type<Record<string, number>>().notNull(),
+  scores:    jsonb('scores').$type<Record<string, number>>()
+    .notNull(),
 })
 
 export const matchPlayers = pgTable('match_players', {
-  matchId:  text('match_id').notNull().references(() => matches.id, { onDelete: 'cascade' }),
+  matchId: text('match_id').notNull()
+    .references(() => matches.id, { onDelete: 'cascade' }),
 
   // Null for guests and bots. They still get a row, so a match's roster is
   // complete even when most of it was never signed in.
-  userId:   text('user_id').references(() => users.id, { onDelete: 'set null' }),
+  userId: text('user_id').references(() => users.id, { onDelete: 'set null' }),
 
-  name:     text('name').notNull(),
-  team:     text('team').notNull(),
-  kills:    integer('kills').notNull().default(0),
-  deaths:   integer('deaths').notNull().default(0),
-  captures: integer('captures').notNull().default(0),
+  name:  text('name').notNull(),
+  team:  text('team').notNull(),
+  kills: integer('kills').notNull()
+    .default(0),
+  deaths: integer('deaths').notNull()
+    .default(0),
+  captures: integer('captures').notNull()
+    .default(0),
 }, table => [
-  primaryKey({ columns: [ table.matchId, table.name ] }),
+  primaryKey({ columns: [ table.matchId, table.name ]}),
   index('match_players_user').on(table.userId),
 ])
 
@@ -129,21 +137,25 @@ export const matchPlayers = pgTable('match_players', {
  * float drift.
  */
 export const raceResults = pgTable('race_results', {
-  matchId:    text('match_id').notNull().references(() => matches.id, { onDelete: 'cascade' }),
-  userId:     text('user_id').references(() => users.id, { onDelete: 'set null' }),
-  name:       text('name').notNull(),
-  position:   integer('position').notNull(),
-  laps:       integer('laps').notNull().default(0),
-  totalTime:  real('total_time'),
-  bestLap:    real('best_lap'),
-  lapTimes:   jsonb('lap_times').$type<number[]>().notNull(),
-  finished:   integer('finished').notNull().default(0),
+  matchId: text('match_id').notNull()
+    .references(() => matches.id, { onDelete: 'cascade' }),
+  userId:   text('user_id').references(() => users.id, { onDelete: 'set null' }),
+  name:     text('name').notNull(),
+  position: integer('position').notNull(),
+  laps:     integer('laps').notNull()
+    .default(0),
+  totalTime: real('total_time'),
+  bestLap:   real('best_lap'),
+  lapTimes:  jsonb('lap_times').$type<number[]>()
+    .notNull(),
+  finished: integer('finished').notNull()
+    .default(0),
 }, table => [
-  primaryKey({ columns: [ table.matchId, table.name ] }),
+  primaryKey({ columns: [ table.matchId, table.name ]}),
   index('race_results_user').on(table.userId),
 ])
 
-export type UserRow        = typeof users.$inferSelect
-export type MatchRow       = typeof matches.$inferSelect
+export type UserRow = typeof users.$inferSelect
+export type MatchRow = typeof matches.$inferSelect
 export type MatchPlayerRow = typeof matchPlayers.$inferSelect
-export type RaceResultRow  = typeof raceResults.$inferSelect
+export type RaceResultRow = typeof raceResults.$inferSelect

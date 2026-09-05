@@ -78,7 +78,7 @@ export function decodeSnapshot (bytes: Uint8Array, baseline: Baseline | null, co
   // unusable. Throwing here would kill the socket; the caller drops it and
   // waits for the next full snapshot, which the server sends as soon as its
   // acknowledgement stops arriving.
-  const usable = baselineTick === 0 || (baseline !== null && baseline.tick === baselineTick)
+  const usable = baselineTick === 0 || baseline !== null && baseline.tick === baselineTick
   if (!usable)
     throw new StaleBaselineError(baselineTick)
 
@@ -94,7 +94,7 @@ export function decodeSnapshot (bytes: Uint8Array, baseline: Baseline | null, co
     ships.push(readShipState(reader, mask, target, config))
   }
 
-  const removedCount     = reader.readBits(8)
+  const removedCount      = reader.readBits(8)
   const removed: number[] = []
   for (let i = 0; i < removedCount; i++)
     removed.push(reader.readBits(16))

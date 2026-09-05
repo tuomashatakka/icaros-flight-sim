@@ -20,8 +20,8 @@ export type RaceInput = {
   boost:    boolean;
   reverse:  boolean;
 
-  /** Held vertical aim axis. Race springs it back to level for the camera; the
-   *  sim carries it so the wire format is one shape for both modes. */
+  // Held vertical aim axis. Race springs it back to level for the camera; the
+  //  sim carries it so the wire format is one shape for both modes.
   aimPitch: number;
 
   /** Wrapping counter; an increment is a respawn request. */
@@ -33,13 +33,18 @@ export const NEUTRAL_RACE_INPUT: RaceInput = {
 }
 
 export type RacerSnapshot = {
-  id:        string;
-  name:      string;
-  shipId:    ShipId;
-  isBot:     boolean;
+  id:     string;
+  name:   string;
+  shipId: ShipId;
+  isBot:  boolean;
 
-  x: number; y: number; z: number;
-  qx: number; qy: number; qz: number; qw: number;
+  x:  number;
+  y:  number;
+  z:  number;
+  qx: number;
+  qy: number;
+  qz: number;
+  qw: number;
 
   boost:    number;
   speed:    number;

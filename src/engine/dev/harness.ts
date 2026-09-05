@@ -8,9 +8,8 @@ import type { ShipTuning } from '../state'
 import { createLegend } from './legend'
 import { createOverlays } from './overlay'
 import { readDevParams } from './params'
-import { runScenario } from './scenario'
 import { installTrace, readTrace, recordFrame, watchContextLoss } from './trace'
-import type { DevApi, DevDeps, OverlayFlags, ScenarioScript, TeleportArgs } from './types'
+import type { DevApi, DevDeps, OverlayFlags, TeleportArgs } from './types'
 
 
 /**
@@ -144,11 +143,10 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
   }
 
   const api: DevApi = {
-    version:      API_VERSION,
-    level:        deps.levelId,
-    seed:         deps.seed,
-    lastScenario: null,
-    raw:          deps,
+    version: API_VERSION,
+    level:   deps.levelId,
+    seed:    deps.seed,
+    raw:     deps,
 
     get ready () {
       return ready
@@ -348,11 +346,6 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
       return status
     },
 
-    async scenario (script) {
-      const trace      = await runScenario(deps, script)
-      api.lastScenario = trace
-      return trace
-    },
 
     overlay (flags) {
       return overlays.set(flags)
@@ -400,15 +393,6 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
     if (ready)
       return
     ready = true
-
-    // `?scenario=<name>` runs a bundled script on boot and parks the trace on
-    // `__dev.lastScenario`, so a reproduction can be a URL you paste into a
-    // browser as easily as a CLI invocation.
-    if (params.scenario)
-      void fetch(`/scenarios/${params.scenario}.json`)
-        .then(response => response.json() as Promise<ScenarioScript>)
-        .then(script => api.scenario(script))
-        .catch(cause => console.error('[dev] ?scenario= failed', cause))
   }
 
   detachers.push(() => {

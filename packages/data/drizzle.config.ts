@@ -1,9 +1,10 @@
 import { defineConfig } from 'drizzle-kit'
 
+
 export default defineConfig({
-  schema:  './packages/data/src/schema.ts',
-  out:     './packages/data/drizzle',
-  dialect: 'postgresql',
+  schema:        './packages/data/src/schema.ts',
+  out:           './packages/data/drizzle',
+  dialect:       'postgresql',
   dbCredentials: {
     // DDL takes locks that PgBouncer's transaction pooling is the wrong shape
     // for, so migrations go to the direct endpoint when there is one.

@@ -10,7 +10,7 @@ import type { ShipId } from '@crash-velocity/physics/ships'
 // pulled into the zustand store, React components, and the material layer alike
 // without dragging WebGL code where it doesn't belong.
 
-import type { WeaponId } from '@/engine/battle/weapons'
+import type { WeaponId } from '@crash-velocity/battle/weapons'
 
 
 export type TexturePreset = 'plain' | 'panels' | 'carbon' | 'hazard' | 'city' | 'gallery' | 'racing' | 'splinter' | 'circuit'

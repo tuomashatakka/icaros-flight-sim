@@ -32,3 +32,4 @@ export type { RaceStateType, RacerStateType } from './state'
 
 export { raceSnapshotOf } from './snapshot'
 export { raceBotInput } from './bot'
+export { fromRaceInput, toRaceInput } from './input'

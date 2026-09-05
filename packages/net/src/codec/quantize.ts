@@ -12,13 +12,13 @@
 export function quantize (value: number, min: number, max: number, bits: number): number {
   const steps  = (1 << bits) - 1
   const span   = max - min
-  const scaled = span === 0 ? 0 : ((value - min) / span) * steps
+  const scaled = span === 0 ? 0 : (value - min) / span * steps
   return Math.max(0, Math.min(steps, Math.round(scaled))) >>> 0
 }
 
 export function dequantize (raw: number, min: number, max: number, bits: number): number {
   const steps = (1 << bits) - 1
-  return steps === 0 ? min : min + (raw / steps) * (max - min)
+  return steps === 0 ? min : min + raw / steps * (max - min)
 }
 
 /**
@@ -29,8 +29,8 @@ export function dequantize (raw: number, min: number, max: number, bits: number)
  */
 export const SMALLEST_THREE_BOUND = Math.SQRT1_2
 
-/** Bits per stored component. Fiedler measured 9 as sufficient; 10 is free here
- *  because it lands the whole encoding on exactly 32 bits with the 2-bit index. */
+// Bits per stored component. Fiedler measured 9 as sufficient; 10 is free here
+//  because it lands the whole encoding on exactly 32 bits with the 2-bit index.
 export const QUAT_COMPONENT_BITS = 10
 
 export type Quat = { x: number; y: number; z: number; w: number }

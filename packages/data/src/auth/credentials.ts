@@ -26,11 +26,11 @@ const MIN_PASSWORD = 8
 const MAX_PASSWORD = 200
 
 export function validCredentials (username: unknown, password: unknown): boolean {
-  return typeof username === 'string'
-    && typeof password === 'string'
-    && USERNAME.test(username)
-    && password.length >= MIN_PASSWORD
-    && password.length <= MAX_PASSWORD
+  return typeof username === 'string' &&
+    typeof password === 'string' &&
+    USERNAME.test(username) &&
+    password.length >= MIN_PASSWORD &&
+    password.length <= MAX_PASSWORD
 }
 
 export async function registerPilot (db: Database, username: string, password: string): Promise<CredentialResult> {
@@ -56,5 +56,5 @@ export async function authenticatePilot (db: Database, username: string, passwor
   if (!found || !valid)
     return { ok: false, reason: 'invalid' }
 
-  return { ok: true, pilot: { id: found.id, username: found.username, createdAt: found.createdAt } }
+  return { ok: true, pilot: { id: found.id, username: found.username, createdAt: found.createdAt }}
 }

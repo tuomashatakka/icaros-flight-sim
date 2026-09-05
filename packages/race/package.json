@@ -14,11 +14,17 @@
   },
   "dependencies": {
     "@colyseus/schema": "^5.0.8",
+    "@crash-velocity/data": "workspace:*",
     "@crash-velocity/net": "workspace:*",
     "@crash-velocity/physics": "workspace:*"
   },
   "peerDependencies": {
+    "@colyseus/core": "^0.18.10",
     "@dimforge/rapier3d-deterministic-compat": "0.19.2",
     "three": "^0.185.1"
+  },
+  "devDependencies": {
+    "@colyseus/testing": "^0.18.5",
+    "vitest": "^4.1.11"
   }
 }

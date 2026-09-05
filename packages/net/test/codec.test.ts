@@ -22,7 +22,6 @@ function shipAt (id: number, over: Partial<ShipState> = {}): ShipState {
 }
 
 describe('bit stream', () => {
-
   it('round-trips values at every width, in any order', () => {
     const writer = new BitWriter(8)
     writer.writeBits(1, 1)
@@ -55,7 +54,6 @@ describe('bit stream', () => {
 })
 
 describe('smallest-three quaternion', () => {
-
   it('fits in 32 bits', () => {
     expect(QUAT_BITS).toBe(32)
   })
@@ -63,11 +61,11 @@ describe('smallest-three quaternion', () => {
   it('survives the round trip inside the 10-bit bound, for random rotations', () => {
     // One quantisation step over the ±1/√2 range, with room for the recovered
     // largest component to accumulate the other three's error.
-    const tolerance = (2 * Math.SQRT1_2) / 1023 * 2
+    const tolerance = 2 * Math.SQRT1_2 / 1023 * 2
 
     let worst = 0
     for (let i = 0; i < 2000; i++) {
-      const q = randomQuat(i)
+      const q    = randomQuat(i)
       const back = unpackQuaternion(packQuaternion(q))
 
       // q and −q are the same rotation, so compare through the dot product.
@@ -82,9 +80,8 @@ describe('smallest-three quaternion', () => {
 })
 
 describe('snapshot', () => {
-
   it('round-trips a full snapshot within a quantisation step', () => {
-    const snapshot = { serverTick: 4096, serverTimeMs: 1699999999999, baselineTick: 0, lastProcessedInput: 77, ships: [ shipAt(1), shipAt(2, { x: -500, health: 12 }) ], removed: [] }
+    const snapshot = { serverTick: 4096, serverTimeMs: 1699999999999, baselineTick: 0, lastProcessedInput: 77, ships: [ shipAt(1), shipAt(2, { x: -500, health: 12 }) ], removed: []}
     const decoded  = decodeSnapshot(encodeSnapshot(snapshot, null), null)
 
     expect(decoded.serverTick).toBe(4096)
@@ -104,12 +101,12 @@ describe('snapshot', () => {
   })
 
   it('encodes a delta smaller than the full snapshot, and reconstructs it', () => {
-    const first    = { serverTick: 100, serverTimeMs: 1000, baselineTick: 0, lastProcessedInput: 1, ships: [ shipAt(1), shipAt(2), shipAt(3) ], removed: [] }
+    const first    = { serverTick: 100, serverTimeMs: 1000, baselineTick: 0, lastProcessedInput: 1, ships: [ shipAt(1), shipAt(2), shipAt(3) ], removed: []}
     const full     = encodeSnapshot(first, null)
     const baseline = baselineOf(decodeSnapshot(full, null))
 
     // Only one ship moved, and only its position.
-    const second = { serverTick: 102, serverTimeMs: 1066, baselineTick: 100, lastProcessedInput: 4, ships: [ shipAt(1, { x: 40 }), shipAt(2), shipAt(3) ], removed: [] }
+    const second = { serverTick: 102, serverTimeMs: 1066, baselineTick: 100, lastProcessedInput: 4, ships: [ shipAt(1, { x: 40 }), shipAt(2), shipAt(3) ], removed: []}
     const delta  = encodeSnapshot(second, baseline)
 
     expect(delta.byteLength).toBeLessThan(full.byteLength / 2)
@@ -122,7 +119,7 @@ describe('snapshot', () => {
   })
 
   it('refuses a delta whose baseline is gone rather than decoding nonsense', () => {
-    const snapshot = { serverTick: 200, serverTimeMs: 2000, baselineTick: 150, lastProcessedInput: 9, ships: [ shipAt(1) ], removed: [] }
+    const snapshot = { serverTick: 200, serverTimeMs: 2000, baselineTick: 150, lastProcessedInput: 9, ships: [ shipAt(1) ], removed: []}
     const baseline = baselineOf({ ...snapshot, serverTick: 150 })
     const bytes    = encodeSnapshot(snapshot, baseline)
 
@@ -130,13 +127,13 @@ describe('snapshot', () => {
   })
 
   it('falls back to a full encode when the client has acknowledged nothing', () => {
-    const snapshot = { serverTick: 5, serverTimeMs: 50, baselineTick: 0, lastProcessedInput: 0, ships: [ shipAt(1) ], removed: [] }
+    const snapshot = { serverTick: 5, serverTimeMs: 50, baselineTick: 0, lastProcessedInput: 0, ships: [ shipAt(1) ], removed: []}
     // No baseline held, yet it still decodes — that is what a joining client gets.
     expect(decodeSnapshot(encodeSnapshot(snapshot, null), null).ships[0].health).toBe(87)
   })
 
   it('carries removals so a client can drop a ship it will not see again', () => {
-    const snapshot = { serverTick: 9, serverTimeMs: 90, baselineTick: 0, lastProcessedInput: 0, ships: [], removed: [ 7, 8 ] }
+    const snapshot = { serverTick: 9, serverTimeMs: 90, baselineTick: 0, lastProcessedInput: 0, ships: [], removed: [ 7, 8 ]}
     expect(decodeSnapshot(encodeSnapshot(snapshot, null), null).removed).toEqual([ 7, 8 ])
   })
 
@@ -148,7 +145,6 @@ describe('snapshot', () => {
 })
 
 describe('input packet', () => {
-
   it('round-trips a bundle of unacknowledged frames', () => {
     const frames = [ 1, 2, 3 ].map(seq => ({ ...emptyInputFrame(seq, 900 + seq), steer: -0.5, pitch: 0.25, strafe: 1, throttle: 0.75, brake: 0, buttons: 0b0101, resetSeq: 2 }))
     const packet = decodeInputPacket(encodeInputPacket({ frames, lastAckSnapshot: 640, interpTick: 620 }))

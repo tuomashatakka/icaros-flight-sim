@@ -710,10 +710,9 @@ export class BattleSim {
     // The spawn has to be built by the weapon that fires, so the event is
     // pushed after it rather than before — a beam has no salvo to reproduce.
     const spawn = spec.kind === 'beam' ? null : this.launchMissiles(player, spec)
-    this.events.push({ type: 'fire', id: player.id, weapon: spec.id, x: t.x, y: t.y, z: t.z, team: player.team, spawn })
+    const beam  = spec.kind === 'beam' ? this.fireBeam(player, spec) : null
 
-    if (spec.kind === 'beam')
-      this.fireBeam(player, spec)
+    this.events.push({ type: 'fire', id: player.id, weapon: spec.id, x: t.x, y: t.y, z: t.z, team: player.team, spawn, beam })
   }
 
   /**
@@ -723,7 +722,7 @@ export class BattleSim {
    * the trigger is down — which is exactly why beam weapons are the ones that
    * do NOT need a lock. Arena geometry stops the ray before any ship behind it.
    */
-  private fireBeam (player: BattlePlayer, spec: WeaponSpec): void {
+  private fireBeam (player: BattlePlayer, spec: WeaponSpec): Beam {
     this.muzzleOf(player, _origin)
     this.aimOf(player, _dir)
 
@@ -752,7 +751,7 @@ export class BattleSim {
 
     const end = struck.length && !spec.pierce ? struck[0].distance : reach
 
-    this.beams.push({
+    const beam: Beam = {
       id:        this.shotSeq++,
       shooterId: player.id,
       team:      player.team,
@@ -761,13 +760,21 @@ export class BattleSim {
       to:        [ _origin.x + _dir.x * end, _origin.y + _dir.y * end, _origin.z + _dir.z * end ],
       life:      spec.beamLife ?? 0.1,
       hit:       struck.length > 0,
-    })
+    }
+
+    // Kept locally so the sim can age it for its own debug views; the CLIENT
+    // gets it on the fire event and ages its own copy. A beam lives about a
+    // tenth of a second, so re-sending it in every snapshot at 30 Hz sent the
+    // same segment three times and then stopped mattering.
+    this.beams.push(beam)
 
     for (const { candidate } of struck) {
       const victim = this.getPlayer(candidate.id)
       if (victim)
         this.applyDamage(victim, player.id, spec.damage, spec.id)
     }
+
+    return beam
   }
 
   /**
@@ -1248,7 +1255,6 @@ export class BattleSim {
         y:         f.position[1],
         z:         f.position[2],
       })),
-      beams:    this.beams.map(b => ({ ...b, from: [ ...b.from ] as [number, number, number], to: [ ...b.to ] as [number, number, number]})),
     }
   }
 }

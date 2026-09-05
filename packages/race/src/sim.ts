@@ -54,8 +54,8 @@ export type Racer = {
   grounded:     boolean;
   lastResetSeq: number;
 
-  /** Where the hull was at the END of the previous tick. The gate test is a
-   *  segment against a plane, so it needs both ends of the move. */
+  // Where the hull was at the END of the previous tick. The gate test is a
+  //  segment against a plane, so it needs both ends of the move.
   previous: Vec3Tuple;
 
   progress: RaceProgress;
@@ -75,10 +75,10 @@ export class RaceSim {
   countdown = 0
 
   private readonly physics: Physics
-  private events: RaceEvent[] = []
-  private tickNo  = 0
-  private idSeq   = 0
-  private botSeq  = 0
+  private events:           RaceEvent[] = []
+  private tickNo = 0
+  private idSeq = 0
+  private botSeq = 0
   private rngSeed = 0x9e3779b9
 
   private constructor (track: TrackSpec, physics: Physics) {
@@ -141,11 +141,14 @@ export class RaceSim {
   }
 
   private addRacer (id: string, name: string, shipId: ShipId, isBot: boolean): Racer {
-    const spawn   = this.gridSlot(this.racers.length)
+    const spawn       = this.gridSlot(this.racers.length)
     const { chassis } = createHovercraft(this.physics.world, spawn)
 
     const racer: Racer = {
-      id, name, shipId, isBot,
+      id,
+      name,
+      shipId,
+      isBot,
       chassis,
       sim:          createHovercraftState(),
       controls:     { ...NEUTRAL_RACE_INPUT },
@@ -189,7 +192,7 @@ export class RaceSim {
   }
 
   drainEvents (): RaceEvent[] {
-    const out = this.events
+    const out   = this.events
     this.events = []
     return out
   }
@@ -238,7 +241,7 @@ export class RaceSim {
       else if (controls.aimPitch)
         racer.aimAngle = Math.max(-AIM_MAX, Math.min(AIM_MAX, racer.aimAngle + controls.aimPitch * AIM_RATE * dt))
 
-      const t = racer.chassis.translation()
+      const t           = racer.chassis.translation()
       racer.previous[0] = t.x
       racer.previous[1] = t.y
       racer.previous[2] = t.z
@@ -262,7 +265,7 @@ export class RaceSim {
       racer.grounded   = out.grounded
 
       if (out.respawned) {
-        racer.progress.respawnIndex = (racer.progress.respawnIndex + 1) & 0xff
+        racer.progress.respawnIndex = racer.progress.respawnIndex + 1 & 0xff
         this.events.push({ type: 'respawn', id: racer.id })
       }
     }
@@ -287,9 +290,9 @@ export class RaceSim {
     if (racer.progress.finished)
       return
 
-    const t   = racer.chassis.translation()
+    const t              = racer.chassis.translation()
     const now: Vec3Tuple = [ t.x, t.y, t.z ]
-    const gate = this.checkpoints[racer.progress.nextCheckpoint]
+    const gate           = this.checkpoints[racer.progress.nextCheckpoint]
     if (!gate)
       return
 
@@ -354,12 +357,17 @@ export class RaceSim {
     const r = racer.chassis.rotation()
 
     return {
-      id:     racer.id,
-      name:   racer.name,
-      shipId: racer.shipId,
-      isBot:  racer.isBot,
-      x: t.x, y: t.y, z: t.z,
-      qx: r.x, qy: r.y, qz: r.z, qw: r.w,
+      id:             racer.id,
+      name:           racer.name,
+      shipId:         racer.shipId,
+      isBot:          racer.isBot,
+      x:              t.x,
+      y:              t.y,
+      z:              t.z,
+      qx:             r.x,
+      qy:             r.y,
+      qz:             r.z,
+      qw:             r.w,
       boost:          racer.boostMeter,
       speed:          racer.speed,
       grounded:       racer.grounded,
@@ -374,11 +382,12 @@ export class RaceSim {
     }
   }
 
-  /** Seeded, and the only randomness in the tick. `Math.random` here would make
-   *  every replay hash differ and the determinism harness useless. */
+  // Seeded, and the only randomness in the tick. `Math.random` here would make
+  //  every replay hash differ and the determinism harness useless.
   random (): number {
-    this.rngSeed = (this.rngSeed + 0x6d2b79f5) | 0
-    let t = Math.imul(this.rngSeed ^ this.rngSeed >>> 15, 1 | this.rngSeed)
+    this.rngSeed = this.rngSeed + 0x6d2b79f5 | 0
+
+    let t        = Math.imul(this.rngSeed ^ this.rngSeed >>> 15, 1 | this.rngSeed)
     t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t
     return ((t ^ t >>> 14) >>> 0) / 4294967296
   }

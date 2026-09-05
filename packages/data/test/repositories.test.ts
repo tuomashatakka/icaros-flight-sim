@@ -19,6 +19,7 @@ import { statsFor } from '../src/repositories/stats'
 
 import type { Database } from '../src/client'
 
+
 let db: Database
 
 beforeAll(async () => {
@@ -28,7 +29,6 @@ beforeAll(async () => {
 }, 60_000)
 
 describe('pilots', () => {
-
   it('creates one and reads it back', async () => {
     const pilot = await createPilot(db, 'Maverick', 'scrypt$fake')
     expect(pilot).not.toBeNull()
@@ -49,7 +49,6 @@ describe('pilots', () => {
 })
 
 describe('credentials', () => {
-
   it('registers and then authenticates', async () => {
     const created = await registerPilot(db, 'Viper', 'hunter2hunter2')
     expect(created.ok).toBe(true)
@@ -70,19 +69,18 @@ describe('credentials', () => {
 })
 
 describe('match history', () => {
-
   it('accumulates stats across matches, and counts race wins', async () => {
     const pilot = await createPilot(db, 'Hollywood', 'scrypt$fake')
     const id    = pilot!.id
 
-    await recordMatchStart(db, { id: 'm1', mode: 'battle', arena: 'apex', startedAt: 1, scores: {} })
+    await recordMatchStart(db, { id: 'm1', mode: 'battle', arena: 'apex', startedAt: 1, scores: {}})
     await recordMatchEnd(db, 'm1', 2, 'red', { red: 3, blue: 1 })
     await recordMatchPlayers(db, [
       { matchId: 'm1', userId: id, name: 'Hollywood', team: 'red', kills: 4, deaths: 1, captures: 2 },
       { matchId: 'm1', userId: null, name: 'Bot-1', team: 'blue', kills: 0, deaths: 4, captures: 0 },
     ])
 
-    await recordMatchStart(db, { id: 'm2', mode: 'race', arena: 'flats', startedAt: 3, scores: {} })
+    await recordMatchStart(db, { id: 'm2', mode: 'race', arena: 'flats', startedAt: 3, scores: {}})
     await recordRaceResults(db, [
       { matchId: 'm2', userId: id, name: 'Hollywood', position: 1, laps: 3, totalTime: 91.5, bestLap: 29.75, lapTimes: [ 31, 30.75, 29.75 ], finished: true },
     ])
@@ -93,10 +91,11 @@ describe('match history', () => {
   })
 
   it('upserts a roster row rather than duplicating it', async () => {
-    await recordMatchStart(db, { id: 'm3', mode: 'battle', arena: 'apex', startedAt: 4, scores: {} })
+    await recordMatchStart(db, { id: 'm3', mode: 'battle', arena: 'apex', startedAt: 4, scores: {}})
+
     const row = { matchId: 'm3', userId: null, name: 'Slider', team: 'blue', kills: 1, deaths: 0, captures: 0 }
     await recordMatchPlayers(db, [ row ])
-    await recordMatchPlayers(db, [ { ...row, kills: 7 } ])
+    await recordMatchPlayers(db, [{ ...row, kills: 7 }])
 
     const stats = await statsFor(db, 'nobody')
     expect(stats.matches).toBe(0)

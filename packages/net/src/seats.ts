@@ -37,12 +37,13 @@ export type Seat = {
   interpTick:         number;
 
   /** The last frame applied. Repeated when the queue runs dry — see `drainInput`. */
-  lastApplied:        InputFrame | null;
+  lastApplied: InputFrame | null;
 }
 
 export function createSeat (playerId: string, netIndex: number): Seat {
   return {
-    playerId, netIndex,
+    playerId,
+    netIndex,
     queue:              [],
     highestSeq:         0,
     lastProcessedInput: 0,
@@ -85,13 +86,13 @@ export function acceptPacket (seat: Seat, packet: InputPacket): void {
  * treating it as neutral makes a dropped packet feel like a stall.
  */
 export function drainInput (seat: Seat): InputFrame[] {
-  const take = seat.queue.length > TARGET_BUFFER ? DRAIN_WHEN_LONG : 1
+  const take              = seat.queue.length > TARGET_BUFFER ? DRAIN_WHEN_LONG : 1
   const out: InputFrame[] = []
 
   for (let i = 0; i < take && seat.queue.length > 0; i++) {
-    const frame = seat.queue.shift()!
+    const frame             = seat.queue.shift()!
     seat.lastProcessedInput = frame.seq
-    seat.lastApplied = frame
+    seat.lastApplied        = frame
     out.push(frame)
   }
 

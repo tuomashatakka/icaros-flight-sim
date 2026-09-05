@@ -48,9 +48,9 @@ export type ScriptedRacer = {
 
 /** An input change that takes effect at `tick` and holds until the next one. */
 export type ScriptedRaceInput = {
-  tick:   number;
-  racer:  number;
-  input:  Partial<RaceInput>;
+  tick:  number;
+  racer: number;
+  input: Partial<RaceInput>;
 }
 
 export type RaceReplayScript = {
@@ -59,8 +59,8 @@ export type RaceReplayScript = {
   ticks:  number;
   racers: ScriptedRacer[];
 
-  /** Why the script is shaped this way. JSON has no comments and these outlive
-   *  whoever wrote them. */
+  // Why the script is shaped this way. JSON has no comments and these outlive
+  //  whoever wrote them.
   note?: string;
 
   /** Countdown seconds before the lights go out. 0 starts immediately. */
@@ -77,7 +77,9 @@ export type ReplayRacerState = {
   gates:    number;
   bestLap:  number | null;
   finished: boolean;
-  x: number; y: number; z: number;
+  x:        number;
+  y:        number;
+  z:        number;
 }
 
 export type RaceReplaySummary = {
@@ -90,12 +92,12 @@ export type RaceReplaySummary = {
   racers:      ReplayRacerState[];
 }
 
-/** Poses sampled every N ticks. Every tick would make the trace enormous for no
- *  extra confidence — a divergence shows up within a few frames. */
+// Poses sampled every N ticks. Every tick would make the trace enormous for no
+//  extra confidence — a divergence shows up within a few frames.
 const SAMPLE_EVERY = 15
 
-/** Positions quantised to a millimetre before hashing, so the hash is a
- *  statement about the simulation and not about float printing. */
+// Positions quantised to a millimetre before hashing, so the hash is a
+//  statement about the simulation and not about float printing.
 const QUANTUM = 1000
 
 export async function replayRace (script: RaceReplayScript): Promise<RaceReplaySummary> {
@@ -127,14 +129,14 @@ export async function replayRace (script: RaceReplayScript): Promise<RaceReplayS
   sim.start(script.countdown ?? 0)
 
   const held: RaceInput[] = racers.map(() => ({ ...NEUTRAL_RACE_INPUT }))
-  const byTick = new Map<number, ScriptedRaceInput[]>()
+  const byTick            = new Map<number, ScriptedRaceInput[]>()
   for (const entry of script.timeline) {
     const list = byTick.get(entry.tick) ?? []
     list.push(entry)
     byTick.set(entry.tick, list)
   }
 
-  const trace: number[]  = []
+  const trace: number[]     = []
   const events: RaceEvent[] = []
 
   for (let tick = 0; tick < script.ticks; tick++) {
@@ -182,9 +184,9 @@ export async function replayRace (script: RaceReplayScript): Promise<RaceReplayS
         gates:    racer.progress.gatesCleared,
         bestLap:  racer.progress.bestLap === null ? null : Math.round(racer.progress.bestLap * QUANTUM) / QUANTUM,
         finished: racer.progress.finished,
-        x: Math.round(t.x * QUANTUM) / QUANTUM,
-        y: Math.round(t.y * QUANTUM) / QUANTUM,
-        z: Math.round(t.z * QUANTUM) / QUANTUM,
+        x:        Math.round(t.x * QUANTUM) / QUANTUM,
+        y:        Math.round(t.y * QUANTUM) / QUANTUM,
+        z:        Math.round(t.z * QUANTUM) / QUANTUM,
       }
     }),
   }

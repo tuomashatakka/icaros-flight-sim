@@ -18,13 +18,12 @@ import type { Transform } from '@crash-velocity/physics/types'
 
 
 const SPAWN: Transform = { position: [ 0, 1, 0 ], quaternion: [ 0, 0, 0, 1 ]}
-const gate = (i: number): Transform => ({ position: [ i, 1, 0 ], quaternion: [ 0, 0, 0, 1 ]})
+const gate             = (i: number): Transform => ({ position: [ i, 1, 0 ], quaternion: [ 0, 0, 0, 1 ]})
 
 const loop: RaceRules   = { checkpointCount: 4, laps: 2, loop: true }
 const sprint: RaceRules = { checkpointCount: 4, laps: 1, loop: false }
 
 describe('gate ordering', () => {
-
   it('counts gates only in order, so cutting the course buys nothing', () => {
     const p = createProgress(loop, SPAWN)
     expect(p.nextCheckpoint).toBe(1)
@@ -45,7 +44,6 @@ describe('gate ordering', () => {
 })
 
 describe('finish line', () => {
-
   it('is gate 0 on a loop, and closes a lap', () => {
     const p = createProgress(loop, SPAWN)
     tickProgress(p, 10)
@@ -92,12 +90,11 @@ describe('finish line', () => {
 })
 
 describe('standings', () => {
-
   it('ranks by gates cleared, then by who got there first', () => {
     const make = (id: string, gates: number, elapsed: number) => {
-      const progress = createProgress(loop, SPAWN)
+      const progress        = createProgress(loop, SPAWN)
       progress.gatesCleared = gates
-      progress.elapsed = elapsed
+      progress.elapsed      = elapsed
       return { id, progress }
     }
 
@@ -107,9 +104,9 @@ describe('standings', () => {
 
   it('puts finishers above everyone, ordered by finishing time', () => {
     const make = (id: string, finished: boolean, finishTime: number | null, gates: number) => {
-      const progress = createProgress(loop, SPAWN)
-      progress.finished = finished
-      progress.finishTime = finishTime
+      const progress        = createProgress(loop, SPAWN)
+      progress.finished     = finished
+      progress.finishTime   = finishTime
       progress.gatesCleared = gates
       return { id, progress }
     }
@@ -121,15 +118,15 @@ describe('standings', () => {
 
 describe('gate geometry', () => {
   const { spec } = trackBundle('flats')
-  const gates = buildCheckpoints(spec)
+  const gates    = buildCheckpoints(spec)
 
   it('builds one gate per waypoint', () => {
     expect(gates).toHaveLength(spec.waypoints.length)
   })
 
   it('counts a crossing only in the direction of travel', () => {
-    const g = gates[0]
-    const [ fx, fy, fz ] = g.forward
+    const g                                = gates[0]
+    const [ fx, fy, fz ]                   = g.forward
     const behind: [number, number, number] = [ g.position[0] - fx * 5, g.position[1] - fy * 5, g.position[2] - fz * 5 ]
     const ahead: [number, number, number]  = [ g.position[0] + fx * 5, g.position[1] + fy * 5, g.position[2] + fz * 5 ]
 
@@ -140,8 +137,8 @@ describe('gate geometry', () => {
   it('catches a crossing that steps clean over the plane in one tick', () => {
     // 200 m/s for a 60 Hz tick is 3.3 m — an eight-metre sensor cuboid would
     // have caught this one, but a faster ship would tunnel straight through it.
-    const g = gates[0]
-    const [ fx, fy, fz ] = g.forward
+    const g                              = gates[0]
+    const [ fx, fy, fz ]                 = g.forward
     const from: [number, number, number] = [ g.position[0] - fx * 60, g.position[1] - fy * 60, g.position[2] - fz * 60 ]
     const to: [number, number, number]   = [ g.position[0] + fx * 60, g.position[1] + fy * 60, g.position[2] + fz * 60 ]
 
@@ -149,9 +146,9 @@ describe('gate geometry', () => {
   })
 
   it('ignores a pass that misses the gate sideways', () => {
-    const g = gates[0]
-    const [ fx, fy, fz ] = g.forward
-    const off = g.halfWidth + 20
+    const g                                = gates[0]
+    const [ fx, fy, fz ]                   = g.forward
+    const off                              = g.halfWidth + 20
     const behind: [number, number, number] = [ g.position[0] - fx * 5 - fz * off, g.position[1] - fy * 5, g.position[2] - fz * 5 + fx * off ]
     const ahead: [number, number, number]  = [ g.position[0] + fx * 5 - fz * off, g.position[1] + fy * 5, g.position[2] + fz * 5 + fx * off ]
 

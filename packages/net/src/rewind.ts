@@ -15,13 +15,13 @@
  */
 
 
-/** A position in world space. Structural on purpose — rapier's, three's and a
- *  plain literal all satisfy it, so this module needs neither as a dependency. */
+// A position in world space. Structural on purpose — rapier's, three's and a
+//  plain literal all satisfy it, so this module needs neither as a dependency.
 export type Vec3 = { x: number; y: number; z: number }
 
-/** The least a rewindable entity has to be. Where it *is* comes from the
- *  accessor handed to the constructor, so nothing has to grow a method to be
- *  rewindable — and recording stays allocation-free. */
+// The least a rewindable entity has to be. Where it *is* comes from the
+//  accessor handed to the constructor, so nothing has to grow a method to be
+//  rewindable — and recording stays allocation-free.
 export type Rewindable = { id: string }
 
 /**

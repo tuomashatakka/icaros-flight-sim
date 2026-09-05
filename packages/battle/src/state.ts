@@ -26,37 +26,46 @@ import type { BattleSnapshot } from './types'
 
 
 export const PlayerState = schema({
-  id:        t.string(),
-  name:      t.string(),
-  team:      t.string(),
-  shipId:    t.string(),
-  isBot:     t.boolean().default(false),
+  id:     t.string(),
+  name:   t.string(),
+  team:   t.string(),
+  shipId: t.string(),
+  isBot:  t.boolean().default(false),
 
   /** The id this ship carries in the bit-packed snapshot. */
-  netIndex:  t.uint16().default(0),
+  netIndex: t.uint16().default(0),
 
   health:    t.uint8().default(100),
   maxHealth: t.uint8().default(100),
-  kills:     t.uint16().default(0),
-  deaths:    t.uint16().default(0),
+
+  // The boost meter, 0..255 for 0..1. A byte at 20 Hz, and it has to be on
+  //  this channel rather than the binary one: that record's `health` field is
+  //  already spoken for, and a HUD meter is not worth forking the codec over.
+  boost:  t.uint8().default(255),
+  kills:  t.uint16().default(0),
+  deaths: t.uint16().default(0),
 
   /** Team whose objective this pilot is carrying, or ''. */
-  carrying:  t.string().default(''),
+  carrying: t.string().default(''),
 
-  // Lock state changes every tick while a reticle is settling, so it is marked
-  // unreliable: a dropped update costs one stale meter reading rather than
-  // stalling the ordered stream behind a retransmit.
-  lockPhase:  t.string().default('idle').unreliable(),
-  lockTarget: t.string().default('').unreliable(),
-  lockMeter:  t.number().default(0).unreliable(),
-  primaryCd:  t.number().default(0).unreliable(),
-  secondaryCd: t.number().default(0).unreliable(),
+  // These change every tick while a reticle is settling. They were briefly
+  // marked `.unreliable()` — the document's channel split, and Colyseus 0.18
+  // supports the marker — but an unreliable field over a WEBSOCKET transport is
+  // never patched at all, which the server says out loud at boot. The lane only
+  // exists on `@colyseus/h3-transport` (WebTransport). Until that swap, these
+  // ride the ordered channel like everything else; the genuinely hot values
+  // are on the binary snapshot, which supersedes stale data by tick anyway.
+  lockPhase:   t.string().default('idle'),
+  lockTarget:  t.string().default(''),
+  lockMeter:   t.number().default(0),
+  primaryCd:   t.number().default(0),
+  secondaryCd: t.number().default(0),
 }, 'BattlePlayerState')
 
 export const ZoneState = schema({
   id:        t.string(),
   owner:     t.string().default(''),
-  progress:  t.number().default(0).unreliable(),
+  progress:  t.number().default(0),
   capturing: t.string().default(''),
   contested: t.boolean().default(false),
 }, 'BattleZoneState')
@@ -122,6 +131,7 @@ export function syncBattleState (
     set(entry, 'netIndex', netIndexOf(player.id))
     set(entry, 'health', Math.max(0, Math.min(255, Math.round(player.health))))
     set(entry, 'maxHealth', Math.max(0, Math.min(255, Math.round(player.maxHealth))))
+    set(entry, 'boost', Math.max(0, Math.min(255, Math.round(player.boost * 255))))
     set(entry, 'kills', player.kills)
     set(entry, 'deaths', player.deaths)
     set(entry, 'lockPhase', player.lockPhase)
@@ -166,8 +176,8 @@ export function syncBattleState (
     set(entry, 'carrying', [ ...state.flags.values() ].find(f => f.carrierId === id)?.team ?? '')
 }
 
-/** Millimetre / millisecond precision. Finer than anything drawn, and it stops
- *  float noise from marking a field dirty on every single patch. */
+// Millimetre / millisecond precision. Finer than anything drawn, and it stops
+//  float noise from marking a field dirty on every single patch.
 function round (value: number): number {
   return Math.round(value * 1000) / 1000
 }

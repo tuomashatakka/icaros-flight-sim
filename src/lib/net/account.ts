@@ -1,158 +1,99 @@
 /**
- * Account access from the browser.
+ * Identity, from the browser.
  *
- * Next owns identity now, not the game server: these are same-origin fetches to
- * route handlers that sit next to the Neon database. The game server is a
- * long-lived process on another host, and all it does with identity is read a
- * token to decide whether a lobby connection is a pilot or a guest.
+ * Auth.js owns sign-in, sign-out and the session; this is the thin layer around
+ * it — registration, which Auth.js does not do, and the error strings a player
+ * should actually read.
  *
- * The token stays in `localStorage` rather than an httpOnly cookie, even though
- * these are same-origin now. The lobby WebSocket sends it in a message body to
- * a *different* origin, so JavaScript has to be able to read it — a cookie the
- * page cannot see would just mean signing in twice.
+ * There is no token here any more. The previous version kept a week-long bearer
+ * in `localStorage`, because the lobby WebSocket sent it to a different origin
+ * and so JavaScript had to be able to read it. That is exactly what an httpOnly
+ * cookie exists to prevent, and the replacement is `/api/game/ticket`: sixty
+ * seconds, signed, minted per join by the half of the app that CAN read the
+ * session. See `src/engine/net/ticket.ts`.
  *
- * Guests are first class throughout. Nothing here is required to play; signing
- * in only buys a remembered name and a record.
+ * Guests remain first class. Nothing here is required to play; signing in only
+ * buys a remembered name and a record.
  */
 
-const TOKEN_KEY = 'crash-velocity.token'
-const NAME_KEY  = 'crash-velocity.name'
+import { signIn, signOut } from 'next-auth/react'
 
-export type AccountSummary = {
-  id:        string;
-  username:  string;
-  createdAt: number;
+
+export type AuthOutcome = { ok: true } | { ok: false; error: string }
+
+const MESSAGES: Record<string, string> = {
+  taken:     'that name is taken',
+  invalid:   'wrong name or password',
+  malformed: 'names are 3–24 letters, digits, dash or underscore; passwords at least 8 characters',
 }
-
-export type AccountStats = {
-  matches:  number;
-  kills:    number;
-  deaths:   number;
-  captures: number;
-}
-
-export type AuthOutcome =
-  | { ok: true; account: AccountSummary; token: string } |
-  { ok: false; error: string }
 
 function describe (reason: string | undefined, status: number): string {
-  switch (reason) {
-    case 'taken':
-      return 'that name is taken'
-    case 'invalid':
-      return 'wrong name or password'
-    case 'malformed':
-      return 'names are 3–24 letters, digits, dash or underscore; passwords at least 8 characters'
-    default:
-      return `sign-in failed (${status})`
-  }
+  return MESSAGES[reason ?? ''] ?? `sign-in failed (${status})`
 }
 
-async function submit (path: string, username: string, password: string): Promise<AuthOutcome> {
+/**
+ * Create a pilot, then sign them in.
+ *
+ * Two steps rather than one because Auth.js has no sign-up flow — but the sign
+ * -in half goes through it like any returning pilot, so there is exactly one
+ * code path that mints a session.
+ */
+export async function register (username: string, password: string): Promise<AuthOutcome> {
   let response: Response
   try {
-    response = await fetch(path, {
+    response = await fetch('/api/register', {
       method:  'POST',
       headers: { 'content-type': 'application/json' },
       body:    JSON.stringify({ username, password }),
     })
   }
   catch {
-    return { ok: false, error: 'cannot reach the server' }
+    return { ok: false, error: 'could not reach the server' }
   }
 
-  const body = await response.json().catch(() => ({})) as { token?: string; account?: AccountSummary; error?: string }
-
-  if (!response.ok || !body.token || !body.account)
+  if (!response.ok) {
+    const body = await response.json().catch(() => ({})) as { error?: string }
     return { ok: false, error: describe(body.error, response.status) }
+  }
 
-  storeToken(body.token)
-  storeName(body.account.username)
-  return { ok: true, account: body.account, token: body.token }
+  return await login(username, password)
 }
 
-export const register = (username: string, password: string) =>
-  submit('/api/auth/register', username, password)
+export async function login (username: string, password: string): Promise<AuthOutcome> {
+  const result = await signIn('credentials', { username, password, redirect: false })
 
-export const login = (username: string, password: string) =>
-  submit('/api/auth/login', username, password)
+  // Auth.js reports a rejected credential as an error string rather than a
+  // throw, and deliberately does not say WHICH half was wrong.
+  return result?.error ? { ok: false, error: MESSAGES.invalid } : { ok: true }
+}
+
+export async function logout (): Promise<void> {
+  await signOut({ redirect: false })
+}
 
 /**
- * Who the stored token belongs to, or null.
+ * A display name for a guest, remembered between visits.
  *
- * Lets the lobby render a signed-in identity before the socket connects, and —
- * more usefully — tell an expired token apart from no token, which the socket's
- * silent fall back to guest cannot.
+ * The one thing still in `localStorage`, and it is not a credential: a signed
+ * -in pilot's name comes from their session, and the ticket route refuses to
+ * let a query string rename them.
  */
-export async function me (): Promise<{ account: AccountSummary; stats: AccountStats } | null> {
-  const token = storedToken()
-  if (!token)
-    return null
+const GUEST_NAME = 'crash-velocity.guest-name'
 
+export function guestName (): string {
   try {
-    const response = await fetch('/api/auth/me', { headers: { authorization: `Bearer ${token}` }})
-    if (!response.ok)
-      return null
-
-    return await response.json() as { account: AccountSummary; stats: AccountStats }
+    return localStorage.getItem(GUEST_NAME) ?? ''
   }
   catch {
-    return null
+    return ''
   }
 }
 
-/**
- * Storage access is wrapped because it throws outright in some contexts — a
- * private window with site data blocked, for one — and a missing token has to
- * degrade to guest play rather than crash the page.
- */
-export function storedToken (): string | null {
+export function rememberGuestName (name: string): void {
   try {
-    return globalThis.localStorage?.getItem(TOKEN_KEY) ?? null
+    localStorage.setItem(GUEST_NAME, name)
   }
   catch {
-    return null
+    // private windows throw; a forgotten name is not worth an error
   }
-}
-
-export function storedName (): string | null {
-  try {
-    return globalThis.localStorage?.getItem(NAME_KEY) ?? null
-  }
-  catch {
-    return null
-  }
-}
-
-export function storeToken (token: string): void {
-  try {
-    globalThis.localStorage?.setItem(TOKEN_KEY, token)
-  }
-  catch { /* nothing to do; the player stays a guest for this session */ }
-}
-
-export function storeName (name: string): void {
-  try {
-    globalThis.localStorage?.setItem(NAME_KEY, name)
-  }
-  catch { /* as above */ }
-}
-
-export async function signOut (): Promise<void> {
-  const token = storedToken()
-
-  // Cleared regardless of what the request does. Signing out must never fail
-  // because the network did; the worst case is a row that expires on its own.
-  try {
-    globalThis.localStorage?.removeItem(TOKEN_KEY)
-  }
-  catch { /* as above */ }
-
-  if (!token)
-    return
-
-  try {
-    await fetch('/api/auth/logout', { method: 'POST', headers: { authorization: `Bearer ${token}` }})
-  }
-  catch { /* the session expires by itself within the week */ }
 }

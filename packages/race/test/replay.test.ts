@@ -25,7 +25,6 @@ const scripts: Array<[string, RaceReplayScript]> = [
 ]
 
 describe('race replay', () => {
-
   for (const [ name, script ] of scripts)
     it(`${name} reproduces byte-identically`, async () => {
       const a = await replayRace(script)
@@ -35,7 +34,7 @@ describe('race replay', () => {
     }, 30_000)
 
   it('drives forward under throttle rather than sitting still', async () => {
-    const result = await replayRace(straightLine as RaceReplayScript)
+    const result    = await replayRace(straightLine as RaceReplayScript)
     const [ probe ] = result.racers
     expect(Math.hypot(probe.x, probe.z)).toBeGreaterThan(50)
   }, 30_000)

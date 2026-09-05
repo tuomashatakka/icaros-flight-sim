@@ -95,7 +95,11 @@ export async function openDatabase (options: DatabaseOptions = {}): Promise<Data
     const { PGlite } = await import('@electric-sql/pglite')
     const client     = new PGlite()
     const db         = drizzlePglite(client, { schema }) as unknown as Database
-    return { db, driver, close: async () => { await client.close() } }
+    return { db,
+      driver,
+      close: async () => {
+        await client.close()
+      } }
   }
 
   const url = connectionStringOf(options)
@@ -107,9 +111,14 @@ export async function openDatabase (options: DatabaseOptions = {}): Promise<Data
     // reaches for `neonConfig.webSocketConstructor`, so it has to be handed one
     // explicitly or it fails at first query rather than at boot.
     neonConfig.webSocketConstructor ??= globalThis.WebSocket
+
     const pool = new Pool({ connectionString: url })
     const db   = drizzleWs(pool, { schema }) as unknown as Database
-    return { db, driver, close: async () => { await pool.end() } }
+    return { db,
+      driver,
+      close: async () => {
+        await pool.end()
+      } }
   }
 
   const db = drizzleHttp(neon(url), { schema }) as unknown as Database

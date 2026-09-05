@@ -45,7 +45,7 @@ export const { handlers, signIn, signOut, auth } = NextAuth(async () => {
     providers: [
       Credentials({
         name:        'Pilot',
-        credentials: { username: {}, password: {} },
+        credentials: { username: {}, password: {}},
 
         async authorize (raw) {
           const username = typeof raw?.username === 'string' ? raw.username : ''

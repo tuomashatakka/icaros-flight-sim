@@ -18,8 +18,7 @@ import type { Controls } from '../input'
 import { createCameraRig } from '../camera/rig'
 import type { CameraRig } from '../camera/rig'
 import type { HudHandle } from '../hud'
-import { vehicleModule } from '../modules/vehicle'
-import type { VehicleHandle } from '../modules/vehicle'
+import type { VehicleHandle } from '../vehicle'
 import { physicsStepModule } from '../modules/physics-step'
 import { shipVisualModule } from '../modules/ship-visual'
 import type { ShipVisualHandle } from '../modules/ship-visual'
@@ -63,16 +62,15 @@ type AppContext<TState extends object> = Parameters<AppModule<TState>['build']>[
 export type ScenePost = Pick<PostProcessingOptions, 'depth' | 'effects' | 'onFrame' | 'onResize'>
 
 export type BaseSceneConfig<TState extends object> = {
-  canvas:                   HTMLCanvasElement;
-  initialState:             TState;
-  seed?:                    number;
-  levelId?:                 string;
-  levelSpec?:               unknown;
-  background?:              THREE.ColorRepresentation;
-  bloom?:                   { threshold: number; strength: number; radius: number };
-  colliders?:               readonly BoxCollider[];
-  colliderOffset?:          readonly [number, number, number];
-  useDefaultVehicleModule?: boolean;
+  canvas:          HTMLCanvasElement;
+  initialState:    TState;
+  seed?:           number;
+  levelId?:        string;
+  levelSpec?:      unknown;
+  background?:     THREE.ColorRepresentation;
+  bloom?:          { threshold: number; strength: number; radius: number };
+  colliders?:      readonly BoxCollider[];
+  colliderOffset?: readonly [number, number, number];
 
   /**
    * Normalised vertical aim, -1..1, if the scene owns it.
@@ -131,7 +129,6 @@ export async function mountBaseScene<TState extends object> (
     bloom = { threshold: 0.8, strength: 0.4, radius: 0.4 },
     colliders,
     colliderOffset,
-    useDefaultVehicleModule = true,
     aimPitchSource,
     post,
     buildGeometry,
@@ -239,11 +236,6 @@ export async function mountBaseScene<TState extends object> (
 
   if (game?.module)
     modules.push(game.module)
-
-  if (useDefaultVehicleModule)
-    modules.push(
-      vehicleModule(physics, telemetry, vehicle, () => rig.requestSnap()) as unknown as AppModule<TState>
-    )
 
   modules.push(
     physicsStepModule(physics, game?.handleCollision) as unknown as AppModule<TState>,

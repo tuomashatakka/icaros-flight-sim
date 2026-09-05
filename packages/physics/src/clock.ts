@@ -1,4 +1,3 @@
-
 /**
  * The shape `threejs-scene`'s `Clock` has, declared here rather than imported.
  *
@@ -7,7 +6,11 @@
  * and rapier, which is what makes it safe to import from a headless server.
  */
 export interface Clock {
-  readonly mode: 'fixed' | 'variable';
+
+  // `'wall'` echoes the real delta back; `'fixed'` emits whole steps. Mirrors
+  //  `threejs-scene`'s `ClockMode` exactly — a wider union here would stop a
+  //  `SimClock` satisfying the interface it is supposed to be a drop-in for.
+  readonly mode: 'wall' | 'fixed';
   advance (realDelta: number): readonly number[];
   elapsed (): number;
   reset (): void;

@@ -1,108 +1,103 @@
 /**
- * The auth route handlers.
+ * Registration and the game ticket, as plain `Request` → `Response`.
  *
- * These moved out of the battle server and into Next when the database became
- * Neon: Vercel is the half that sits next to it. Driven as plain `Request` ->
- * `Response`, which is all a route handler is, against `MemoryStore`.
+ * These are the only two identity routes left that are ours: Auth.js owns
+ * sign-in, sign-out and the session, and there is nothing useful to assert
+ * about a library's own handlers. What IS ours is that sign-up refuses a
+ * duplicate name, and that a ticket the game server will accept comes back
+ * signed — including for a signed-out visitor, because guests are first class.
  */
-import { beforeAll, describe, expect, it } from 'vitest'
-import { POST as loginRoute } from 'Δapp/api/auth/login/route'
-import { POST as logoutRoute } from 'Δapp/api/auth/logout/route'
-import { GET as meRoute } from 'Δapp/api/auth/me/route'
-import { POST as registerRoute } from 'Δapp/api/auth/register/route'
 
+import { beforeAll, describe, expect, it, vi } from 'vitest'
 
-const GOOD = 'correct-horse'
+import { verifyTicket } from '@crash-velocity/data'
+
+const SECRET = 'test-game-secret'
+const GOOD   = 'correct-horse'
+
+// The ticket route reads the Auth.js session. Stubbing `auth()` rather than
+// standing up a whole sign-in keeps this a test of the ROUTE, not of Auth.js.
+let session: { user?: { id?: string; name?: string } } | null = null
+vi.mock('Δlib/auth', () => ({ auth: async () => session }))
 
 const post = (body: unknown) =>
-  new Request('http://localhost/api/auth', { method: 'POST', body: JSON.stringify(body) })
+  new Request('http://localhost/api/register', { method: 'POST', body: JSON.stringify(body) })
 
-const bearer = (token: string, method = 'GET') =>
-  new Request('http://localhost/api/auth', { method, headers: { authorization: `Bearer ${token}` }})
-
-/** Fresh per case: the handlers share one process-wide store. */
 const uniqueName = () => `Pilot_${crypto.randomUUID().replaceAll('-', '').slice(0, 12)}`
 
-type AuthBody = { token?: string; account?: { username: string }; error?: string }
-
 beforeAll(() => {
-  // `serverStore()` reads this on first call rather than at import, which is
-  // what lets a test choose the driver without stubbing the module.
-  process.env.STORE_DRIVER = 'memory'
+  // Read on first call rather than at import, which is what lets a test choose
+  // the driver without stubbing the module.
+  process.env.DB_DRIVER = 'pglite'
+  process.env.GAME_TOKEN_SECRET = SECRET
 })
 
-describe('POST /api/auth/register', () => {
-  it('creates an account and signs it in', async () => {
-    const username = uniqueName()
-    const response = await registerRoute(post({ username, password: GOOD }))
-    const body     = await response.json() as AuthBody
+describe('POST /api/register', () => {
 
-    expect(response.status).toBe(200)
-    expect(body.account?.username).toBe(username)
-    expect(typeof body.token).toBe('string')
-  })
+  it('creates a pilot', async () => {
+    const { POST } = await import('Δapp/api/register/route')
+    const { migratePglite } = await import('@crash-velocity/data/migrate')
+    const { serverDb } = await import('Δlib/server/db')
+    await migratePglite(await serverDb())
 
-  it('answers 409 for a name that is taken', async () => {
-    const username = uniqueName()
-    await registerRoute(post({ username, password: GOOD }))
+    const name     = uniqueName()
+    const response = await POST(post({ username: name, password: GOOD }))
+    expect(response.status).toBe(201)
 
-    const response = await registerRoute(post({ username: username.toUpperCase(), password: GOOD }))
-    expect(response.status).toBe(409)
-    expect((await response.json() as AuthBody).error).toBe('taken')
-  })
+    const body = await response.json() as { pilot: { username: string } }
+    expect(body.pilot.username).toBe(name)
+  }, 60_000)
 
-  it('answers 401 malformed for a name the game would not render', async () => {
-    const response = await registerRoute(post({ username: 'has space', password: GOOD }))
-    expect((await response.json() as AuthBody).error).toBe('malformed')
-  })
+  it('refuses a duplicate name with 409, and a bad one with 400', async () => {
+    const { POST } = await import('Δapp/api/register/route')
+    const name = uniqueName()
 
-  it('answers 400 for a body that is not credentials', async () => {
-    expect((await registerRoute(post({ username: 7 }))).status).toBe(400)
-  })
-})
+    expect((await POST(post({ username: name, password: GOOD }))).status).toBe(201)
+    expect((await POST(post({ username: name, password: GOOD }))).status).toBe(409)
+    expect((await POST(post({ username: 'x', password: 'short' }))).status).toBe(400)
+  }, 60_000)
 
-describe('POST /api/auth/login', () => {
-  it('signs in with the right password', async () => {
-    const username = uniqueName()
-    await registerRoute(post({ username, password: GOOD }))
-
-    const response = await loginRoute(post({ username, password: GOOD }))
-    expect(response.status).toBe(200)
-    expect((await response.json() as AuthBody).account?.username).toBe(username)
-  })
-
-  it('answers the same way to a wrong password and a name nobody has', async () => {
-    const username = uniqueName()
-    await registerRoute(post({ username, password: GOOD }))
-
-    const wrong   = await loginRoute(post({ username, password: 'wrong-horse-battery' }))
-    const missing = await loginRoute(post({ username: uniqueName(), password: GOOD }))
-
-    expect(wrong.status).toBe(401)
-    expect(missing.status).toBe(401)
-    expect(await wrong.json()).toEqual(await missing.json())
+  it('does not answer a body that is not JSON', async () => {
+    const { POST } = await import('Δapp/api/register/route')
+    const bad = new Request('http://localhost/api/register', { method: 'POST', body: 'not json' })
+    expect((await POST(bad)).status).toBe(400)
   })
 })
 
-describe('GET /api/auth/me and POST /api/auth/logout', () => {
-  it('round-trips a session and then forgets it', async () => {
-    const username = uniqueName()
-    const token    = ((await (await registerRoute(post({ username, password: GOOD }))).json()) as AuthBody).token as string
+describe('GET /api/game/ticket', () => {
 
-    const before = await meRoute(bearer(token))
-    expect(before.status).toBe(200)
-    expect((await before.json() as { account: { username: string } }).account.username).toBe(username)
+  it('signs a ticket the game server will accept', async () => {
+    session = { user: { id: 'pilot-1', name: 'Maverick' } }
 
-    expect((await logoutRoute(bearer(token, 'POST'))).status).toBe(204)
-    expect((await meRoute(bearer(token))).status).toBe(401)
+    const { GET }  = await import('Δapp/api/game/ticket/route')
+    const response = await GET(new Request('http://localhost/api/game/ticket'))
+    const body     = await response.json() as { ticket: string; registered: boolean }
+
+    expect(body.registered).toBe(true)
+    expect(await verifyTicket(body.ticket, SECRET)).toEqual({ pilotId: 'pilot-1', name: 'Maverick' })
   })
 
-  it('refuses a request with no bearer token', async () => {
-    const response = await meRoute(new Request('http://localhost/api/auth/me'))
-    expect(response.status).toBe(401)
+  it('gives a signed-out visitor a guest ticket rather than nothing', async () => {
+    session = null
+
+    const { GET }  = await import('Δapp/api/game/ticket/route')
+    const response = await GET(new Request('http://localhost/api/game/ticket?name=Ghost'))
+    const body     = await response.json() as { ticket: string; registered: boolean }
+
+    expect(body.registered).toBe(false)
+    expect(await verifyTicket(body.ticket, SECRET)).toEqual({ pilotId: null, name: 'Ghost' })
   })
 
-  it('accepts a sign-out with no token, so the client can always call it', async () => {
-    expect((await logoutRoute(new Request('http://localhost/api/auth/logout', { method: 'POST' }))).status).toBe(204)
+  it('will not let a query string rename a signed-in pilot', async () => {
+    session = { user: { id: 'pilot-1', name: 'Maverick' } }
+
+    const { GET } = await import('Δapp/api/game/ticket/route')
+    const body    = await (await GET(new Request('http://localhost/api/game/ticket?name=Impostor'))).json() as { ticket: string }
+
+    expect((await verifyTicket(body.ticket, SECRET))?.name).toBe('Maverick')
+  })
+
+  it('refuses a forged ticket', async () => {
+    expect(await verifyTicket('not.a.jwt', SECRET)).toBeNull()
   })
 })

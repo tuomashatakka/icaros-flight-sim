@@ -29,8 +29,8 @@ export class PendingInputs {
   private frames: InputFrame[] = []
   private nextSeq = 0
 
-  /** Stamps and stores a frame. The returned object is the one to predict with,
-   *  so the frame the client simulated is bit-identical to the one it sends. */
+  // Stamps and stores a frame. The returned object is the one to predict with,
+  //  so the frame the client simulated is bit-identical to the one it sends.
   push (frame: Omit<InputFrame, 'seq'>): InputFrame {
     const stamped: InputFrame = { ...frame, seq: ++this.nextSeq }
 
@@ -63,7 +63,7 @@ export class PendingInputs {
   }
 
   reset (): void {
-    this.frames = []
+    this.frames  = []
     this.nextSeq = 0
   }
 }
@@ -71,17 +71,17 @@ export class PendingInputs {
 
 export type SmoothingConfig = {
 
-  /** Metres of position error tolerated before the body is touched at all.
-   *  Below this the prediction is tracking, and a correction costs more in
-   *  disturbed solver state than it buys. */
-  deadband:  number;
+  // Metres of position error tolerated before the body is touched at all.
+  //  Below this the prediction is tracking, and a correction costs more in
+  //  disturbed solver state than it buys.
+  deadband: number;
 
   /** Above this, continuity is a fiction: snap everything, blend nothing. */
-  hardSnap:  number;
+  hardSnap: number;
 
-  /** Render-offset decay. ~0.12 s to fall to a tenth, so a correction is felt
-   *  as a settle rather than seen as a jump. */
-  halfLife:  number;
+  // Render-offset decay. ~0.12 s to fall to a tenth, so a correction is felt
+  //  as a settle rather than seen as a jump.
+  halfLife: number;
 }
 
 export const DEFAULT_SMOOTHING: SmoothingConfig = { deadband: 0.35, hardSnap: 3, halfLife: 0.055 }
@@ -101,6 +101,10 @@ export type Correction = {
  * from the authoritative state rather than from a smoothed fake one is what
  * keeps stacked and colliding bodies stable.
  */
+type OutType = { x: number; y: number; z: number }
+
+type FunctionReturnType = { x: number; y: number; z: number }
+
 export class ErrorSmoother {
   private ox = 0
   private oy = 0
@@ -139,7 +143,7 @@ export class ErrorSmoother {
   }
 
   /** Decay and read. Returns the offset to ADD to the body's pose when drawing. */
-  sample (dt: number, out: { x: number; y: number; z: number }): { x: number; y: number; z: number } {
+  sample (dt: number, out: OutType): FunctionReturnType {
     const decay = Math.pow(0.5, dt / this.config.halfLife)
 
     this.ox *= decay
