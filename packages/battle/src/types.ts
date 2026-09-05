@@ -11,7 +11,7 @@
 import type { BattleTeam, ControlPointDef } from './arena'
 import type { LockPhase, LockState, Loadout, WeaponId } from './weapons'
 import type { ProjectileSpawn } from './projectiles'
-import type { ShipId } from '@crash-velocity/physics/ships'
+import type { ShipId } from 'Φships'
 
 
 export type BattleStatus = 'lobby' | 'countdown' | 'live' | 'finished'
@@ -51,7 +51,7 @@ export type BattlePlayer = {
   health:     number;
   maxHealth:  number;
   chassis:    import('@dimforge/rapier3d-deterministic-compat').RigidBody;
-  sim:        import('@crash-velocity/physics/vehicle-step').HovercraftState;
+  sim:        import('Φvehicle-step').HovercraftState;
   controls:   BattleInput;
   boostMeter: number;
   stun:       number;

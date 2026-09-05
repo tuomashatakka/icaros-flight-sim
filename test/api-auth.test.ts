@@ -10,7 +10,7 @@
 
 import { beforeAll, describe, expect, it, vi } from 'vitest'
 
-import { verifyTicket } from '@crash-velocity/data'
+import { verifyTicket } from 'Ð'
 
 const SECRET = 'test-game-secret'
 const GOOD   = 'correct-horse'
@@ -46,7 +46,7 @@ describe('POST /api/register', () => {
 
   it('creates a pilot', async () => {
     const { POST } = await import('Δapp/api/register/route')
-    const { migratePglite } = await import('@crash-velocity/data/migrate')
+    const { migratePglite } = await import('Ðmigrate')
     const { serverDb } = await import('Δlib/server/db')
     await migratePglite(await serverDb())
 

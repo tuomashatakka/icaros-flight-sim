@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { TRACK_IDS, trackBundle } from '../src/levels'
-import { buildCheckpoints } from '../src/track'
+import { TRACK_IDS, trackBundle } from 'Λlevels/index'
+import { buildCheckpoints } from 'Λtrack'
 
 /**
  * Track geometry is pure data — that is the whole reason it moved into this

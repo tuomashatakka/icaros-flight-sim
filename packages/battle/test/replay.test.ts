@@ -10,10 +10,10 @@
  * anything else.
  */
 import { describe, expect, it } from 'vitest'
-import { replayMatch } from '../src/dev/replay'
+import { replayMatch } from 'Ψdev/replay'
 import combat from '../scenarios/point-blank.json'
 import flight from '../scenarios/straight-fight.json'
-import type { ReplayScript } from '../src/dev/replay'
+import type { ReplayScript } from 'Ψdev/replay'
 
 
 const COMBAT = combat as ReplayScript

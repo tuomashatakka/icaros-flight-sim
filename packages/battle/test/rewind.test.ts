@@ -6,11 +6,11 @@
  * where the shooter saw it, and would have missed otherwise.
  */
 import { describe, expect, it } from 'vitest'
-import { BattleSim } from '../src/sim'
-import { apexArena } from '../src/arena'
-import { REWIND_CLAMP_MS as MAX_REWIND_MS } from '@crash-velocity/net'
-import { createBattleRewind } from '../src/rewind'
-import type { BattlePlayer } from '../src/sim'
+import { BattleSim } from 'Ψsim'
+import { apexArena } from 'Ψarena'
+import { REWIND_CLAMP_MS as MAX_REWIND_MS } from 'Ξ'
+import { createBattleRewind } from 'Ψrewind'
+import type { BattlePlayer } from 'Ψsim'
 
 
 const STEP = 1 / 60

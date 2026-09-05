@@ -1,9 +1,9 @@
 'use client'
 
 import { useCallback } from 'react'
-import { SceneCanvas } from '@/components/scene-canvas'
-import { HangarControls } from '@/components/hangar/hangar-controls'
-import { mountHangar } from '@/engine/scenes/hangar'
+import { SceneCanvas } from 'Ʊscene-canvas'
+import { HangarControls } from 'Ʊhangar/hangar-controls'
+import { mountHangar } from 'Ɠhangar'
 import styles from './hangar.module.css'
 
 

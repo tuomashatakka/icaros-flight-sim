@@ -7,9 +7,9 @@
  * code path that mints a session.
  */
 
-import { registerPilot } from '@crash-velocity/data'
+import { registerPilot } from 'Ð'
 
-import { serverDb } from 'Δlib/server/db'
+import { serverDb } from '../../../lib/server/db'
 
 
 export const runtime = 'nodejs'

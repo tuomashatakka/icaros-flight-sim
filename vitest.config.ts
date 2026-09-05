@@ -2,7 +2,7 @@ import { defineConfig } from 'vitest/config';
 
 export default defineConfig({
   resolve: {
-    // Resolves the `Δ*` and `@/*` aliases from tsconfig, so tests import engine
+    // Resolves the glyph aliases (Δ, Σ, Φ, …) from tsconfig, so tests import package
     // code the same way the app does.
     tsconfigPaths: true,
   },

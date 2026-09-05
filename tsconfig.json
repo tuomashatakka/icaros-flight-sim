@@ -23,41 +23,62 @@
       }
     ],
     "paths": {
-      "@crash-velocity/data": [
-        "./packages/data/src/index.ts"
-      ],
-      "@crash-velocity/data/*": [
-        "./packages/data/src/*"
-      ],
-      "@crash-velocity/physics": [
-        "./packages/physics/src/index.ts"
-      ],
-      "@crash-velocity/physics/*": [
-        "./packages/physics/src/*"
-      ],
-      "@crash-velocity/net": [
-        "./packages/net/src/index.ts"
-      ],
-      "@crash-velocity/net/*": [
-        "./packages/net/src/*"
-      ],
-      "@crash-velocity/race": [
-        "./packages/race/src/index.ts"
-      ],
-      "@crash-velocity/race/*": [
-        "./packages/race/src/*"
-      ],
-      "@crash-velocity/battle": [
-        "./packages/battle/src/index.ts"
-      ],
-      "@crash-velocity/battle/*": [
-        "./packages/battle/src/*"
-      ],
-      "@/*": [
-        "./src/*"
-      ],
       "Δ*": [
         "./src/*"
+      ],
+      "Φ": [
+        "./packages/physics/src/index.ts"
+      ],
+      "Φ*": [
+        "./packages/physics/src/*"
+      ],
+      "Ξ": [
+        "./packages/net/src/index.ts"
+      ],
+      "Ξ*": [
+        "./packages/net/src/*"
+      ],
+      "Ð": [
+        "./packages/data/src/index.ts"
+      ],
+      "Ð*": [
+        "./packages/data/src/*"
+      ],
+      "Λ": [
+        "./packages/race/src/index.ts"
+      ],
+      "Λ*": [
+        "./packages/race/src/*"
+      ],
+      "Ψ": [
+        "./packages/battle/src/index.ts"
+      ],
+      "Ψ*": [
+        "./packages/battle/src/*"
+      ],
+      "§": [
+        "./packages/server/src/index.ts"
+      ],
+      "§*": [
+        "./packages/server/src/*"
+      ],
+      "Ȼ*": [
+        "./packages/core/src/*"
+      ],
+      "Ƨ": [
+        "./packages/state/src/index.ts"
+      ],
+      "Ƨ*": [
+        "./packages/state/src/*"
+      ],
+      "Σ*": [
+        "./packages/engine/src/*"
+      ],
+      "Ɠ*": [
+        "./packages/game/src/*"
+      ],
+      "Ʊ*": [
+        "./packages/ui/src/*"
       ]
     }
   },
@@ -70,8 +91,6 @@
   ],
   "exclude": [
     "node_modules",
-    "packages",
-    "src/ai",
-    "src/components/ui"
+    "packages"
   ]
 }

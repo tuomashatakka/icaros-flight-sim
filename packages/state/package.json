@@ -1,0 +1,22 @@
+{
+  "name": "@crash-velocity/state",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Client state on threejs-scene stores. Types in types.ts, defaults in defaults.ts, one file per domain.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@crash-velocity/battle": "workspace:*",
+    "@crash-velocity/core": "workspace:*",
+    "@crash-velocity/physics": "workspace:*",
+    "@crash-velocity/race": "workspace:*",
+    "react": "^19.2.7",
+    "threejs-scene": "^0.6.2"
+  }
+}

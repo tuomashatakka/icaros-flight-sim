@@ -26,6 +26,7 @@ export {
   LIFT_INDICES,
   MAIN_L,
   MAIN_R,
+  MAIN_THRUST_CAPACITY,
   RCS_L,
   RCS_R,
   RETRO_L,
@@ -72,3 +73,4 @@ export { attachBox, attachBoxColliders } from './colliders'
 export { DEFAULT_SHIP_ID, SHIP_IDS, isShipId } from './ships'
 export type { ShipId } from './ships'
 export type { BoxCollider } from './colliders'
+export { mulberry32 } from './rng'

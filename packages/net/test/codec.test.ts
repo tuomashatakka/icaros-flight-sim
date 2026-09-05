@@ -8,13 +8,13 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { BitReader, BitWriter } from '../src/codec/bits'
-import { QUAT_BITS, packQuaternion, unpackQuaternion } from '../src/codec/quantize'
-import { DEFAULT_SHIP_CODEC, ShipField, ShipFlags, changedFields, emptyShipState } from '../src/codec/ship-state'
-import { StaleBaselineError, baselineOf, decodeSnapshot, encodeSnapshot } from '../src/codec/snapshot'
-import { decodeInputPacket, emptyInputFrame, encodeInputPacket } from '../src/codec/input'
+import { BitReader, BitWriter } from 'Ξcodec/bits'
+import { QUAT_BITS, packQuaternion, unpackQuaternion } from 'Ξcodec/quantize'
+import { DEFAULT_SHIP_CODEC, ShipField, ShipFlags, changedFields, emptyShipState } from 'Ξcodec/ship-state'
+import { StaleBaselineError, baselineOf, decodeSnapshot, encodeSnapshot } from 'Ξcodec/snapshot'
+import { decodeInputPacket, emptyInputFrame, encodeInputPacket } from 'Ξcodec/input'
 
-import type { ShipState } from '../src/codec/ship-state'
+import type { ShipState } from 'Ξcodec/ship-state'
 
 
 function shipAt (id: number, over: Partial<ShipState> = {}): ShipState {

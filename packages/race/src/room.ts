@@ -16,10 +16,10 @@
  */
 
 import { Room } from '@colyseus/core'
-import { STEP, TICK_HZ, acceptPacket, createSeat, decodeInputPacket, drainInput, encodeFor, snapshotHistory, ticksPerSnapshot } from '@crash-velocity/net'
-import { createSimClock } from '@crash-velocity/physics/clock'
-import { verifyTicket } from '@crash-velocity/data/auth/ticket'
-import { recordMatchEnd, recordMatchStart, recordRaceResults, withDatabase } from '@crash-velocity/data'
+import { STEP, TICK_HZ, acceptPacket, createSeat, decodeInputPacket, drainInput, encodeFor, pongFor, snapshotHistory, ticksPerSnapshot } from 'Ξ'
+import { createSimClock } from 'Φclock'
+import { verifyTicket } from 'Ðauth/ticket'
+import { recordMatchEnd, recordMatchStart, recordRaceResults, withDatabase } from 'Ð'
 
 import { RaceSim } from './sim'
 import { standings } from './rules'
@@ -29,8 +29,8 @@ import { raceSnapshotOf } from './snapshot'
 import { toRaceInput } from './input'
 
 import type { Client } from '@colyseus/core'
-import type { InputFrame, InputPacket, Seat } from '@crash-velocity/net'
-import type { ShipId } from '@crash-velocity/physics/ships'
+import type { InputFrame, InputPacket, Seat } from 'Ξ'
+import type { ShipId } from 'Φships'
 import type { TrackId } from './levels'
 import type { RaceStateType } from './state'
 import type { RaceInput } from './types'
@@ -101,7 +101,7 @@ export class RaceRoom extends Room<{ state: RaceStateType }> {
     })
 
     this.onMessage(MessageKind.PING, (client, t0: number) => {
-      client.send(MessageKind.PONG, { t0, serverTimeMs: Date.now(), serverTick: this.sim.tick })
+      client.send(MessageKind.PONG, pongFor(t0, this.sim.tick))
     })
 
     this.setSimulationInterval(deltaMs => this.drive(deltaMs), 1000 / TICK_HZ)

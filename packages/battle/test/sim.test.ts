@@ -1,8 +1,8 @@
 import { describe, expect, it } from 'vitest'
-import { AIM_MAX, BattleSim, DEFAULT_BATTLE_CONFIG, NEUTRAL_INPUT } from '../src/sim'
-import type { BattleConfig, BattlePlayer } from '../src/sim'
-import { apexArena, onPlateau, plateauColliders, rampFeet } from '../src/arena'
-import { LOCK, WEAPONS } from '../src/weapons'
+import { AIM_MAX, BattleSim, DEFAULT_BATTLE_CONFIG, NEUTRAL_INPUT } from 'Ψsim'
+import type { BattleConfig, BattlePlayer } from 'Ψsim'
+import { apexArena, onPlateau, plateauColliders, rampFeet } from 'Ψarena'
+import { LOCK, WEAPONS } from 'Ψweapons'
 
 /**
  * The headless battle sim, run under vitest. No DOM, no WebSocket: these lock

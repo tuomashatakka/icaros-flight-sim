@@ -1,0 +1,25 @@
+{
+  "name": "@crash-velocity/game",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Composition roots: mountRace, mountBattle, mountHangar, mountCrashLab, and the store→app bridge.",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@crash-velocity/battle": "workspace:*",
+    "@crash-velocity/core": "workspace:*",
+    "@crash-velocity/engine": "workspace:*",
+    "@crash-velocity/net": "workspace:*",
+    "@crash-velocity/physics": "workspace:*",
+    "@crash-velocity/race": "workspace:*",
+    "@crash-velocity/state": "workspace:*",
+    "@dimforge/rapier3d-deterministic-compat": "0.19.2",
+    "three": "^0.185.1",
+    "threejs-scene": "^0.6.2"
+  }
+}

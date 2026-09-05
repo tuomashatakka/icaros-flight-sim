@@ -9,10 +9,15 @@
         "@colyseus/schema": "^5.0.8",
         "@colyseus/sdk": "^0.18.2",
         "@crash-velocity/battle": "workspace:*",
+        "@crash-velocity/core": "workspace:*",
         "@crash-velocity/data": "workspace:*",
+        "@crash-velocity/engine": "workspace:*",
+        "@crash-velocity/game": "workspace:*",
         "@crash-velocity/net": "workspace:*",
         "@crash-velocity/physics": "workspace:*",
         "@crash-velocity/race": "workspace:*",
+        "@crash-velocity/state": "workspace:*",
+        "@crash-velocity/ui": "workspace:*",
         "@dimforge/rapier3d-deterministic-compat": "0.19.2",
         "drizzle-orm": "^0.45.2",
         "jose": "^6.2.11",
@@ -21,9 +26,7 @@
         "react": "^19.2.7",
         "react-dom": "^19.2.7",
         "three": "^0.185.1",
-        "threejs-scene": "^0.3.0",
-        "zod": "^4.4.3",
-        "zustand": "5.0.14",
+        "threejs-scene": "^0.6.2",
       },
       "devDependencies": {
         "@electric-sql/pglite": "^0.5.8",
@@ -57,6 +60,15 @@
         "three": "^0.185.1",
       },
     },
+    "packages/core": {
+      "name": "@crash-velocity/core",
+      "version": "0.1.0",
+      "dependencies": {
+        "@crash-velocity/battle": "workspace:*",
+        "@crash-velocity/physics": "workspace:*",
+        "three": "^0.185.1",
+      },
+    },
     "packages/data": {
       "name": "@crash-velocity/data",
       "version": "0.1.0",
@@ -72,6 +84,39 @@
       "devDependencies": {
         "drizzle-kit": "^0.31.10",
         "vitest": "^4.1.11",
+      },
+    },
+    "packages/engine": {
+      "name": "@crash-velocity/engine",
+      "version": "0.1.0",
+      "dependencies": {
+        "@colyseus/schema": "^5.0.8",
+        "@colyseus/sdk": "^0.18.2",
+        "@crash-velocity/battle": "workspace:*",
+        "@crash-velocity/core": "workspace:*",
+        "@crash-velocity/net": "workspace:*",
+        "@crash-velocity/physics": "workspace:*",
+        "@crash-velocity/race": "workspace:*",
+        "@crash-velocity/state": "workspace:*",
+        "@dimforge/rapier3d-deterministic-compat": "0.19.2",
+        "three": "^0.185.1",
+        "threejs-scene": "^0.6.2",
+      },
+    },
+    "packages/game": {
+      "name": "@crash-velocity/game",
+      "version": "0.1.0",
+      "dependencies": {
+        "@crash-velocity/battle": "workspace:*",
+        "@crash-velocity/core": "workspace:*",
+        "@crash-velocity/engine": "workspace:*",
+        "@crash-velocity/net": "workspace:*",
+        "@crash-velocity/physics": "workspace:*",
+        "@crash-velocity/race": "workspace:*",
+        "@crash-velocity/state": "workspace:*",
+        "@dimforge/rapier3d-deterministic-compat": "0.19.2",
+        "three": "^0.185.1",
+        "threejs-scene": "^0.6.2",
       },
     },
     "packages/net": {
@@ -106,6 +151,7 @@
         "@crash-velocity/physics": "workspace:*",
       },
       "devDependencies": {
+        "@colyseus/testing": "^0.18.5",
         "vitest": "^4.1.11",
       },
       "peerDependencies": {
@@ -135,6 +181,36 @@
         "@colyseus/testing": "^0.18.5",
         "@types/bun": "^1.4.0",
         "vitest": "^4.1.11",
+      },
+    },
+    "packages/state": {
+      "name": "@crash-velocity/state",
+      "version": "0.1.0",
+      "dependencies": {
+        "@crash-velocity/battle": "workspace:*",
+        "@crash-velocity/core": "workspace:*",
+        "@crash-velocity/physics": "workspace:*",
+        "@crash-velocity/race": "workspace:*",
+        "react": "^19.2.7",
+        "threejs-scene": "^0.6.2",
+      },
+    },
+    "packages/ui": {
+      "name": "@crash-velocity/ui",
+      "version": "0.1.0",
+      "dependencies": {
+        "@crash-velocity/battle": "workspace:*",
+        "@crash-velocity/core": "workspace:*",
+        "@crash-velocity/engine": "workspace:*",
+        "@crash-velocity/game": "workspace:*",
+        "@crash-velocity/physics": "workspace:*",
+        "@crash-velocity/race": "workspace:*",
+        "@crash-velocity/state": "workspace:*",
+        "next": "16.2.9",
+        "react": "^19.2.7",
+        "react-dom": "^19.2.7",
+        "three": "^0.185.1",
+        "threejs-scene": "^0.6.2",
       },
     },
   },
@@ -179,7 +255,13 @@
 
     "@crash-velocity/battle": ["@crash-velocity/battle@workspace:packages/battle"],
 
+    "@crash-velocity/core": ["@crash-velocity/core@workspace:packages/core"],
+
     "@crash-velocity/data": ["@crash-velocity/data@workspace:packages/data"],
+
+    "@crash-velocity/engine": ["@crash-velocity/engine@workspace:packages/engine"],
+
+    "@crash-velocity/game": ["@crash-velocity/game@workspace:packages/game"],
 
     "@crash-velocity/net": ["@crash-velocity/net@workspace:packages/net"],
 
@@ -188,6 +270,10 @@
     "@crash-velocity/race": ["@crash-velocity/race@workspace:packages/race"],
 
     "@crash-velocity/server": ["@crash-velocity/server@workspace:packages/server"],
+
+    "@crash-velocity/state": ["@crash-velocity/state@workspace:packages/state"],
+
+    "@crash-velocity/ui": ["@crash-velocity/ui@workspace:packages/ui"],
 
     "@dimforge/rapier3d-compat": ["@dimforge/rapier3d-compat@0.12.0", "", {}, "sha512-uekIGetywIgopfD97oDL5PfeezkFpNhwlzlaEYNOA0N6ghdsOvh/HYjSMek5Q2O1PYvRSDFcqFVJl4r4ZBwOow=="],
 
@@ -1043,7 +1129,7 @@
 
     "three": ["three@0.185.1", "", {}, "sha512-5aojFCXKwnjBRZvUnt3WFfEcvUJgkN5LlijRFN95hMy8WVkG4I0QNcJE+OuWvuJ0bOdStrbfXn0pkd6/QyiAlg=="],
 
-    "threejs-scene": ["threejs-scene@0.3.0", "", { "dependencies": { "@tuomashatakka/canvas-loop-framecapper": "^1.0.0" }, "peerDependencies": { "three": ">=0.160.0" } }, "sha512-EhpJtb7GT1sOj7m3rFCW6OVWhUwBj3Gw12/s4fpGCDaDKuq/XnfD/Ap6rF84n4wncGBdGJREX/YBTNwekGNVaA=="],
+    "threejs-scene": ["threejs-scene@0.6.2", "", { "dependencies": { "@tuomashatakka/canvas-loop-framecapper": "^1.0.0" }, "peerDependencies": { "cannon-es": ">=0.20.0", "three": ">=0.160.0" }, "optionalPeers": ["cannon-es"] }, "sha512-UYUdFQU9ZgRCABMXRKACTCdB3toE5TZ+/SXxVvFCwXEOiT8a/YuM1L5+kA6xnKYZnW/q7cLB2OpgjJD3DzW6ug=="],
 
     "tinybench": ["tinybench@2.9.0", "", {}, "sha512-0+DUvqWMValLmha6lr4kD8iAMK1HzV0/aKnCtWb9v9641TnP/MFb7Pc2bxoxQjTXAErryXVgUOfv2YqNllqGeg=="],
 
@@ -1081,8 +1167,6 @@
 
     "uri-js": ["uri-js@4.4.1", "", { "dependencies": { "punycode": "^2.1.0" } }, "sha512-7rKUyy33Q1yc98pQ1DAmLtwX109F7TIfWlW1Ydo8Wl1ii1SeHieeh0HHfPeL2fMXK6z0s8ecKs9frCuLJvndBg=="],
 
-    "use-sync-external-store": ["use-sync-external-store@1.6.0", "", { "peerDependencies": { "react": "^16.8.0 || ^17.0.0 || ^18.0.0 || ^19.0.0" } }, "sha512-Pp6GSwGP/NrPIrxVFAIkOQeyw8lFenOHijQWkUTrDvrF4ALqylP2C/KCkeS9dpUM3KvYRQhna5vt7IL95+ZQ9w=="],
-
     "uuid": ["uuid@8.3.2", "", { "bin": { "uuid": "dist/bin/uuid" } }, "sha512-+NYs2QeMWy+GWFOEm9xnn6HCDp0l7QBD7ml8zLUmJ+93Q5NF0NocErnwkTkXVFNiX3/fpC6afS8Dhb/gz7R7eg=="],
 
     "vary": ["vary@1.1.2", "", {}, "sha512-BNGbWLfd0eUPabhkXUVm0j8uuvREyTh5ovRa/dyow/BqAbZJyC+5fU+IzQOzmAKzYqYRAISoRhdQr3eIZ/PXqg=="],
@@ -1106,8 +1190,6 @@
     "yocto-queue": ["yocto-queue@0.1.0", "", {}, "sha512-rVksvsnNCdJ/ohGc6xgPwyN8eheCxsiLM8mxuE/t/mOVqJewPuO1miLpTHQiRgTKCLexL4MeAFVagts7HmNZ2Q=="],
 
     "zod": ["zod@4.4.3", "", {}, "sha512-ytENFjIJFl2UwYglde2jchW2Hwm4GJFLDiSXWdTrJQBIN9Fcyp7n4DhxJEiWNAJMV1/BqWfW/kkg71UDcHJyTQ=="],
-
-    "zustand": ["zustand@5.0.14", "", { "peerDependencies": { "@types/react": ">=18.0.0", "immer": ">=9.0.6", "react": ">=18.0.0", "use-sync-external-store": ">=1.2.0" }, "optionalPeers": ["@types/react", "immer", "react", "use-sync-external-store"] }, "sha512-/8tAspM5LMPr28b3fwLYrtdj77ECpfZviaP75CMTnwO8ISyaE4GDIG/9rDDYq/cH9D2Xw2A2RXglLInmVBQB/g=="],
 
     "@crash-velocity/battle/vitest": ["vitest@4.1.11", "", { "dependencies": { "@vitest/expect": "4.1.11", "@vitest/mocker": "4.1.11", "@vitest/pretty-format": "4.1.11", "@vitest/runner": "4.1.11", "@vitest/snapshot": "4.1.11", "@vitest/spy": "4.1.11", "@vitest/utils": "4.1.11", "es-module-lexer": "^2.0.0", "expect-type": "^1.3.0", "magic-string": "^0.30.21", "obug": "^2.1.1", "pathe": "^2.0.3", "picomatch": "^4.0.3", "std-env": "^4.0.0-rc.1", "tinybench": "^2.9.0", "tinyexec": "^1.0.2", "tinyglobby": "^0.2.15", "tinyrainbow": "^3.1.0", "vite": "^6.0.0 || ^7.0.0 || ^8.0.0", "why-is-node-running": "^2.3.0" }, "peerDependencies": { "@edge-runtime/vm": "*", "@opentelemetry/api": "^1.9.0", "@types/node": "^20.0.0 || ^22.0.0 || >=24.0.0", "@vitest/browser-playwright": "4.1.11", "@vitest/browser-preview": "4.1.11", "@vitest/browser-webdriverio": "4.1.11", "@vitest/coverage-istanbul": "4.1.11", "@vitest/coverage-v8": "4.1.11", "@vitest/ui": "4.1.11", "happy-dom": "*", "jsdom": "*" }, "optionalPeers": ["@edge-runtime/vm", "@opentelemetry/api", "@types/node", "@vitest/browser-playwright", "@vitest/browser-preview", "@vitest/browser-webdriverio", "@vitest/coverage-istanbul", "@vitest/coverage-v8", "@vitest/ui", "happy-dom", "jsdom"], "bin": { "vitest": "./vitest.mjs" } }, "sha512-fhACrNXUidIbGSBr5FlbuBkO7VWC1ZyLl0DO4CU2DrQoAPxX84Ysxs+HeGQpii5lZWV1Q4gBZTTu49mF+A6Edw=="],
 

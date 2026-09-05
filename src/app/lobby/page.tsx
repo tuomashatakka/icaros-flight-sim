@@ -17,10 +17,10 @@ import { Suspense, useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
-import { TRACK_IDS } from '@crash-velocity/race'
+import { TRACK_IDS } from 'Λ'
 
-import { guestName, login, logout, register, rememberGuestName } from 'Δlib/net/account'
-import { resolveServerUrl } from 'Δengine/net/room-link'
+import { guestName, login, logout, register, rememberGuestName } from '../../lib/net/account'
+import { resolveServerUrl } from 'Σnet/room-link'
 
 
 import styles from './lobby.module.css'
