@@ -66,7 +66,7 @@ type SpatialHudOptions = {
    * hands it down, which is also what makes this testable without a URL.
    */
   forcedTouch?: string | null;
-  panelHz?: number;
+  panelHz?:     number;
 }
 
 export type SpatialHud = {

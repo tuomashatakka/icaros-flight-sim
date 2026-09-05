@@ -1,4 +1,4 @@
-import type { ShipTuning } from '../state'
+import type { ShipTuning } from 'Δstate'
 
 
 export const HUD_FONT = 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace'

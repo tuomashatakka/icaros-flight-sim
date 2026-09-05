@@ -137,7 +137,7 @@ src/engine/            vanilla three.js — no React imports anywhere below this
   hud/                 the shared canvas-owned race and battle HUD (see below)
   levels/              the four tracks' MESHES (the data is in packages/race)
   camera/rig.ts        chase + cockpit camera, as two blended stations
-  bridge.ts            zustand -> app state, one direction only
+  bridge.ts            client stores -> app state, one direction only
   dev/                 dev-only debug harness; dropped from production builds
 src/components/scene-canvas.tsx   the ONLY React<->three boundary
 scripts/dev-cli.mjs    drive the running game from a shell (see below)
@@ -147,7 +147,7 @@ scripts/dev-cli.mjs    drive the running game from a shell (see below)
 so an `@/…` import inside one is a compile error. Nothing crosses from a package
 back into `src/`.
 
-State flows one way: `zustand -> bridge -> app state -> module.update() -> scene`. Modules read
+State flows one way: `src/state stores -> bridge -> app state -> module.update() -> scene`. Modules read
 state and never write it. Engine *outputs* (speed, boost, lap times) travel back out through the
 publish module on a throttled schedule, and the two sets of fields are disjoint, so there is no
 feedback loop.
@@ -259,8 +259,8 @@ the publish module exists to avoid.
 
 ### Race clocks
 
-`raceTimers` in `src/hooks/use-race-store.ts` is a plain mutable object, for the same reason
-`src/engine/telemetry.ts` is: the clocks advance every 60 Hz sim step, and writing them into zustand
+`raceTimers` in `src/state/race.ts` is a plain mutable object, for the same reason
+`src/engine/telemetry.ts` is: the clocks advance every 60 Hz sim step, and writing them into a store
 at that rate forced 60 React commits a second — which quietly defeated the 15 Hz throttling
 elsewhere. The canvas HUD reads the live object and stays exact to the millisecond; the store mirrors
 it on a throttle for other consumers. Lap times are taken from the live clock at the instant of the

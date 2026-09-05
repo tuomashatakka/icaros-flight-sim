@@ -1,5 +1,5 @@
-import { DEFAULT_TUNING } from '@/engine/state'
-import type { ShipTuning } from '@/engine/state'
+import { DEFAULT_TUNING } from '@crash-velocity/physics/types'
+import type { ShipTuning } from '@crash-velocity/physics/types'
 
 /**
  * Pure helpers behind the tuning panel's footer buttons.

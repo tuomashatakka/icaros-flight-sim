@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { asSource, isDefaultTuning } from '@/lib/tuning'
-import { DEFAULT_TUNING } from '@/engine/state'
+import { DEFAULT_TUNING } from '@crash-velocity/physics/types'
 
 /**
  * The copy-as-TypeScript output is the whole reason this panel exists rather

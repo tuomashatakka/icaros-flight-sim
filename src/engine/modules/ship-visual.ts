@@ -5,7 +5,7 @@ import { createAirbrakes } from '../fx/airbrakes'
 import type { Airbrakes } from '../fx/airbrakes'
 import { loadShip } from '../assets/ship-loader'
 import type { ShipInstance } from '../assets/ship-loader'
-import type { RaceState } from '../state'
+import type { RaceState } from 'Δstate'
 import type { Telemetry } from '../telemetry'
 import type { ShipConfig } from '@/lib/ship/registry'
 

@@ -1,5 +1,5 @@
-import { DEFAULT_TUNING } from '../state'
-import type { ShipTuning } from '../state'
+import { DEFAULT_TUNING } from 'Δstate'
+import type { ShipTuning } from 'Δstate'
 import type { OverlayFlags } from './types'
 
 

@@ -1,7 +1,7 @@
 import * as THREE from 'three'
 import { defineModule } from 'threejs-scene'
 import type { AppModule } from 'threejs-scene'
-import type { RaceState } from '../state'
+import type { RaceState } from 'Δstate'
 
 
 const _target = new THREE.Vector3()

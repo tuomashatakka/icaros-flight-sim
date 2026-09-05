@@ -51,17 +51,22 @@ Fix: keep `BattleSim` as the orchestrator and lift pure subsystems out beside
 of `(state, input, tick)` and gets its own test file instead of sharing the
 710-line `sim.test.ts`.
 
-### 1.3 Scenes and the HUD write zustand directly, bypassing `publish.ts`
+### 1.3 Scenes and the HUD write the stores directly, bypassing `publish.ts`
 perf: **med** (React commits at frame rate) · conformity: **high**
 
-`AGENTS.md` says sim outputs reach zustand only through
+`AGENTS.md` says sim outputs reach the stores only through
 `src/engine/modules/publish.ts`, throttled to 15 Hz. In practice:
 
 - `src/engine/scenes/battle.ts` calls `useBattleStore.getState()` at five
   sites and writes from inside frame callbacks.
 - `src/engine/scenes/base.ts` writes `useCameraView` twice.
-- `src/engine/hud/index.ts` reads five stores (`useStore`, `useTuningStore`,
-  `useRaceStore`, `useShipStore`, `useBattleStore`) and writes tuning.
+- `src/engine/hud/index.ts` reads five stores (`gameplayStore`, `tuningStore`,
+  `raceStore`, `shipStore`, `battleStore`) and writes tuning.
+
+*Done in this PR:* the stores themselves moved from zustand onto
+`threejs-scene`'s `createStore` under `src/state/`, with every state type in
+`types.ts` and every initial value in `defaults.ts`. The write-path discipline
+above is still open.
 
 Fix: give battle the same shape race has — one `publishBattle` module that
 owns every store write and runs on the publish cadence — and turn the HUD's
@@ -127,11 +132,16 @@ clock; a `net/room-clock.ts` (PONG handler as a pure function), a
 ### 2.2 `mulberry32` is implemented three times
 perf: none · conformity: **med**
 
-`src/engine/battle/arena-visuals.ts:54`, `src/lib/ship/materials.ts:644`,
-`packages/battle/src/sim.ts:112`. One copy in `packages/physics` (a leaf both
-sides can import) with `fork(label)`, as `AGENTS.md` already describes.
+*Two of three done in this PR:* `arena-visuals.ts` and `materials.ts` now
+import `mulberry32` from `threejs-scene`. `packages/battle/src/sim.ts:112`
+keeps its own because packages cannot depend on the client library; one copy in
+`packages/physics` (a leaf both sides can import) would close it.
 
 ### 2.3 Two import aliases for one directory
+
+*Related, done in this PR:* `AIM_MAX`/`AIM_RATE` in `engine/net/prediction.ts`
+and `MAX_REWIND_MS` in `net/rewind.ts` were second declarations of package
+constants; both now import from the owner.
 perf: none · conformity: **med**
 
 35 files import through `@/`, 8 through `Δ`. Both resolve to `src/`. Two
@@ -142,7 +152,7 @@ drop `Δ`. An eslint `no-restricted-imports` rule then keeps it that way.
 ### 2.4 Dead files and stale documents
 perf: none · conformity: **med**
 
-- `src/hooks/use-toast.ts` — zero importers.
+- ~~`src/hooks/use-toast.ts` — zero importers.~~ Deleted in this PR.
 - `PROMPT.md`, `.modified` — zero bytes, committed.
 - `flats-hover.jpeg` — 72 KB screenshot at the repo root.
 - `docs/blueprint.md` — describes "Galactic Racer", an asteroid game on React
@@ -176,10 +186,10 @@ CSS-module fixes.
 ### 2.7 `src/lib/utils.ts` is a grab-bag that owns `vehicleConfig`
 perf: none · conformity: **med**
 
-Nine importers reach `vehicleConfig` through a file called `utils`, and
-`src/engine/state.ts` exists mainly to re-export physics types plus that
-config. Move `vehicleConfig` next to the tuning code in `src/lib/tuning.ts`
-and import `ShipTuning` from `@crash-velocity/physics` directly.
+Nine importers reach `vehicleConfig` through a file called `utils`. Move it
+next to the tuning code in `src/lib/tuning.ts`. (`src/engine/state.ts`, which
+re-exported physics types plus that config, is gone: `RaceState` lives in
+`src/state/types.ts` and `ShipTuning` is imported from its owner.)
 
 ### 2.8 `hangar-controls.tsx` hard-codes thirty random ranges
 perf: none · conformity: **med**

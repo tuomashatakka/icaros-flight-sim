@@ -7,6 +7,7 @@
  * new entry rather than a new branch.
  */
 
+import { mulberry32 } from 'threejs-scene'
 import * as THREE from 'three'
 import { BATTLE_TEAMS, NEUTRAL_COLOR, TEAM_COLORS, plateauColliders } from '@crash-velocity/battle/arena'
 
@@ -50,17 +51,6 @@ export function buildArenaVisual (ctx: SceneContext, arena: BattleArena): Scener
   return buildApexVisual(ctx, arena.plateaus, arena.bases)
 }
 
-
-function mulberry32 (seed: number): () => number {
-  let a = seed >>> 0
-  return () => {
-    a = a + 0x6d2b79f5 | 0
-
-    let t = Math.imul(a ^ a >>> 15, 1 | a)
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t
-    return ((t ^ t >>> 14) >>> 0) / 4294967296
-  }
-}
 
 /** Deck, mesas, cliff ring and the skyline behind it. */
 function buildApexVisual (

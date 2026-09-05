@@ -1,10 +1,7 @@
 import * as THREE from 'three'
-import { useRaceStore, raceTimers } from '@/hooks/use-race-store'
-import { useStore } from '@/hooks/use-store'
-import { useTuningStore } from '@/hooks/use-tuning-store'
+import { DEFAULT_TUNING, gameplayStore, raceStore, raceTimers, tuningActions, tuningStore } from 'Δstate'
 import { STEP } from '@crash-velocity/physics/clock'
-import { DEFAULT_TUNING } from '../state'
-import type { ShipTuning } from '../state'
+import type { ShipTuning } from 'Δstate'
 import { readHudPanelMetrics } from '../hud/panel'
 import { createLegend } from './legend'
 import { createOverlays } from './overlay'
@@ -155,10 +152,10 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
     },
 
     probe () {
-      const race     = useRaceStore.getState()
+      const race     = raceStore.get()
       const info     = app.ctx.renderer.info
       const debug    = vehicle.current?.debug ?? null
-      const gameplay = useStore.getState()
+      const gameplay = gameplayStore.get()
 
       return {
         ok:        true,
@@ -226,7 +223,7 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
 
         quality: deps.quality.snapshot(),
 
-        tuning:  useTuningStore.getState().tuning,
+        tuning:  tuningStore.get().tuning,
         overlay: overlays.flags(),
       }
     },
@@ -337,17 +334,17 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
     setTuning (patch: Partial<ShipTuning>) {
       for (const [ key, value ] of Object.entries(patch))
         if (typeof value === 'number' && Number.isFinite(value))
-          useTuningStore.getState().set(key as keyof ShipTuning, value)
-      return useTuningStore.getState().tuning
+          tuningActions.set(key as keyof ShipTuning, value)
+      return tuningStore.get().tuning
     },
 
     resetTuning () {
-      useTuningStore.getState().reset()
+      tuningActions.reset()
       return DEFAULT_TUNING
     },
 
     setStatus (status) {
-      useRaceStore.setState({ status })
+      raceStore.set({ status })
       return status
     },
 
@@ -361,7 +358,7 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
         ...readTrace(),
         hudPanels: readHudPanelMetrics(),
         level:     deps.levelId,
-        status:    useRaceStore.getState().status,
+        status:    raceStore.get().status,
         ship:      shipPose(),
       }
     },

@@ -1,6 +1,6 @@
 import { defineModule } from 'threejs-scene'
 import type { AppModule } from 'threejs-scene'
-import type { RaceState } from '../state'
+import type { RaceState } from 'Δstate'
 import type { Physics } from '@crash-velocity/physics/world'
 
 

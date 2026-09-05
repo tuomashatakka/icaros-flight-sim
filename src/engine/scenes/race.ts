@@ -21,7 +21,7 @@ import { toRaceInput } from '@crash-velocity/race/input'
 import { trackBundle } from '@crash-velocity/race'
 
 import { raceHudModule } from '../hud'
-import { initialRaceState } from '../state'
+import { initialRaceState, raceActions, raceTimers, resetRaceTimers } from 'Δstate'
 import { LocalPrediction } from '../net/prediction'
 import { publishTelemetry } from '../net/telemetry-publish'
 import { buildRemoteHull } from '../net/remote-hull'
@@ -29,14 +29,13 @@ import { buildNameplate } from '../battle/visuals'
 import { RaceTransport } from '../race/transport'
 import { TRACK_VISUALS } from '../levels/types'
 import { activeControls } from '../input'
-import { raceTimers, resetRaceTimers, useRaceStore } from '@/hooks/use-race-store'
 import { mountBaseScene } from './base'
 
 import type { App, AppModule } from 'threejs-scene'
 import type { TrackId } from '@crash-velocity/race'
 import type { Nameplate } from '../battle/visuals'
 import type { NetRacer, RaceFrame } from '../race/transport'
-import type { RaceState } from '../state'
+import type { RaceState } from 'Δstate'
 
 
 export type RaceMountOptions = {
@@ -212,7 +211,7 @@ export async function mountRace (
         if (linkError === lastLinkError)
           return
         lastLinkError = linkError
-        useRaceStore.getState().sync({ linkError })
+        raceActions.sync({ linkError })
       }
 
       const raceNetModule: AppModule<RaceState> = defineModule<RaceState>({
@@ -287,7 +286,7 @@ export async function mountRace (
             return
           sinceCommit = 0
 
-          useRaceStore.getState().sync({
+          raceActions.sync({
             status:          view.status,
             countdown:       view.countdown,
             laps:            view.laps,
@@ -334,7 +333,7 @@ export async function mountRace (
       for (const id of [ ...opponents.keys() ])
         dropOpponent(id)
       transport.close()
-      useRaceStore.getState().reset()
+      raceActions.reset()
     },
   })
 

@@ -37,7 +37,8 @@ import type { VehicleDebug } from '../vehicle'
 
 const COLLECT_FORCES = process.env.NODE_ENV !== 'production'
 import { vehicleConfig } from 'Δlib/utils'
-import { DEFAULT_TUNING } from '../state'
+import { DEFAULT_TUNING } from 'Δstate'
+import { AIM_MAX, AIM_RATE } from '@crash-velocity/race'
 import type { Transform } from '@crash-velocity/physics/types'
 import type { HovercraftState } from '@crash-velocity/physics/vehicle-step'
 
@@ -71,8 +72,9 @@ const AIM_EPSILON = 0.02
  * them, because importing battle's would make race's prediction depend on
  * battle — and the two agree by construction: one wire format, one ±1 range.
  */
-export const AIM_MAX  = Math.PI / 4
-export const AIM_RATE = 1.1
+// The aim envelope is the race sim's; declared once there so a client cannot
+// predict a different trim than the server integrates.
+export { AIM_MAX, AIM_RATE }
 
 /**
  * What the prediction needs from a control frame. Structural, so both

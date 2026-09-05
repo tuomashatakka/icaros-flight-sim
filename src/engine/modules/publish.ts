@@ -1,7 +1,7 @@
 import { defineModule } from 'threejs-scene'
 import type { AppModule } from 'threejs-scene'
-import { useStore } from '@/hooks/use-store'
-import type { RaceState } from '../state'
+import { gameplayActions } from 'Δstate'
+import type { RaceState } from 'Δstate'
 import type { Telemetry } from '../telemetry'
 
 /** Store publish rate. Readouts do not need 60 Hz and React commits still cost. */
@@ -13,7 +13,7 @@ const ZONE_PERIOD = 10
 /**
  * Mirrors simulation outputs to zustand for stores and non-engine consumers.
  *
- * The only engine -> `useStore` writer. Throttled, because the old code called
+ * The only engine -> `gameplayStore` writer. Throttled, because the old code called
  * `setSpeed`/`setBoostMeter` every physics tick — 60 zustand writes a second,
  * each re-rendering the HUD tree.
  */
@@ -63,14 +63,14 @@ export function publishModule (
         zoneAccumulator += frame.delta
         if (zoneAccumulator >= ZONE_PERIOD) {
           zoneAccumulator -= ZONE_PERIOD
-          useStore.getState().increaseZone()
+          gameplayActions.increaseZone()
         }
       }
 
       // Crashes are edge events — flush every unseen increment, whatever the
       // publish cadence, so a flash is never dropped.
       while (publishedCrashes < telemetry.crashSeq) {
-        useStore.getState().triggerCrash()
+        gameplayActions.triggerCrash()
         publishedCrashes++
       }
 
@@ -79,14 +79,13 @@ export function publishModule (
         return
       publishAccumulator = 0
 
-      const store = useStore.getState()
       if (Math.abs(telemetry.speed - lastSpeed) > 0.05) {
         lastSpeed = telemetry.speed
-        store.setSpeed(telemetry.speed)
+        gameplayActions.setSpeed(telemetry.speed)
       }
       if (Math.abs(telemetry.boostMeter - lastBoost) > 0.01) {
         lastBoost = telemetry.boostMeter
-        store.setBoostMeter(telemetry.boostMeter)
+        gameplayActions.setBoostMeter(telemetry.boostMeter)
       }
     },
   })

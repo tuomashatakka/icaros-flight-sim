@@ -1,3 +1,5 @@
+import { MAX_REWIND_MS } from './rates'
+
 /**
  * Lag compensation: a short history of where every ship was.
  *
@@ -33,7 +35,6 @@ export type Rewindable = { id: string }
  * same line at roughly 220 ms RTT — so the shot resolves against the present
  * instead, and a very laggy player simply has to lead more.
  */
-export const MAX_REWIND_MS = 250
 
 /** History kept, in milliseconds. Comfortably more than the clamp uses. */
 export const HISTORY_MS = 1000

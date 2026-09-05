@@ -1,11 +1,7 @@
 import * as THREE from 'three'
 import { defineModule } from 'threejs-scene'
 import type { AppModule } from 'threejs-scene'
-import { useBattleStore } from '@/hooks/use-battle-store'
-import { raceTimers, useRaceStore } from '@/hooks/use-race-store'
-import { useTuningStore } from '@/hooks/use-tuning-store'
-import { useShipStore } from '@/hooks/use-ship-store'
-import { useStore } from '@/hooks/use-store'
+import { battleActions, battleStore, gameplayStore, raceStore, raceTimers, shipStore, tuningActions, tuningStore } from 'Δstate'
 import { asSource } from '@/lib/tuning'
 import { vehicleConfig } from '@/lib/utils'
 import type { Controls } from '../input'
@@ -65,7 +61,7 @@ function menu (): void {
 }
 
 async function copyTuning (): Promise<void> {
-  const value = asSource(useTuningStore.getState().tuning)
+  const value = asSource(tuningStore.get().tuning)
   try {
     await navigator.clipboard.writeText(value)
   }
@@ -151,12 +147,12 @@ export function raceHudModule<TState extends object> (
   const source: HudSource = {
     mode: 'race',
     read (): HudData {
-      const tuning = useTuningStore.getState()
-      const game   = useStore.getState()
+      const tuning = tuningStore.get()
+      const game   = gameplayStore.get()
       const level  = game.speedLevels.find(entry => entry.zone === game.zone) ?? game.speedLevels.at(-1)
       return {
         mode:   'race',
-        race:   useRaceStore.getState(),
+        race:   raceStore.get(),
         clocks: {
           elapsed:    raceTimers.elapsed,
           lapElapsed: raceTimers.lapElapsed,
@@ -164,7 +160,7 @@ export function raceHudModule<TState extends object> (
         },
         tuning:      tuning.tuning,
         tuningOpen:  tuning.open,
-        shipId:      useShipStore.getState().currentConfig.shipId,
+        shipId:      shipStore.get().currentConfig.shipId,
         zone:        game.zone,
         targetSpeed: Math.min(level?.speedTarget ?? vehicleConfig.maxSpeed, vehicleConfig.maxSpeed),
       }
@@ -175,12 +171,11 @@ export function raceHudModule<TState extends object> (
       // is the honest equivalent, and it is what the room does on a finish.
       raceAgain:    () => globalThis.location?.reload(),
       toggleTuning: () => {
-        const store = useTuningStore.getState()
-        store.setOpen(!store.open)
+        tuningActions.setOpen(!tuningStore.get().open)
       },
-      resetTuning: () => useTuningStore.getState().reset(),
+      resetTuning: () => tuningActions.reset(),
       copyTuning,
-      setTuning:   (key, value) => useTuningStore.getState().set(key, value),
+      setTuning:   (key, value) => tuningActions.set(key, value),
       clearToast () {},
     },
   }
@@ -195,7 +190,7 @@ export function raceHudModule<TState extends object> (
     source,
     forcedTouch,
     target (frame) {
-      const race      = useRaceStore.getState()
+      const race      = raceStore.get()
       const waypoints = track.waypoints
       const index     = waypoints.length > 0 ? race.nextCheckpoint % waypoints.length : 0
       const point     = waypoints[index]
@@ -229,7 +224,7 @@ export function battleHudModule<TState extends object> (
 ): AppModule<TState> {
   const source: HudSource = {
     mode:    'battle',
-    read:    () => ({ mode: 'battle', battle: useBattleStore.getState() }),
+    read:    () => ({ mode: 'battle', battle: battleStore.get() }),
     actions: {
       menu,
       raceAgain () {},
@@ -237,7 +232,7 @@ export function battleHudModule<TState extends object> (
       resetTuning () {},
       copyTuning: async () => {},
       setTuning () {},
-      clearToast: key => useBattleStore.getState().clearToast(key),
+      clearToast: key => battleActions.clearToast(key),
     },
   }
 
@@ -249,7 +244,7 @@ export function battleHudModule<TState extends object> (
     source,
     forcedTouch,
     target (frame) {
-      const battle = useBattleStore.getState()
+      const battle = battleStore.get()
       const locked = battle.lockOn.targetId !== null
 
       // `target` used to be hardcoded null with the label pinned to the arena

@@ -35,8 +35,7 @@ import { LocalPrediction } from '../net/prediction'
 import { publishTelemetry } from '../net/telemetry-publish'
 import { createHovercraft, createHovercraftState } from '@crash-velocity/physics/vehicle-step'
 import { BodyInterpolator } from '@crash-velocity/physics/interpolation'
-import { useBattleStore } from '@/hooks/use-battle-store'
-import { IDLE_LOCK } from '@/hooks/use-battle-store'
+import { IDLE_LOCK, battleActions, battleStore } from 'Δstate'
 import type { ShipId } from '@/lib/ship/registry'
 import { vehicleConfig } from '@/lib/utils'
 import { mountBaseScene } from './base'
@@ -124,7 +123,7 @@ export type BattleMountOptions = {
  * module in the same tick.
  *
  * Rendering never puts remote positions into React. The canvas HUD reads the
- * slim `useBattleStore` snapshot, which the transport commits on a timer.
+ * slim `battleStore` snapshot, which the transport commits on a timer.
  */
 export async function mountBattle (
   canvas: HTMLCanvasElement,
@@ -144,7 +143,7 @@ export async function mountBattle (
   const beamTo           = { x: 0, y: 0, z: 0 }
   const projectilePoseOf = (id: string) => renderFrame?.playersById.get(id) ?? null
 
-  useBattleStore.getState().resetSession()
+  battleActions.resetSession()
 
   // Prediction needs somewhere to stand before the first snapshot lands. Red
   // lane 0 is a guess; the first reconciliation moves the ship to wherever the
@@ -195,7 +194,7 @@ export async function mountBattle (
     muzzleFrom(sight.origin, chassis.translation(), sightRotation)
     aimFrom(sight.direction, sightRotation, prediction!.aimNormalised * AIM_MAX)
 
-    const store  = useBattleStore.getState()
+    const store  = battleStore.get()
     const weapon = store.primary ? WEAPONS[store.primary.id] : WEAPONS[DEFAULT_LOADOUT.primary]
     const reach  = weapon.range
 
@@ -308,7 +307,7 @@ export async function mountBattle (
    *
    * The snapshot carries zone ids and state but not display names — those live
    * in the arena, which the client has its own copy of. Joining them here is
-   * why `useBattleStore.setChrome` gets real names instead of the id fallback
+   * why `battleActions.setChrome` gets real names instead of the id fallback
    * the transport writes when it commits on its own.
    */
   const zoneViews = (snapshot: ReturnType<BattleTransport['latest']>) =>
@@ -433,11 +432,11 @@ export async function mountBattle (
    * authority about who it was shooting.
    */
   function publishHud (server: ViewPlayer, snapshot: BattleFrame): void {
-    const store  = useBattleStore.getState()
+    const store  = battleStore.get()
     const target = server.lockTarget ? snapshot.playersById.get(server.lockTarget) : undefined
 
     if (target)
-      store.setLockOn({
+      battleActions.setLockOn({
         phase:    server.lockPhase,
         targetId: target.id,
         name:     target.name,
@@ -446,9 +445,9 @@ export async function mountBattle (
         progress: server.lockMeter,
       })
     else
-      store.setLockOn(IDLE_LOCK)
+      battleActions.setLockOn(IDLE_LOCK)
 
-    store.setPilot({
+    battleActions.setPilot({
       health:    server.health,
       maxHealth: server.maxHealth,
       boost:     server.boost,
@@ -459,12 +458,12 @@ export async function mountBattle (
 
     const primarySpec   = WEAPONS[loadout.primary]
     const secondarySpec = WEAPONS[loadout.secondary]
-    store.setWeapons(
+    battleActions.setWeapons(
       { id: primarySpec.id, cooldown: server.primaryCd, needsLock: primarySpec.needsLock },
       { id: secondarySpec.id, cooldown: server.secondaryCd, needsLock: secondarySpec.needsLock }
     )
 
-    store.setChrome({
+    battleActions.setChrome({
       status:      snapshot.status,
       countdown:   snapshot.countdown,
       timeLeft:    Math.round(snapshot.timeLeft),
@@ -661,11 +660,11 @@ export async function mountBattle (
        */
       const reportNet = () => {
         const stats = transport.stats()
-        const store = useBattleStore.getState()
-        store.setNetStats(stats)
+        const store = battleStore.get()
+        battleActions.setNetStats(stats)
 
         if (stats.linkError && store.status !== 'error')
-          store.setError(`cannot reach the game server · ${stats.linkError}`)
+          battleActions.setError(`cannot reach the game server · ${stats.linkError}`)
       }
 
       const battleGameModule: AppModule<BattleState> = defineModule<BattleState>({
@@ -714,14 +713,14 @@ export async function mountBattle (
           publishTelemetry(telemetry, local.chassis, prediction, controls.boost)
 
           const snapshot = transport.frame()
-          const store    = useBattleStore.getState()
+          const store    = battleStore.get()
 
           reportNet()
 
           const aim = prediction?.aimNormalised ?? 0
           if (Math.abs(aim - lastAimCommit) > 0.01) {
             lastAimCommit = aim
-            store.setAimPitch(aim)
+            battleActions.setAimPitch(aim)
           }
 
           if (!snapshot || !server)
@@ -736,7 +735,7 @@ export async function mountBattle (
           if (events.length) {
             const names = snapshot.namesById
             for (const event of events) {
-              store.applyEvent(event, names)
+              battleActions.applyEvent(event, names)
               reactTo(event, rig)
             }
           }

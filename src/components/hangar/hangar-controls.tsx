@@ -1,9 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { useShipStore } from '@/hooks/use-ship-store'
-import { useHangarView } from '@/hooks/use-hangar-view'
-import type { HangarViewToggle } from '@/hooks/use-hangar-view'
+import { hangarViewStore, shipActions, shipStore, toggleHangarView } from 'Δstate'
+import { useStoreState } from 'Δstate/react'
+import type { HangarViewToggle } from 'Δstate'
 import { PALETTES } from '@/lib/ship/materials'
 import { SHIP_IDS, SHIP_PRESETS } from '@/lib/ship/registry'
 import type { ShipConfig } from '@/lib/ship/registry'
@@ -197,8 +197,9 @@ function randomBuild (): Partial<ShipConfig> {
 }
 
 export function HangarControls () {
-  const { currentConfig, updateConfig, selectShip, resetToDefault, applyToAllShips } = useShipStore()
-  const view                                                                         = useHangarView()
+  const { currentConfig }                                             = useStoreState(shipStore)
+  const view                                                          = useStoreState(hangarViewStore)
+  const { updateConfig, selectShip, resetToDefault, applyToAllShips } = shipActions
 
   // Only the glTF ship (cb1) has its maps generated from texturePreset; every other ship
   // carries a baked livery that applyShipConfig() modulates but never overwrites.
@@ -208,7 +209,7 @@ export function HangarControls () {
   const set = <K extends keyof ShipConfig>(key: K, value: ShipConfig[K]) =>
     updateConfig({ [key]: value } as Partial<ShipConfig>)
 
-  const toggle = (key: HangarViewToggle) => () => view.toggle(key)
+  const toggle = (key: HangarViewToggle) => () => toggleHangarView(key)
 
   return <div className={ styles.panel }>
     <header className={ styles.header }>

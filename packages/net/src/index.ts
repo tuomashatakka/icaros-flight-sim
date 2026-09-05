@@ -13,7 +13,8 @@ export type { ClockSample, ClockStats } from './clock'
 
 export { NetBodyInterpolator } from './interpolation'
 
-export { HISTORY_MS, MAX_REWIND_MS as REWIND_CLAMP_MS, RewindBuffer } from './rewind'
+export { MAX_REWIND_MS as REWIND_CLAMP_MS } from './rates'
+export { HISTORY_MS, RewindBuffer } from './rewind'
 export type { Rewindable, Vec3 } from './rewind'
 
 export { BitReader, BitWriter } from './codec/bits'

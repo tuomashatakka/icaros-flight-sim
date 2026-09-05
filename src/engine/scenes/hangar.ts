@@ -3,8 +3,7 @@ import { createApp, defineModule } from 'threejs-scene'
 import type { App } from 'threejs-scene'
 import { orbitControls } from 'threejs-scene/modules/orbit'
 import { postProcessing } from 'threejs-scene/modules/post'
-import { useShipStore } from '@/hooks/use-ship-store'
-import { useHangarView } from '@/hooks/use-hangar-view'
+import { hangarViewStore, shipStore } from 'Δstate'
 import type { ShipConfig } from '@/lib/ship/registry'
 import { loadShip } from '../assets/ship-loader'
 import type { ShipInstance } from '../assets/ship-loader'
@@ -228,11 +227,11 @@ export function mountHangar (
 
   const app = createApp<HangarState>(canvas, {
     state: {
-      shipConfig: useShipStore.getState().currentConfig,
-      spinning:   useHangarView.getState().autoOrbit,
-      wireframe:  useHangarView.getState().wireframe,
-      flightTilt: useHangarView.getState().flightTilt,
-      engines:    useHangarView.getState().engines,
+      shipConfig: shipStore.get().currentConfig,
+      spinning:   hangarViewStore.get().autoOrbit,
+      wireframe:  hangarViewStore.get().wireframe,
+      flightTilt: hangarViewStore.get().flightTilt,
+      engines:    hangarViewStore.get().engines,
     },
     seed:     11,
     camera:   { position: [ 0, 5, 15 ], lookAt: [ 0, 0, 0 ], fov: 45 },
@@ -256,12 +255,12 @@ export function mountHangar (
   })
 
   // Livery edits and ship picks arrive from the DOM panel through zustand.
-  const unsubscribeShip = useShipStore.subscribe(
+  const unsubscribeShip = shipStore.select(
     s => s.currentConfig,
     shipConfig => app.setState({ shipConfig })
   )
 
-  const unsubscribeView = useHangarView.subscribe(view =>
+  const unsubscribeView = hangarViewStore.subscribe(view =>
     app.setState({
       spinning:   view.autoOrbit,
       wireframe:  view.wireframe,

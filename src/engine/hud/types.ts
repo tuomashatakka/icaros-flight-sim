@@ -1,7 +1,5 @@
 import type * as THREE from 'three'
-import type { BattleSessionState } from '@/hooks/use-battle-store'
-import type { RaceHudState as RaceSessionState } from '@/hooks/use-race-store'
-import type { ShipTuning } from '../state'
+import type { BattleSessionState, RaceHudState as RaceSessionState, ShipTuning } from 'Δstate'
 import type { Telemetry } from '../telemetry'
 
 

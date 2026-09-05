@@ -3,7 +3,7 @@ import { createApp, createSeededRng, defineModule } from 'threejs-scene'
 import type { App, AppModule, FrameContext } from 'threejs-scene'
 import { postProcessing } from 'threejs-scene/modules/post'
 import type { PostProcessingOptions } from 'threejs-scene/modules/post'
-import { useCameraView } from '@/hooks/use-camera-view'
+import { setCameraView } from 'Δstate'
 import { initRapier } from '@crash-velocity/physics/rapier'
 import { createSimClock } from '@crash-velocity/physics/clock'
 import { createPhysics } from '@crash-velocity/physics/world'
@@ -216,7 +216,7 @@ export async function mountBaseScene<TState extends object> (
   let lastViewBlendSeq                                                    = controls.viewBlendSeq
   let lastView                                                            = rig.view()
 
-  useCameraView.getState().setView(lastView)
+  setCameraView(lastView)
 
   const shipRoot = new THREE.Group()
 
@@ -331,13 +331,13 @@ export async function mountBaseScene<TState extends object> (
       rig.setBlend(controls.viewBlend, true)
     }
 
-    // `useCameraView` is a mirror for DOM chrome, not the source of truth, and a
+    // `cameraViewStore` is a mirror for DOM chrome, not the source of truth, and a
     // pinch moves the blend every frame. Write it only when the discrete view
     // actually flips or React commits at thumb rate.
     const view = rig.view()
     if (view !== lastView) {
       lastView = view
-      useCameraView.getState().setView(view)
+      setCameraView(view)
     }
 
     const interpolator = vehicle.current?.interpolator
