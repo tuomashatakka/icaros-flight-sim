@@ -18,7 +18,6 @@ Cold start (spawning a server) is ~30 s; against a warm server each command is
 
 ```bash
 bun run dev:probe [--level flats]
-bun run dev:scenario <name|path.json> [--json] [--out FILE] [--level L]
 bun run dev:shot <out.png> [--step N] [--overlay a,b] [--size 1280x720] [--nohud]
 bun run dev:shot <out.png> --level crash-lab [--query lane=N]   # the crash lab
 bun run lab [case] [--dump] [--twice]                           # headless dummies
@@ -26,11 +25,23 @@ bun run dev:console [--seconds 5]
 bun run dev:eval -e '<javascript>'
 ```
 
-Common flags: `--level` (flats | neon-canyon | orbital-ring | procedural),
-`--seed`, `--overlay`, `--nohud`, `--size`, `--headed`.
+Determinism checks are **headless** — no browser, no page, tens of milliseconds:
+
+```bash
+bun run dev:scenario <name|path.json> [--json] [--runs N]   # race
+bun run dev:replay   <name|path.json> [--json] [--runs N]   # battle
+```
+
+Common flags for the browser commands: `--level` (flats | neon-canyon |
+orbital-ring | procedural | battle | crash-lab), `--seed`, `--overlay`,
+`--nohud`, `--size`, `--headed`.
 
 Handling baselines: `bun run dev:scenario turn-response` isolates full steering;
 `bun run dev:scenario strafe-response` isolates full lateral input.
+
+**Every mode is network-only**, race included, so the CLI starts a game server
+if one is not already listening (with `DB_DRIVER=pglite`, so a probe never
+touches a real database).
 
 ## Pick the right tool
 
@@ -49,15 +60,21 @@ Handling baselines: `bun run dev:scenario turn-response` isolates full steering;
 
 ## Scenarios
 
-A scenario is an input timeline in `public/scenarios/`. It runs with rendering
-disabled — ~12 sim seconds in ~40 ms — and the sim is deterministic, so **two
-runs produce byte-identical traces**. That is the whole point: a handling change
-is a diff, not an opinion.
+A scenario is an input timeline, replayed against a fresh sim with no browser
+and no wall clock — ~12 sim seconds in tens of milliseconds. The sim is
+deterministic, so **two runs produce byte-identical traces**, and the CLI runs
+it twice by default and compares hashes. That is the whole point: a handling
+change is a diff, not an opinion.
+
+```
+packages/race/scenarios/     straight-line, hard-corner, turn-response, …
+packages/battle/scenarios/   point-blank, straight-fight
+```
 
 ```jsonc
 {
   "name": "hard-corner",
-  "level": "neon-canyon",
+  "track": "neon-canyon",
   "duration": 16,          // sim seconds
   "sampleEvery": 0.5,      // sim seconds per trace row
   "start": { "position": [0, 2, 0], "yaw": 0, "linvel": [0, 0, -20] },  // optional
@@ -128,8 +145,7 @@ teleport({ position, yaw|quaternion, linvel, angvel })
 setInput({ steer, throttle, brake, boost })
 respawn() / toggleView()
 setTuning(partial) / resetTuning()
-setStatus('idle'|'countdown'|'racing'|'finished')
-scenario(script)            → Promise<trace>
+setStatus('lobby'|'countdown'|'racing'|'finished')
 overlay({ colliders, contacts, path, frustum,
           rays, forces, netForce, thrusters, com, velocity, inertia })
 
@@ -142,7 +158,6 @@ raw                         live handles: app, physics, clock, controls, vehicle
 ## URL overrides (dev only)
 
 `?seed=` `?paused=1` `?overlay=colliders,forces` `?nohud=1` `?tuning=<base64>`
-`?scenario=<name>`
 
 Any reproduction can be handed over as a URL rather than a procedure.
 
@@ -158,6 +173,14 @@ Any reproduction can be handed over as a URL rather than a procedure.
 - **`raw` is not JSON-serializable.** Do not return it from `page.evaluate`.
 - **Nothing here exists in production** — it is all behind `NODE_ENV !==
   'production'` and loaded via dynamic import.
+- **Screenshots are slow and that is the environment, not a bug.** Capturing a
+  post-processed WebGL canvas through software GL costs ~7 s per frame with no
+  GPU, against ~0.6 s for a page with no canvas. `dev-cli` allows 120 s for it.
+- **Set `CHROMIUM_PATH`** when the sandbox's chromium build does not match the
+  one playwright pinned, rather than re-downloading half a gigabyte.
+- **`place()` and `face()` are gone** with the hand-rolled battle protocol.
+  `@colyseus/playground`, mounted at `/playground` on the game server in dev,
+  joins a real room and does the same job.
 
 ## Worked example
 
@@ -167,9 +190,9 @@ Any reproduction can be handed over as a URL rather than a procedure.
 bun run dev:scenario hard-corner
 ```
 
-Read `summary`: `minUp` near 1 and `flipped: false` means the upright control
-held. `fellThrough: true` with a high `minUp` means it drove off an edge — a
-track/line problem, not a handling one. Then, to see it:
+Read the summary: `deterministic: true` first — if it is false, nothing else in
+the output means anything and that is the bug to chase. Then where each racer
+ended up and how many gates they cleared. Then, to see it:
 
 ```bash
 bun run dev:shot /tmp/corner.png --level neon-canyon --step 420 --overlay colliders,path

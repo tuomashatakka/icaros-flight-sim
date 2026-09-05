@@ -1,7 +1,7 @@
 /**
  * The ship's physics, as a package.
  *
- * Everything in here depends on `three` and `@dimforge/rapier3d-compat` and
+ * Everything in here depends on `three` and `@dimforge/rapier3d-deterministic-compat` and
  * nothing else — no React, no zustand, no DOM, no three.js scene graph. That is
  * the point of it being a package rather than a directory: the boundary is now
  * enforced by resolution rather than by remembering. It used to import a
@@ -57,3 +57,18 @@ export type {
 
 export { runAllCrashCases, runCrashCase } from './lab/run'
 export type { LabRunOptions } from './lab/run'
+
+// The headless engine core. These moved out of `src/engine/` when race and
+// battle both became server-side: a rapier world, a fixed clock and a collider
+// helper are the simulation's, not the browser's.
+export { initRapier } from './rapier'
+export type { Rapier } from './rapier'
+export { MAX_SUB_STEPS, STEP, createSimClock } from './clock'
+export type { Clock, SimClock } from './clock'
+export { BodyInterpolator } from './interpolation'
+export { createPhysics } from './world'
+export type { Physics } from './world'
+export { attachBox, attachBoxColliders } from './colliders'
+export { DEFAULT_SHIP_ID, SHIP_IDS, isShipId } from './ships'
+export type { ShipId } from './ships'
+export type { BoxCollider } from './colliders'

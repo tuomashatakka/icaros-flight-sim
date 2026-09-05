@@ -1,41 +1,28 @@
-import type * as THREE from 'three'
-import type { SceneContext } from 'threejs-scene'
-import type { BoxCollider } from '@/lib/track/build-track'
-import type { Physics } from '../physics/world'
-
 /**
- * A level, as data.
+ * How a track is drawn.
  *
- * Every track is the same five things — waypoints, static colliders, visuals,
- * lights and fog — so they are descriptors rather than four bespoke modules.
- * Geometry is built once, outside `createApp`, and handed to both the visual
- * module and the physics module so neither owns it.
+ * `LevelSpec` is gone. It carried waypoints, laps, colliders AND a three.js
+ * `build()` closure in one object, which was fine while race ran only in a
+ * browser and impossible once the server needed the first half without the
+ * second. The data lives in `@crash-velocity/race` now; this is the other half.
  */
-export type LevelSpec = {
-  id:         string;
-  background: string;
 
-  /** `[color, near, far]`. Set explicitly per level rather than inherited. */
-  fog: [string, number, number];
+import { buildFlats } from './flats'
+import { buildNeonCanyon } from './neon-canyon'
+import { buildOrbitalRing } from './orbital-ring'
+import { buildProcedural } from './procedural'
 
-  /** Ordered centreline; checkpoint 0 is the start/finish line. */
-  waypoints: THREE.Vector3[];
+import type { SceneContext } from 'threejs-scene'
+import type { TrackBundle, TrackId } from '@crash-velocity/race'
 
-  /** Full road width, so gates span the track. */
-  width: number;
-  laps:  number;
-  loop:  boolean;
 
-  /** Drivable surface + walls, as oriented cuboids (never a trimesh). */
-  colliders: BoxCollider[];
+export type TrackVisual = (ctx: SceneContext, bundle: TrackBundle) => void
 
-  /** World offset applied to the whole collider set. */
-  colliderOffset: [number, number, number];
-
-  /** Scene content. Physics is passed for levels that need extra bodies. */
-  build(ctx: SceneContext, physics: Physics): void;
-
-  bloom: { strength: number; threshold: number; radius: number };
+export const TRACK_VISUALS: Record<TrackId, TrackVisual> = {
+  'flats':        buildFlats,
+  'neon-canyon':  buildNeonCanyon,
+  'orbital-ring': buildOrbitalRing,
+  'procedural':   buildProcedural,
 }
 
-export type LevelId = 'flats' | 'procedural' | 'neon-canyon' | 'orbital-ring'
+export type { TrackId }

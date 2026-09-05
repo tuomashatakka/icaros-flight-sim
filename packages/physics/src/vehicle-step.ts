@@ -1,5 +1,5 @@
 import { MathUtils, Quaternion, Vector3 } from 'three'
-import RAPIER from '@dimforge/rapier3d-compat'
+import RAPIER from '@dimforge/rapier3d-deterministic-compat'
 import { vehicleConfig } from './config'
 import type { ShipTuning, Transform } from './types'
 import {

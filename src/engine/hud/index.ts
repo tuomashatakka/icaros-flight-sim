@@ -9,7 +9,7 @@ import { useStore } from '@/hooks/use-store'
 import { asSource } from '@/lib/tuning'
 import { vehicleConfig } from '@/lib/utils'
 import type { Controls } from '../input'
-import type { LevelSpec } from '../levels/types'
+import type { TrackSpec } from '@crash-velocity/race'
 import type { Telemetry } from '../telemetry'
 import { createSpatialHud } from './spatial-hud'
 import type { HudData, HudFrame, HudSource } from './types'
@@ -135,9 +135,11 @@ function sharedHudModule<TState extends object> ({
   })
 }
 
+const _target = new THREE.Vector3()
+
 export function raceHudModule<TState extends object> (
   canvas: HTMLCanvasElement,
-  level: LevelSpec,
+  track: TrackSpec,
   telemetry: Telemetry,
   controls: Controls,
   handle: HandleType
@@ -165,7 +167,9 @@ export function raceHudModule<TState extends object> (
     },
     actions: {
       menu,
-      raceAgain:    () => useRaceStore.getState().resetRace(),
+      // A client cannot restart a race any more — the server owns it. Rejoining
+      // is the honest equivalent, and it is what the room does on a finish.
+      raceAgain:    () => globalThis.location?.reload(),
       toggleTuning: () => {
         const store = useTuningStore.getState()
         store.setOpen(!store.open)
@@ -184,11 +188,16 @@ export function raceHudModule<TState extends object> (
     handle,
     source,
     target (frame) {
-      const race             = useRaceStore.getState()
-      const waypoints        = level.waypoints
-      const index            = waypoints.length > 0 ? race.nextCheckpoint % waypoints.length : 0
-      frame.target           = waypoints[index] ?? null
-      frame.targetLabel      = level.id.toUpperCase()
+      const race      = useRaceStore.getState()
+      const waypoints = track.waypoints
+      const index     = waypoints.length > 0 ? race.nextCheckpoint % waypoints.length : 0
+      const point     = waypoints[index]
+
+      // Waypoints are plain tuples now — a track is serialisable, because it
+      // goes over the wire on join — so the marker is built here rather than
+      // held as a `Vector3` the sim would have had to carry.
+      frame.target           = point ? _target.set(point[0], point[1], point[2]) : null
+      frame.targetLabel      = track.id.toUpperCase()
       frame.checkpointNumber = waypoints.length > 0 ? index + 1 : 0
       frame.checkpointCount  = waypoints.length
     },

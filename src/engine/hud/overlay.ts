@@ -1,4 +1,4 @@
-import { TEAM_COLORS } from '../battle/arena'
+import { TEAM_COLORS } from '@crash-velocity/battle/arena'
 import type { Controls } from '../input'
 import { HudPanel } from './panel'
 import { formatHudRaceTime } from './interaction'

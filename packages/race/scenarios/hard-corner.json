@@ -1,0 +1,50 @@
+{
+  "name": "hard-corner",
+  "track": "neon-canyon",
+  "ticks": 960,
+  "countdown": 0,
+  "note": "Throttle into a sustained steer, both ways \u2014 the case that used to flip the hull.",
+  "racers": [
+    {
+      "name": "Probe",
+      "shipId": "icaras"
+    }
+  ],
+  "timeline": [
+    {
+      "tick": 0,
+      "racer": 0,
+      "input": {
+        "throttle": true
+      }
+    },
+    {
+      "tick": 300,
+      "racer": 0,
+      "input": {
+        "steer": -1
+      }
+    },
+    {
+      "tick": 420,
+      "racer": 0,
+      "input": {
+        "steer": 0
+      }
+    },
+    {
+      "tick": 600,
+      "racer": 0,
+      "input": {
+        "steer": 1
+      }
+    },
+    {
+      "tick": 720,
+      "racer": 0,
+      "input": {
+        "steer": 0
+      }
+    }
+  ]
+}

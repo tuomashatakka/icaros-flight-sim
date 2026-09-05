@@ -1,233 +1,123 @@
 'use client'
 
+/**
+ * The race HUD's slice of the server's state.
+ *
+ * This used to BE the race: the lap rules, the finish line, the clocks and the
+ * respawn target all lived in here, driven by rapier sensor collisions from a
+ * browser module. That meant race could only ever run in one tab, for one ship,
+ * and none of it could be tested without driving the game.
+ *
+ * The rules are `@crash-velocity/race`'s now, and this is what is left — a
+ * mirror, written by the scene at the publish throttle and read by React. It
+ * has no actions that change the race, because a client cannot change a race.
+ */
+
 import { create } from 'zustand'
 import { subscribeWithSelector } from 'zustand/middleware'
 
+import type { RaceStatus } from '@crash-velocity/race'
 
-export type RaceStatus = 'idle' | 'countdown' | 'racing' | 'finished'
 
-// Defined in the sim layer — the physics owns the pose type, and it must not
-// import a zustand store to get at it. Re-exported for the existing call sites.
+export type { RaceStatus }
 export type { Transform } from '@crash-velocity/physics/types'
-import type { Transform } from '@crash-velocity/physics/types'
 
-
-type RaceConfig = {
-  checkpointCount: number;
-  laps:            number;
-
-  /** Closed circuit (lap-based) vs. open sprint (single run to the last checkpoint). */
-  loop: boolean;
-
-  /** Where the vehicle starts — also the first respawn target. */
-  spawn: Transform;
+export type Standing = {
+  id:       string;
+  name:     string;
+  position: number;
+  lap:      number;
+  bestLap:  number | null;
+  finished: boolean;
+  isBot:    boolean;
 }
 
-export type RaceState = {
-  status: RaceStatus;
+export type RaceHudState = {
+  status:    RaceStatus;
+  countdown: number;
+  laps:      number;
+  trackId:   string;
 
-  /** Seconds remaining on the 3-2-1 countdown (drives the big HUD number). */
-  countdown:       number;
-  laps:            number;
-  loop:            boolean;
-  checkpointCount: number;
-  currentLap:      number;
-
-  /** Index of the checkpoint we expect to cross next. */
+  currentLap:     number;
   nextCheckpoint: number;
 
-  /** Total race time + the in-progress lap time, in seconds. */
+  // Track shape, mirrored so the HUD can label "gate 3 of 16" without holding
+  //  the track itself.
+  checkpointCount: number;
+  loop:            boolean;
+  position:        number;
+  gridSize:        number;
+
   elapsed:    number;
   lapElapsed: number;
   lapTimes:   number[];
   bestLap:    number | null;
+  finished:   boolean;
 
-  /** Last passed checkpoint transform — respawn target. */
-  respawn: Transform;
+  standings: Standing[];
 
-  /** Race start transform — respawn target on restart. */
-  spawn: Transform;
+  /**
+   * Why the game server could not be reached, or `null`.
+   *
+   * Race is network-only now, so a failed join is not a degraded race — it is
+   * no race. Without this the HUD would sit on the initial `lobby` status with
+   * a motionless ship and say nothing, because the sync below the fold never
+   * runs when there is no server state to sync.
+   */
+  linkError: string | null;
 
-  configureRace: (config: RaceConfig) => void;
-  tick:          (dt: number) => void;
-
-  /** Called by a checkpoint sensor when the vehicle crosses it. Returns true if it counted. */
-  passCheckpoint: (index: number, transform: Transform) => boolean;
-  resetRace:      () => void;
+  /** Written by the scene once per publish period. */
+  sync:  (next: Partial<RaceHudState>) => void;
+  reset: () => void;
 }
 
-const DEFAULT_SPAWN: Transform = { position: [ 1, 2, 4 ], quaternion: [ 0, 1, 0, 0 ]}
+const initial = {
+  status:          'lobby' as RaceStatus,
+  countdown:       0,
+  laps:            3,
+  trackId:         'flats',
+  currentLap:      1,
+  nextCheckpoint:  1,
+  checkpointCount: 0,
+  loop:            true,
+  position:        1,
+  gridSize:        1,
+  elapsed:         0,
+  lapElapsed:      0,
+  lapTimes:        [] as number[],
+  bestLap:         null,
+  finished:        false,
+  standings:       [] as Standing[],
+  linkError:       null as string | null,
+}
 
 /**
- * The live race clocks, as a plain mutable object.
+ * The live clocks, as a plain mutable object.
  *
- * Same reasoning as `src/engine/telemetry.ts`: these advance every 60 Hz sim
- * step, and writing them into zustand at that rate forces 60 React commits a
- * second — which quietly defeated the 15 Hz throttling in the publish module,
- * since the race bar was re-rendering on every step anyway.
- *
- * The holographic HUD reads these directly at its texture cadence, so it stays
- * exact to the millisecond; the store mirrors them on a throttle for other
- * consumers.
+ * Same reasoning as `src/engine/telemetry.ts`: these advance every sim step,
+ * and writing them into zustand at that rate forces 60 React commits a second.
+ * The holographic HUD reads these directly at its texture cadence so it stays
+ * exact to the millisecond; the store mirrors them on a throttle for React.
  */
 export const raceTimers = { elapsed: 0, lapElapsed: 0, countdown: 3 }
 
-/** Store mirror period, matching `PUBLISH_PERIOD` in the publish module. */
-const COMMIT_PERIOD = 1 / 15
-
-let sinceCommit = 0
-
-function resetTimers (countdown = 3) {
+export function resetRaceTimers (countdown = 3): void {
   raceTimers.elapsed    = 0
   raceTimers.lapElapsed = 0
   raceTimers.countdown  = countdown
-  sinceCommit = 0
 }
 
-export const useRaceStore = create<RaceState>()(
-  subscribeWithSelector((set, get) => ({
-    status:          'idle',
-    countdown:       3,
-    laps:            3,
-    loop:            true,
-    checkpointCount: 0,
-    currentLap:      1,
-    nextCheckpoint:  1,
-    elapsed:         0,
-    lapElapsed:      0,
-    lapTimes:        [],
-    bestLap:         null,
-    respawn:         DEFAULT_SPAWN,
-    spawn:           DEFAULT_SPAWN,
-
-    configureRace: ({ checkpointCount, laps, loop, spawn }) => {
-      resetTimers()
-      set({
-        status:         'countdown',
-        countdown:      3,
-        checkpointCount,
-        laps,
-        loop,
-        currentLap:     1,
-        // On a loop the ship spawns just past checkpoint 0, so it's chasing #1 first.
-        nextCheckpoint: 1 % Math.max(checkpointCount, 1),
-        elapsed:        0,
-        lapElapsed:     0,
-        lapTimes:       [],
-        bestLap:        null,
-        respawn:        spawn,
-        spawn,
-      })
-    },
-
-    tick: dt => {
-      const s = get()
-      if (s.status === 'countdown') {
-        const previous       = raceTimers.countdown
-        const next           = previous - dt
-        raceTimers.countdown = next
-
-        if (next <= 0) {
-          set({ status: 'racing', countdown: 0 })
-          return
-        }
-
-        // The overlay renders `Math.ceil(countdown)`, so committing the raw
-        // value every step would fire ~180 commits to change the digit twice.
-        if (Math.ceil(next) !== Math.ceil(previous))
-          set({ countdown: next })
-        return
-      }
-
-      if (s.status !== 'racing')
-        return
-
-      raceTimers.elapsed += dt
-      raceTimers.lapElapsed += dt
-      sinceCommit += dt
-
-      if (sinceCommit >= COMMIT_PERIOD) {
-        sinceCommit = 0
-        set({ elapsed: raceTimers.elapsed, lapElapsed: raceTimers.lapElapsed })
-      }
-    },
-
-    passCheckpoint: (index, transform) => {
-      const s = get()
-      if (s.status !== 'racing')
-        return false
-      if (index !== s.nextCheckpoint)
-        return false // enforce in-order crossing
-
-      const count        = s.checkpointCount
-      const isFinishLine = s.loop ? index === 0 : index === count - 1
-
-      // Always update the respawn target to the checkpoint just cleared.
-      const patch: Partial<RaceState> = { respawn: transform }
-
-      if (isFinishLine) {
-        // Taken from the live clock, not the store — the store's copy is up to
-        // a commit period stale, and a lap time is the one number that has to be
-        // exact at the instant of the crossing.
-        const lapTime     = raceTimers.lapElapsed
-        const lapTimes    = [ ...s.lapTimes, lapTime ]
-        const bestLap     = s.bestLap === null ? lapTime : Math.min(s.bestLap, lapTime)
-        const finishedLap = s.currentLap
-
-        raceTimers.lapElapsed = 0
-        sinceCommit = 0
-
-        if (finishedLap >= s.laps) {
-          set({
-            ...patch,
-            lapTimes,
-            bestLap,
-            status:     'finished',
-            elapsed:    raceTimers.elapsed,
-            lapElapsed: 0,
-          })
-          return true
-        }
-        set({
-          ...patch,
-          lapTimes,
-          bestLap,
-          currentLap:     finishedLap + 1,
-          elapsed:        raceTimers.elapsed,
-          lapElapsed:     0,
-          nextCheckpoint: count > 1 ? 1 : 0,
-        })
-        return true
-      }
-
-      set({ ...patch, nextCheckpoint: (index + 1) % count })
-      return true
-    },
-
-    resetRace: () => {
-      resetTimers()
-      set({
-        status:         'countdown',
-        countdown:      3,
-        currentLap:     1,
-        nextCheckpoint: get().checkpointCount > 1 ? 1 : 0,
-        elapsed:        0,
-        lapElapsed:     0,
-        lapTimes:       [],
-        bestLap:        null,
-        respawn:        get().spawn,
-      })
+export const useRaceStore = create<RaceHudState>()(
+  subscribeWithSelector(set => ({
+    ...initial,
+    sync:  next => set(next),
+    reset: () => {
+      resetRaceTimers()
+      set(initial)
     },
   }))
 )
 
-/** mm:ss.mmm formatter for lap/total times. */
-export function formatTime (seconds: number): string {
-  if (!Number.isFinite(seconds))
-    return '--:--'
-
-  const m  = Math.floor(seconds / 60)
-  const s  = Math.floor(seconds % 60)
-  const ms = Math.floor(seconds % 1 * 1000)
-  return `${m}:${s.toString().padStart(2, '0')}.${ms.toString().padStart(3, '0')}`
-}
+// mm:ss.mmm formatter for lap and total times. Re-exported from the rules so
+//  the HUD and a match record format a time identically.
+export { formatTime } from '@crash-velocity/race'

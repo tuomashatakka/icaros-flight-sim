@@ -20,7 +20,9 @@ import type { RaceState } from './state'
 export function attachBridge (app: App<RaceState>): () => void {
   const unsubscribers: Array<() => void> = []
 
-  // Race status: the store owns the machine, the engine reads the result.
+  // Race status. The store no longer owns the machine — the server does, and
+  // the scene mirrors it in — but the direction of flow here is unchanged:
+  // zustand out to app state, never the reverse.
   unsubscribers.push(
     useRaceStore.subscribe(
       s => s.status,
