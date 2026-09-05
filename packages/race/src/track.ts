@@ -13,8 +13,8 @@
 
 import { Vector3 } from 'three'
 
-import type { BoxCollider } from '@crash-velocity/physics/colliders'
-import type { Transform } from '@crash-velocity/physics/types'
+import type { BoxCollider } from 'Φcolliders'
+import type { Transform } from 'Φtypes'
 
 
 export type Vec3Tuple = [number, number, number]

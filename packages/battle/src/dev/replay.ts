@@ -20,11 +20,11 @@
 
 import { BattleSim } from '../sim'
 import { apexArena } from '../arena'
-import { STEP } from '@crash-velocity/physics/clock'
+import { STEP } from 'Φclock'
 import type { BattleTeam } from '../arena'
 import type { BattleEvent, BattleInput } from '../types'
 import type { Loadout } from '../weapons'
-import type { ShipId } from '@crash-velocity/physics/ships'
+import type { ShipId } from 'Φships'
 
 
 export type ScriptedPlayer = {

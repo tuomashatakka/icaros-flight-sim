@@ -7,7 +7,7 @@
  * staying calm: under jitter, under a queued outlier, and while correcting.
  */
 import { describe, expect, it } from 'vitest'
-import { NetClock } from '../src/clock'
+import { NetClock } from 'Ξclock'
 
 
 /**

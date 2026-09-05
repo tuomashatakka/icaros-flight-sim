@@ -16,7 +16,7 @@
  *   · the respawn target follows the last gate cleared
  */
 
-import type { Transform } from '@crash-velocity/physics/types'
+import type { Transform } from 'Φtypes'
 
 
 export type RaceStatus = 'lobby' | 'countdown' | 'racing' | 'finished'

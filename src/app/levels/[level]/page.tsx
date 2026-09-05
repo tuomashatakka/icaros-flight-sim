@@ -2,9 +2,9 @@
 
 import { Suspense, use, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { SceneCanvas } from '@/components/scene-canvas'
-import { mountRace } from '@/engine/scenes/race'
-import type { TrackId } from '@crash-velocity/race'
+import { SceneCanvas } from 'Ʊscene-canvas'
+import { mountRace } from 'Ɠrace'
+import type { TrackId } from 'Λ'
 import styles from './race.module.css'
 
 /** The race. One canvas driven by the vanilla engine, with the HUD over it. */

@@ -255,10 +255,20 @@ this the same way.
 
 These are the constraints that are expensive to rediscover.
 
-**Data flows one way.** zustand → `app.setState` (via `src/engine/bridge.ts`) →
+**Data flows one way.** `Δstate` stores → `app.setState` (via `src/engine/bridge.ts`) →
 modules read state. Modules never write state. Sim *outputs* go the other way
 through `src/engine/modules/publish.ts`, throttled to 15 Hz — writing telemetry
-into zustand at 60 Hz costs 60 React commits a second.
+into a store at 60 Hz costs 60 React commits a second.
+
+**Client state is `threejs-scene` state.** Every store in `src/state/` is the
+library's `createStore`, the same primitive each `App` keeps its own state in,
+wrapped once by `defineStore` for slice subscriptions and localStorage. There is
+no zustand. The layout is fixed: every state *type* is in `src/state/types.ts`,
+every initial value and constant in `src/state/defaults.ts`, and each domain
+file holds its store plus the actions that write it (`raceStore` +
+`raceActions`). React reads a store with `useStoreState` from `Δstate/react`;
+the engine reads it with `store.get()` and subscribes with `store.select`.
+A type or constant declared anywhere else is a duplicate waiting to drift.
 
 **Controls.** `Q/E` and the arrows turn, `A/D` strafe, `R/F` walk the vertical
 aim, `Backspace` respawns. `R` used to be respawn and `F` used to be battle's
@@ -519,7 +529,9 @@ src/engine/       The game's CLIENT half. Vanilla three + threejs-scene, no Reac
                   the local ship through.
 src/app/api/      Route handlers, and the only server-side code in the Next app:
                   auth/[...nextauth] (Auth.js), register, game/ticket.
-src/hooks/        zustand stores. HUD slices only — remote positions never
+src/state/        Client state on threejs-scene stores: types.ts, defaults.ts,
+                  one file per domain, react.ts for the hook.
+src/hooks/        React-only hooks. HUD slices only — remote positions never
                   reach React.
 src/lib/auth.ts   Auth.js configuration.
 src/lib/net/      Browser-side account helpers.

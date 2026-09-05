@@ -9,13 +9,13 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { replayRace } from '../src/dev/replay'
+import { replayRace } from 'Λdev/replay'
 
 import straightLine from '../scenarios/straight-line.json'
 import hardCorner from '../scenarios/hard-corner.json'
 import respawn from '../scenarios/respawn.json'
 
-import type { RaceReplayScript } from '../src/dev/replay'
+import type { RaceReplayScript } from 'Λdev/replay'
 
 
 const scripts: Array<[string, RaceReplayScript]> = [

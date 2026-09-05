@@ -20,9 +20,9 @@
 import NextAuth from 'next-auth'
 import Credentials from 'next-auth/providers/credentials'
 import { DrizzleAdapter } from '@auth/drizzle-adapter'
-import { authenticatePilot, oauthAccounts, sessions, users, verificationTokens } from '@crash-velocity/data'
+import { authenticatePilot, oauthAccounts, sessions, users, verificationTokens } from 'Ð'
 
-import { serverDb } from 'Δlib/server/db'
+import { serverDb } from './server/db'
 
 
 export const { handlers, signIn, signOut, auth } = NextAuth(async () => {

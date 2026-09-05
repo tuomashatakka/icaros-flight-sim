@@ -1,0 +1,26 @@
+{
+  "name": "@crash-velocity/engine",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "The game's client runtime: modules, HUD, netcode client, camera, FX, level meshes, ship assets, dev harness. No React.",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@colyseus/schema": "^5.0.8",
+    "@colyseus/sdk": "^0.18.2",
+    "@crash-velocity/battle": "workspace:*",
+    "@crash-velocity/core": "workspace:*",
+    "@crash-velocity/net": "workspace:*",
+    "@crash-velocity/physics": "workspace:*",
+    "@crash-velocity/race": "workspace:*",
+    "@crash-velocity/state": "workspace:*",
+    "@dimforge/rapier3d-deterministic-compat": "0.19.2",
+    "three": "^0.185.1",
+    "threejs-scene": "^0.6.2"
+  }
+}

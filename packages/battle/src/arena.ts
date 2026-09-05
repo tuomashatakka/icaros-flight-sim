@@ -1,4 +1,4 @@
-import type { BoxCollider } from '@crash-velocity/physics/colliders'
+import type { BoxCollider } from 'Φcolliders'
 
 
 export type BattleTeam = 'red' | 'blue'

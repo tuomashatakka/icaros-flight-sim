@@ -9,12 +9,12 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { createProgress, passCheckpoint, standings, tickProgress } from '../src/rules'
-import { buildCheckpoints, crossedGate } from '../src/track'
-import { trackBundle } from '../src/levels'
+import { createProgress, passCheckpoint, standings, tickProgress } from 'Λrules'
+import { buildCheckpoints, crossedGate } from 'Λtrack'
+import { trackBundle } from 'Λlevels/index'
 
-import type { RaceRules } from '../src/rules'
-import type { Transform } from '@crash-velocity/physics/types'
+import type { RaceRules } from 'Λrules'
+import type { Transform } from 'Φtypes'
 
 
 const SPAWN: Transform = { position: [ 0, 1, 0 ], quaternion: [ 0, 0, 0, 1 ]}

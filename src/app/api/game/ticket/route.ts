@@ -23,9 +23,9 @@
  *   answers 503 and names the variable rather than 500-ing anonymously.
  */
 
-import { mintTicket } from '@crash-velocity/data'
+import { mintTicket } from 'Ð'
 
-import { auth } from 'Δlib/auth'
+import { auth } from '../../../../lib/auth'
 
 import type { Session } from 'next-auth'
 

@@ -1,0 +1,27 @@
+{
+  "name": "@crash-velocity/ui",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "React: the components and hooks the Next.js routes render. scene-canvas.tsx is the only React↔three boundary.",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@crash-velocity/battle": "workspace:*",
+    "@crash-velocity/core": "workspace:*",
+    "@crash-velocity/engine": "workspace:*",
+    "@crash-velocity/game": "workspace:*",
+    "@crash-velocity/physics": "workspace:*",
+    "@crash-velocity/race": "workspace:*",
+    "@crash-velocity/state": "workspace:*",
+    "next": "16.2.9",
+    "react": "^19.2.7",
+    "react-dom": "^19.2.7",
+    "three": "^0.185.1",
+    "threejs-scene": "^0.6.2"
+  }
+}

@@ -1,23 +1,27 @@
 import { Quaternion, Vector3 } from 'three'
-import { initRapier } from '@crash-velocity/physics/rapier'
-import { createPhysics } from '@crash-velocity/physics/world'
-import { attachBoxColliders } from '@crash-velocity/physics/colliders'
-import { stepHovercraft, createHovercraft, createHovercraftState } from '@crash-velocity/physics/vehicle-step'
-import type { Physics } from '@crash-velocity/physics/world'
-import type { ShipId } from '@crash-velocity/physics/ships'
-import { vehicleConfig } from '@crash-velocity/physics/config'
-import { DEFAULT_TUNING } from '@crash-velocity/physics/types'
+import { initRapier } from 'Φrapier'
+import { createPhysics } from 'Φworld'
+import { attachBoxColliders } from 'Φcolliders'
+import { stepHovercraft, createHovercraft, createHovercraftState } from 'Φvehicle-step'
+import type { Physics } from 'Φworld'
+import type { ShipId } from 'Φships'
+import { vehicleConfig } from 'Φconfig'
+import { DEFAULT_TUNING } from 'Φtypes'
 import { aimFrom, castArenaRay, forwardFrom, muzzleFrom } from './aim'
 import { apexArena } from './arena'
 import type { ArenaTransform, BattleArena, BattleTeam, ControlPointDef } from './arena'
 import { botInput } from './bot'
+import { advanceLock, isVisible, scanForLock } from './lock-on'
+import type { LockScan } from './lock-on'
 import { resolveBeamHits, resolveBlastHits } from './hitscan'
 import { homeToward, spawnProjectiles } from './projectiles'
 import type { HitCandidate, Vec3 } from './hitscan'
 import type { ProjectileSpawn } from './projectiles'
+import { respawnPosition, spawnAt } from './respawn'
+import { registerKill, scoreFlagCapture, scoreTargetReached, tickZoneScore } from './scoring'
+import { countOccupants, stepZone } from './zones'
 import {
   DEFAULT_LOADOUT,
-  LOCK,
   WEAPONS,
   canFire,
   createLockState
@@ -41,6 +45,7 @@ export type {
   WeaponSlot
 } from './types'
 
+import { mulberry32 } from 'Φrng'
 import type {
   Beam,
   BattleConfig,
@@ -101,24 +106,12 @@ export const SPAWN_LIFT = 1
 
 // Hoisted scratch, module scope: one sim runs one world at a time, and these
 // are reused every tick so the hot path allocates nothing.
-const _fwd      = new Vector3()
-const _toTarget = new Vector3()
-const _tmp3     = new Vector3()
-const _dir      = new Vector3()
-const _origin   = new Vector3()
-const _tmpQuat  = new Quaternion()
-const UP        = new Vector3(0, 1, 0)
-
-function mulberry32 (seed: number): () => number {
-  let a = seed >>> 0
-  return () => {
-    a = a + 0x6d2b79f5 | 0
-
-    let t = Math.imul(a ^ a >>> 15, 1 | a)
-    t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t
-    return ((t ^ t >>> 14) >>> 0) / 4294967296
-  }
-}
+const _fwd     = new Vector3()
+const _tmp3    = new Vector3()
+const _dir     = new Vector3()
+const _origin  = new Vector3()
+const _tmpQuat = new Quaternion()
+const UP       = new Vector3(0, 1, 0)
 
 
 function distSq2D (ax: number, az: number, bx: number, bz: number): number {
@@ -135,9 +128,14 @@ function distSq2D (ax: number, az: number, bx: number, bz: number): number {
  * scoring and capture are authoritative by construction. Node-safe: imports
  * only `three` + rapier, never zustand or the browser. Deterministic within the
  * process (seeded rng, no timers), so battle rules are unit-testable.
+ *
+ * The class itself is an orchestrator: zone capture (`zones.ts`), spawn choice
+ * and respawn bookkeeping (`respawn.ts`), lock acquisition and the
+ * cone/visibility test (`lock-on.ts`), and score deltas plus the win check
+ * (`scoring.ts`) are pure functions over this class's records. What is left
+ * here is what genuinely needs the live rapier world and the player roster:
+ * stepping the physics, resolving weapon fire, and the top-level tick order.
  */
-type FunctionReturnType = { player: BattlePlayer | null; cos: number; visible: boolean }
-
 export class BattleSim {
   readonly arena:   BattleArena
   readonly config:  BattleConfig
@@ -268,8 +266,7 @@ export class BattleSim {
   }
 
   private spawnFor (player: BattlePlayer): ArenaTransform {
-    const lane = this.arena.spawns[player.team]
-    return lane[player.respawnIndex % lane.length]
+    return spawnAt(this.arena, player.team, player.respawnIndex)
   }
 
   addPlayer (name: string, team: BattleTeam, shipId: ShipId, loadout: Loadout = DEFAULT_LOADOUT): BattlePlayer {
@@ -309,10 +306,9 @@ export class BattleSim {
     // Start each arrival on the NEXT lane of its team's spawn. Everyone used to
     // take lane 0, so a three-strong team materialised inside one another and
     // spent the first second of the match shoving itself apart.
-    const lanes = this.arena.spawns[team]
-    const seat  = this.players.filter(p => p.team === team).length
-    const at    = lanes[seat % lanes.length]
-    const rig   = createHovercraft(this.physics.world, at)
+    const seat = this.players.filter(p => p.team === team).length
+    const at   = spawnAt(this.arena, team, seat)
+    const rig  = createHovercraft(this.physics.world, at)
     return {
       id,
       name,
@@ -535,116 +531,47 @@ export class BattleSim {
     this.muzzleOf(from, _origin)
 
     const t = to.chassis.translation()
-    _dir.set(t.x - _origin.x, t.y + 0.5 - _origin.y, t.z - _origin.z)
-
-    const dist = _dir.length()
-    if (dist < 1e-3)
-      return true
-    _dir.multiplyScalar(1 / dist)
-    return this.staticBlockerAt(_origin, _dir, dist) >= dist
+    return isVisible(
+      this.physics.world,
+      this.ray,
+      { x: _origin.x, y: _origin.y, z: _origin.z },
+      { x: t.x, y: t.y, z: t.z }
+    )
   }
 
   /**
    * Advance one ship's lock meter.
    *
-   * The meter only fills while the target sits inside the tight `acquireCos`
-   * cone AND is visible; drifting into the wider hold ring stalls it, and
-   * leaving that ring (or breaking line of sight) drains it. A completed lock
-   * gets `keepLocked` seconds of slack so a bank or a passing pylon does not
-   * throw away a lock the player earned.
+   * The acquire/hold/break state machine and the crosshair scan both live in
+   * `lock-on.ts`; this is the wiring — resolve the shooter's aim, skip the scan
+   * entirely while not live (a scan raycasts), and resolve target ids against
+   * the live roster, which only the sim can do.
    */
   private stepLock (player: BattlePlayer, dt: number): void {
-    const lock = player.lock
-    if (this.status !== 'live') {
-      lock.targetId = null
-      lock.progress = 0
-      lock.phase    = 'idle'
-      lock.slip     = 0
-      return
+    const live = this.status === 'live'
+    let scan: LockScan = { targetId: null, cos: -1, visible: false }
+
+    if (live) {
+      this.aimOf(player, _fwd)
+      this.muzzleOf(player, _origin)
+      scan = scanForLock(
+        this.physics.world,
+        this.ray,
+        { x: _origin.x, y: _origin.y, z: _origin.z },
+        { x: _fwd.x, y: _fwd.y, z: _fwd.z },
+        player.id,
+        player.team,
+        this.hitCandidates()
+      )
     }
 
-    const best = this.bestLockCandidate(player)
+    const event = advanceLock(player.lock, dt, live, player.id, player.team, scan, id => {
+      const target = this.getPlayer(id)
+      return target ? { id: target.id, team: target.team } : undefined
+    })
 
-    // Switching targets is a hard reset: a lock is earned per target, and
-    // carrying progress across would let a player sweep the crosshair over a
-    // crowd and snap onto whoever happened to be last.
-    if (best.player && lock.targetId !== best.player.id && lock.phase !== 'locked') {
-      lock.targetId = best.player.id
-      lock.progress = 0
-      lock.slip     = 0
-    }
-
-    const current = lock.targetId ? this.getPlayer(lock.targetId) : undefined
-    if (!current || current.team === player.team) {
-      lock.targetId = best.player?.id ?? null
-      lock.progress = 0
-      lock.phase    = 'idle'
-      lock.slip     = 0
-      return
-    }
-
-    const onTarget  = best.player?.id === current.id
-    const inAcquire = onTarget && best.cos >= LOCK.acquireCos && best.visible
-    const inHold    = onTarget && best.cos >= LOCK.holdCos && best.visible
-
-    if (inAcquire) {
-      lock.slip     = 0
-      lock.progress = Math.min(1, lock.progress + dt / LOCK.time)
-    }
-    else {
-      lock.slip += dt
-      if (lock.slip > LOCK.slipGrace && !inHold)
-        lock.progress = Math.max(0, lock.progress - dt * LOCK.decay)
-    }
-
-    if (lock.progress >= 1) {
-      if (lock.phase !== 'locked') {
-        lock.phase = 'locked'
-        this.events.push({ type: 'lock', id: player.id, target: current.id })
-      }
-      // A finished lock only breaks after the target has been off-cone for
-      // longer than the grace window.
-      if (!inHold && lock.slip > LOCK.keepLocked) {
-        lock.progress = 0
-        lock.phase    = 'tracking'
-      }
-    }
-    else
-      lock.phase = lock.progress > 0 ? 'tracking' : 'idle'
-  }
-
-  /** The enemy nearest the crosshair: smallest angular error, then distance. */
-  private bestLockCandidate (player: BattlePlayer): FunctionReturnType {
-    this.aimOf(player, _fwd)
-    this.muzzleOf(player, _origin)
-
-    let best: BattlePlayer | null = null
-    let bestCos                   = -1
-    let bestVisible               = false
-
-    for (const other of this.players) {
-      if (other.team === player.team || other.id === player.id)
-        continue
-
-      const t = other.chassis.translation()
-      _toTarget.set(t.x - _origin.x, t.y + 0.5 - _origin.y, t.z - _origin.z)
-
-      const dist = _toTarget.length()
-      if (dist > LOCK.range || dist < 1e-3)
-        continue
-
-      _toTarget.multiplyScalar(1 / dist)
-
-      const cos = _fwd.dot(_toTarget)
-      if (cos < LOCK.holdCos || cos <= bestCos)
-        continue
-
-      bestCos = cos
-      best    = other
-      bestVisible = this.staticBlockerAt(_origin, _toTarget, dist) >= dist
-    }
-
-    return { player: best, cos: bestCos, visible: bestVisible }
+    if (event)
+      this.events.push(event)
   }
 
   /** Kept for the bots and the older call sites; ignores facing entirely. */
@@ -890,18 +817,15 @@ export class BattleSim {
   private kill (target: BattlePlayer, hitBy: string, weapon: WeaponId | null): void {
     target.health = target.maxHealth
     target.respawnIndex++
-    target.stun   = 0
-    target.deaths++
-    target.lock   = createLockState()
+    target.stun = 0
+    target.lock = createLockState()
 
-    const killer = this.getPlayer(hitBy)
-    if (killer && killer.id !== target.id)
-      killer.kills++
+    registerKill(target, this.getPlayer(hitBy))
 
     this.events.push({ type: 'kill', target: target.id, hitBy, weapon })
 
-    const spawnAt = this.spawnFor(target)
-    target.chassis.setTranslation({ x: spawnAt.position[0], y: spawnAt.position[1] + 1, z: spawnAt.position[2] }, true)
+    const pose = respawnPosition(this.arena, target.team, target.respawnIndex, SPAWN_LIFT)
+    target.chassis.setTranslation(pose, true)
     target.chassis.setLinvel({ x: 0, y: 0, z: 0 }, true)
     target.chassis.setAngvel({ x: 0, y: 0, z: 0 }, true)
     this.returnCarriedFlag(target)
@@ -953,94 +877,32 @@ export class BattleSim {
   // --- control points -------------------------------------------------------
 
   /**
-   * Domination rules.
+   * Domination rules and scoring, per zone.
    *
-   * A point fills SLOWLY, and only for the team that outnumbers the other
-   * inside the circle — a bigger lead fills it faster. Once full it is sticky:
-   * with no enemy inside the circle nothing decays, so a captured point stays
-   * yours until somebody physically drives into it. An intruder first has to
-   * drain the holder's meter to zero (which neutralises the point) before their
-   * own capture can start.
+   * The capture meter itself is `zones.ts`'s `stepZone`; scoring only ticks for
+   * a zone that STARTED this tick owned, which is why `startedOwned` is read
+   * before `stepZone` runs — a zone that flips to owned mid-tick scores nothing
+   * until the next one.
    */
   private stepZones (dt: number): void {
-    const { captureTime, contestDrain, zonePeriod } = this.arena
+    const poses = this.players.map(p => {
+      const t = p.chassis.translation()
+      return { team: p.team, x: t.x, z: t.z }
+    })
 
     for (const zone of this.zones) {
-      const { position, radius }               = zone.def
-      const counts: Record<BattleTeam, number> = { red: 0, blue: 0 }
+      const counts       = countOccupants(zone.def, poses)
+      const startedOwned = zone.owner !== null
 
-      for (const p of this.players) {
-        const t = p.chassis.translation()
-        if (distSq2D(t.x, t.z, position[0], position[2]) <= radius * radius)
-          counts[p.team]++
-      }
+      const event = stepZone(zone, dt, counts, this.arena)
+      if (event)
+        this.events.push(event)
 
-      const lead                        = counts.red - counts.blue
-      const dominant: BattleTeam | null = lead > 0 ? 'red' : lead < 0 ? 'blue' : null
-      const margin                      = Math.abs(lead)
-
-      // Each extra body past the first is worth another 45%, capped at 2.5×, so
-      // stacking a point helps without making a 4-stack instantaneous.
-      const rate     = dominant ? Math.min(2.5, 1 + (margin - 1) * 0.45) : 0
-      const occupied = counts.red + counts.blue > 0
-
-      zone.contested = counts.red > 0 && counts.blue > 0
-
-      if (zone.owner === null) {
-        if (dominant) {
-          if (zone.capturing !== dominant) {
-            zone.capturing = dominant
-            zone.progress  = 0
-          }
-          zone.progress += dt / captureTime * rate
-          if (zone.progress >= 1) {
-            zone.owner     = dominant
-            zone.progress  = 1
-            zone.capturing = null
-            this.events.push({ type: 'zoneChange', id: zone.def.id, owner: dominant })
-          }
-        }
-        else if (!occupied && zone.progress > 0) {
-          // An abandoned part-capture bleeds back, but far slower than it filled.
-          zone.progress = Math.max(0, zone.progress - dt / (captureTime * 3))
-          if (zone.progress === 0)
-            zone.capturing = null
-        }
+      if (!startedOwned)
         continue
-      }
 
-      const enemy = zone.owner === 'red' ? 'blue' : 'red'
-      if (counts[enemy] === 0) {
-        // Sticky: held, unattended, and going nowhere.
-        zone.progress  = 1
-        zone.capturing = null
-        zone.contested = false
-      }
-      else if (dominant === enemy) {
-        zone.capturing = enemy
-        zone.progress -= dt / contestDrain * rate
-        if (zone.progress <= 0) {
-          zone.owner    = null
-          zone.progress = 0
-          this.events.push({ type: 'zoneChange', id: zone.def.id, owner: null })
-        }
-      }
-      else if (dominant === zone.owner)
-        zone.progress = Math.min(1, zone.progress + dt / contestDrain * rate)
-      // A dead tie freezes the meter: neither side is winning the point.
-
-      // Scoring: a fully-held zone ticks for its owner.
-      if (zone.owner && zone.progress >= 1) {
-        zone.scoreAccum += dt
-        while (zone.scoreAccum >= zonePeriod) {
-          zone.scoreAccum -= zonePeriod
-          this.scores[zone.owner] += this.config.zoneScore
-          if (this.scores[zone.owner] >= this.config.scoreTarget)
-            this.endMatch()
-        }
-      }
-      else
-        zone.scoreAccum = 0
+      if (tickZoneScore(zone, dt, this.arena.zonePeriod, this.config, this.scores))
+        this.endMatch()
     }
   }
 
@@ -1109,12 +971,11 @@ export class BattleSim {
       if (carrier.team !== flag.team) {
         const base = this.arena.bases[carrier.team].position
         if (distSq2D(t.x, t.z, base[0], base[2]) <= this.config.baseRadius * this.config.baseRadius) {
-          const bonus    = this.config.captureBonus
-          this.scores[carrier.team] += bonus
+          const total         = scoreFlagCapture(this.scores, carrier.team, this.config.captureBonus)
           carrier.carriedFlag = null
           this.returnFlagHome(flag)
-          this.events.push({ type: 'flagScored', team: flag.team, by: carrier.id, score: this.scores[carrier.team] })
-          if (this.scores[carrier.team] >= this.config.scoreTarget)
+          this.events.push({ type: 'flagScored', team: flag.team, by: carrier.id, score: total })
+          if (scoreTargetReached(this.scores, this.config))
             this.endMatch()
         }
       }

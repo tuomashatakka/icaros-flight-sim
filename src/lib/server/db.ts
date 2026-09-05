@@ -10,9 +10,9 @@
  * nothing to leak by sharing it — and nothing to close either.
  */
 
-import { openDatabase } from '@crash-velocity/data'
+import { openDatabase } from 'Ð'
 
-import type { Database } from '@crash-velocity/data'
+import type { Database } from 'Ð'
 
 
 let opened: Promise<Database> | null = null

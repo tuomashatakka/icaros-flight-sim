@@ -7,8 +7,8 @@
  * an interpolator, which is the whole reason race stopped being a special case.
  */
 
-import type { Transform } from '@crash-velocity/physics/types'
-import type { ShipId } from '@crash-velocity/physics/ships'
+import type { Transform } from 'Φtypes'
+import type { ShipId } from 'Φships'
 import type { RaceProgress, RaceStatus } from './rules'
 
 

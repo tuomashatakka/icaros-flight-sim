@@ -15,24 +15,24 @@
  */
 
 import { Room } from '@colyseus/core'
-import { STEP, TICK_HZ, acceptPacket, createSeat, decodeInputPacket, drainInput, encodeFor, snapshotHistory, ticksPerSnapshot } from '@crash-velocity/net'
-import { createSimClock } from '@crash-velocity/physics/clock'
-import { verifyTicket } from '@crash-velocity/data/auth/ticket'
-import { recordMatchEnd, recordMatchPlayers, recordMatchStart, withDatabase } from '@crash-velocity/data'
+import { STEP, TICK_HZ, acceptPacket, createSeat, decodeInputPacket, drainInput, encodeFor, pongFor, snapshotHistory, ticksPerSnapshot } from 'Ξ'
+import { createSimClock } from 'Φclock'
+import { verifyTicket } from 'Ðauth/ticket'
+import { recordMatchEnd, recordMatchPlayers, recordMatchStart, withDatabase } from 'Ð'
 
 import { BattleSim } from './sim'
 import { BattleState, syncBattleState } from './state'
-import { DEFAULT_BACKFILL, rebalanceBots, teamForJoin } from './bots'
+import { DEFAULT_BACKFILL, rebalanceBots, teamForJoin } from './backfill'
 import { apexArena } from './arena'
 import { createBattleRewind } from './rewind'
 import { battleSnapshotOf } from './snapshot'
 import { toBattleInput } from './input'
 
 import type { Client } from '@colyseus/core'
-import type { InputFrame, InputPacket, Seat } from '@crash-velocity/net'
+import type { InputFrame, InputPacket, Seat } from 'Ξ'
 import type { BattleStateType } from './state'
 import type { BattlePlayer } from './sim'
-import type { ShipId } from '@crash-velocity/physics/ships'
+import type { ShipId } from 'Φships'
 import type { Loadout } from './weapons'
 
 
@@ -114,7 +114,7 @@ export class BattleRoom extends Room<{ state: BattleStateType }> {
 
     this.onMessage(MessageKind.INPUT, (client, bytes: ArrayBuffer | Uint8Array) => this.acceptInput(client, bytes))
     this.onMessage(MessageKind.PING, (client, t0: number) => {
-      client.send(MessageKind.PONG, { t0, serverTimeMs: Date.now(), serverTick: this.tickNo })
+      client.send(MessageKind.PONG, pongFor(t0, this.tickNo))
     })
 
     this.setSimulationInterval(deltaMs => this.drive(deltaMs), 1000 / TICK_HZ)

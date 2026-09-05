@@ -7,8 +7,8 @@
  * obvious here.
  */
 import { describe, expect, it } from 'vitest'
-import { HULL_CENTRE_Y, resolveBeamHits, resolveBlastHits } from '../src/hitscan'
-import type { HitCandidate } from '../src/hitscan'
+import { HULL_CENTRE_Y, resolveBeamHits, resolveBlastHits } from 'Ψhitscan'
+import type { HitCandidate } from 'Ψhitscan'
 
 
 const ORIGIN  = { x: 0, y: 0, z: 0 }

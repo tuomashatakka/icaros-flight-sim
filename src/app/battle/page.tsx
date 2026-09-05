@@ -2,10 +2,10 @@
 
 import { Suspense, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { SceneCanvas } from '@/components/scene-canvas'
-import { mountBattle } from '@/engine/scenes/battle'
-import { useShipStore } from '@/hooks/use-ship-store'
-import type { ShipId } from '@/lib/ship/registry'
+import { SceneCanvas } from 'Ʊscene-canvas'
+import { mountBattle } from 'Ɠbattle'
+import { shipStore } from 'Ƨ'
+import type { ShipId } from 'Ȼship/registry'
 import styles from './battle.module.css'
 
 
@@ -18,7 +18,7 @@ function BattleContent () {
     // Read the hangar loadout through `getState`, not a hook: `mount` has to
     // stay referentially stable or SceneCanvas tears the WebGL context down and
     // rebuilds the whole match on every livery tweak.
-    const config = useShipStore.getState().currentConfig
+    const config = shipStore.get().currentConfig
     return mountBattle(canvas, {
       name:    name || 'nuller',
       shipId:  (ship as ShipId) || config.shipId,

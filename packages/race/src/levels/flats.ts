@@ -4,7 +4,7 @@
  * steering is pure yaw about Y. Tune handling here before the 3D tracks.
  */
 
-import type { BoxCollider } from '@crash-velocity/physics/colliders'
+import type { BoxCollider } from 'Φcolliders'
 import type { TrackBundle } from './types'
 import type { Vec3Tuple } from '../track'
 
