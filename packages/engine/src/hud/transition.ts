@@ -103,7 +103,7 @@ export function clipReveal (
   context: CanvasRenderingContext2D,
   rect: Rect,
   phase: number,
-  accent: string = THEME.amber
+  accent: string = THEME.primary
 ): void {
   if (phase >= 0.999)
     return

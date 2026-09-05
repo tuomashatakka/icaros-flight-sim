@@ -62,6 +62,17 @@ export type HudViewFrame = {
   hudLead: THREE.Quaternion;
 
   aimPitch: number;
+
+  /**
+   * How often the HUD may REPAINT, Hz — the renderer quality tier's budget.
+   *
+   * A ceiling on texture work, never on the pose: the visor is anchored in
+   * world space to a camera that moves every rendered frame, so skipping a
+   * whole HUD update to save a repaint left the anchor a frame behind and the
+   * panels visibly swam against the camera's hover bob. The shell now drives
+   * the HUD every frame and this is what it throttles instead.
+   */
+  drawHz: number;
 }
 
 /**
@@ -100,6 +111,9 @@ export type HudFrame = {
 
   /** Weapon aim and its predicted impact, when the mode has weapons. */
   sight: HudSight | null;
+
+  /** Repaint budget, Hz. See `HudViewFrame.drawHz`. */
+  drawHz: number;
 }
 
 /**

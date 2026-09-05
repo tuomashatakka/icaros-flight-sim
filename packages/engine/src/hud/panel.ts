@@ -136,7 +136,7 @@ export class HudPanel {
   constructor ({
     name,
     title = '',
-    accent = THEME.amber,
+    accent = THEME.primary,
     width = 640,
     height = 320,
     center = false,
@@ -208,7 +208,7 @@ export class HudPanel {
       // A ring instrument, not a screen: brackets and a faint vignette only —
       // no filled rectangle standing in for a background.
       const glow = context.createRadialGradient(width * 0.5, height * 0.5, width * 0.32, width * 0.5, height * 0.5, width * 0.5)
-      glow.addColorStop(0, 'rgba(18, 9, 3, 0)')
+      glow.addColorStop(0, 'rgba(2, 12, 18, 0)')
       glow.addColorStop(1, THEME.ink)
       context.fillStyle = glow
       context.fillRect(0, 0, width, height)
@@ -220,9 +220,9 @@ export class HudPanel {
     if (this.trace) {
       if (!this.glassFill) {
         const fill = context.createLinearGradient(0, 0, width, height)
-        fill.addColorStop(0, 'rgba(24, 13, 4, .58)')
-        fill.addColorStop(0.56, 'rgba(16, 8, 3, .46)')
-        fill.addColorStop(1, 'rgba(10, 5, 2, .52)')
+        fill.addColorStop(0, 'rgba(2, 14, 20, .58)')
+        fill.addColorStop(0.56, 'rgba(2, 8, 16, .48)')
+        fill.addColorStop(1, 'rgba(8, 3, 18, .52)')
         this.glassFill = fill
       }
 

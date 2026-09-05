@@ -325,8 +325,10 @@ HUD (`src/engine/hud/`) draws twin sticks and action buttons into its screen
 plane, then writes through native pointer listeners — never React state, because
 a `useState` per pointermove re-renders at thumb rate. Weapon triggers live on
 `Controls` (`fire`, `fireSecondary`) rather than in `battle.ts` so keys, mouse,
-and touch agree. `?touch=1` forces the canvas controls on in dev, and `dev-cli
---query touch=1` reaches them.
+and touch agree. The rail is drawn for **everyone**, desktop included — there is
+no device sniff left to get a machine wrong, and `wantsTouchControls` is now one
+line. `?touch=0` is the only way to turn it off; `?touch=1` additionally paints
+the diagnostic readout, and `dev-cli --query touch=1` reaches it.
 
 **Post-processing extends through `BaseSceneConfig.postEffects`.** Battle's chain
 lives in `src/engine/battle/post.ts`. Two traps it documents: nothing may sample

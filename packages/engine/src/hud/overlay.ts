@@ -7,7 +7,7 @@ import { drawHudSight } from './sight'
 import { touchLayout } from './touch-layout'
 import type { SafeAreaInsets } from './touch-layout'
 import { formatHudRaceTime } from './interaction'
-import { HUD_FONT_MONO as FONT, HUD_THEME as THEME, HUD_TUNING_SPECS } from './tokens'
+import { HUD_FONT_MONO as FONT, HUD_HUES as HUES, HUD_THEME as THEME, HUD_TUNING_SPECS } from './tokens'
 import { clipReveal, revealAlpha } from './transition'
 import type { BattleHudData, HudActionId, HudData, HudFrame, RaceHudData } from './types'
 
@@ -29,7 +29,7 @@ function fillPanel (
   y: number,
   width: number,
   height: number,
-  accent: string = THEME.amber,
+  accent: string = THEME.primary,
   phase = 1
 ): void {
   const rect = { x, y, width, height }
@@ -52,7 +52,7 @@ function beginModal (
   context: CanvasRenderingContext2D,
   rect: Rect,
   phase: number,
-  accent: string = THEME.amber
+  accent: string = THEME.primary
 ): void {
   context.save()
   clipReveal(context, {
@@ -99,7 +99,7 @@ function overlayButton (
   options: OptionsType
 ): void {
   const { context } = overlay
-  const color       = options.color ?? THEME.amber
+  const color       = options.color ?? THEME.primary
   const rect        = { x: options.x, y: options.y, width: options.width, height: options.height }
 
   drawPlate(context, rect, {
@@ -217,8 +217,8 @@ function drawToasts (overlay: HudPanel, data: HudData, frame: HudFrame): void {
     const rect = { x, y, width, height }
 
     context.globalAlpha = 0.92 - index * 0.2
-    drawPlate(context, rect, { accent: THEME.amber, plain: true })
-    drawCornerBrackets(context, rect, THEME.amber, { len: 12, inset: 3, width: 1.5 })
+    drawPlate(context, rect, { accent: THEME.primary, plain: true })
+    drawCornerBrackets(context, rect, THEME.primary, { len: 12, inset: 3, width: 1.5 })
     drawTrackedText(context, text, canvas.width * 0.5, y + height * 0.5, {
       size: Math.max(10, height * 0.28), color: THEME.pale, alpha: 0.92, align: 'center', tracking: 1,
     })
@@ -231,13 +231,13 @@ function drawToasts (overlay: HudPanel, data: HudData, frame: HudFrame): void {
 function drawCountdown (overlay: HudPanel, data: HudData): void {
   const { context, canvas } = overlay
   let label         = ''
-  let color: string = THEME.amber
+  let color: string = THEME.primary
   if (data.mode === 'race') {
     if (data.race.status === 'countdown')
       label = String(Math.max(1, Math.ceil(data.clocks.countdown)))
     else if (data.race.status === 'racing' && data.clocks.elapsed < 1) {
       label = 'GO'
-      color = THEME.amberBright
+      color = THEME.bright
     }
   }
   else if (data.battle.status === 'countdown')
@@ -262,18 +262,18 @@ function drawRaceFinish (
   const { x, y, width, height } = modalRect(overlay, insets, cssSize, 620, 520)
   const midX                    = x + width * 0.5
   beginModal(context, { x, y, width, height }, phase)
-  fillPanel(context, x, y, width, height, THEME.amber, phase)
-  overlayText(context, 'COURSE COMPLETE', midX, y + 58, 28, THEME.amber)
+  fillPanel(context, x, y, width, height, THEME.primary, phase)
+  overlayText(context, 'COURSE COMPLETE', midX, y + 58, 28, THEME.primary)
   overlayText(context, `TOTAL ${formatHudRaceTime(data.clocks.elapsed)}`, midX, y + 122, 20)
-  overlayText(context, `BEST ${data.race.bestLap === null ? '--:--.---' : formatHudRaceTime(data.race.bestLap)}`, midX, y + 158, 17, THEME.amberBright)
+  overlayText(context, `BEST ${data.race.bestLap === null ? '--:--.---' : formatHudRaceTime(data.race.bestLap)}`, midX, y + 158, 17, THEME.bright)
 
   data.race.lapTimes.slice(0, 5).forEach((time, index) => {
     overlayText(context, `LAP ${index + 1}  ${formatHudRaceTime(time)}`, midX, y + 208 + index * 28, 14, THEME.pale)
   })
 
   footerButtons(overlay, x, y + height - 82, width, [
-    { id: 'race-again', label: 'race again', action: 'race-again', color: THEME.amber },
-    { id: 'finish-menu', label: 'menu', action: 'menu', color: THEME.amberBright },
+    { id: 'race-again', label: 'race again', action: 'race-again', color: THEME.primary },
+    { id: 'finish-menu', label: 'menu', action: 'menu', color: THEME.bright },
   ])
   context.restore()
 }
@@ -291,7 +291,7 @@ function drawBattleFinish (
 
   const { x, y, width, height } = modalRect(overlay, insets, cssSize, 860, 570)
   beginModal(context, { x, y, width, height }, phase)
-  fillPanel(context, x, y, width, height, THEME.amber, phase)
+  fillPanel(context, x, y, width, height, THEME.primary, phase)
   overlayText(context, 'MATCH OVER', x + width * 0.5, y + 52, 28, THEME.pale)
   overlayText(context, `${data.battle.scores.red}`, x + width * 0.25, y + 100, 34, TEAM_COLORS.red)
   overlayText(context, `${data.battle.scores.blue}`, x + width * 0.75, y + 100, 34, TEAM_COLORS.blue)
@@ -307,7 +307,7 @@ function drawBattleFinish (
   })
 
   footerButtons(overlay, x, y + height - 74, width, [
-    { id: 'battle-finish-menu', label: 'return to menu', action: 'menu', color: THEME.amber },
+    { id: 'battle-finish-menu', label: 'return to menu', action: 'menu', color: THEME.primary },
   ])
   context.restore()
 }
@@ -349,8 +349,8 @@ function drawTuning (
 
   const { x, y, width, height } = modalRect(overlay, insets, cssSize, 900, 700)
   beginModal(context, { x, y, width, height }, phase)
-  fillPanel(context, x, y, width, height, THEME.amber, phase)
-  overlayText(context, 'SHIP PHYSICS · LIVE TUNING', x + 34, y + 42, 20, THEME.amber, 'left')
+  fillPanel(context, x, y, width, height, THEME.primary, phase)
+  overlayText(context, 'SHIP PHYSICS · LIVE TUNING', x + 34, y + 42, 20, THEME.primary, 'left')
 
   // Below this the label column and the track cannot both fit on one line, so
   // the label moves above its own full-width track instead of being squeezed
@@ -369,10 +369,10 @@ function drawTuning (
     const value  = data.tuning[spec.key]
     const ratio  = (value - spec.min) / (spec.max - spec.min)
     overlayText(context, spec.label.toUpperCase(), x + 36, rowY, 13, THEME.pale, 'left')
-    overlayText(context, String(value), x + width - 36, rowY, 13, THEME.amber, 'right')
+    overlayText(context, String(value), x + width - 36, rowY, 13, THEME.primary, 'right')
     context.fillStyle = THEME.dimmer
     context.fillRect(sliderX, trackY - 5, sliderW, 10)
-    context.fillStyle = THEME.amber
+    context.fillStyle = THEME.primary
     context.fillRect(sliderX, trackY - 5, sliderW * ratio, 10)
     context.strokeStyle = THEME.dim
     context.strokeRect(sliderX, trackY - 5, sliderW, 10)
@@ -394,19 +394,27 @@ function drawTuning (
   })
 
   footerButtons(overlay, x, y + height - 68, width, [
-    { id: 'tuning-close', label: 'close', action: 'tuning-toggle', color: THEME.amber },
-    { id: 'tuning-reset', label: 'reset', action: 'tuning-reset', color: THEME.amberBright },
-    { id: 'tuning-copy', label: frame.elapsed < copyUntil ? 'copied' : 'copy as ts', action: 'tuning-copy', color: THEME.cyan },
+    { id: 'tuning-close', label: 'close', action: 'tuning-toggle', color: THEME.primary },
+    { id: 'tuning-reset', label: 'reset', action: 'tuning-reset', color: THEME.bright },
+    { id: 'tuning-copy', label: frame.elapsed < copyUntil ? 'copied' : 'copy as ts', action: 'tuning-copy', color: THEME.accent },
   ])
   context.restore()
 }
 
+/**
+ * A touch control's accent, by name.
+ *
+ * Named hues rather than roles: the rail is a physical layout and the colour is
+ * how a thumb tells two adjacent plates apart without reading either label.
+ * Collapsing them onto shades of one primary is exactly what made the cluster
+ * unreadable at a glance.
+ */
 const ACCENTS = {
-  cyan:    THEME.cyan,
-  magenta: THEME.red,
-  amber:   THEME.amber,
-  violet:  THEME.amberBright,
-  green:   THEME.green,
+  cyan:    HUES.cyan,
+  magenta: HUES.magenta,
+  amber:   HUES.amber,
+  violet:  HUES.violet,
+  green:   HUES.green,
 } as const
 
 /**
@@ -452,7 +460,7 @@ function drawTouchControls (
       offsetY: stickY[stick.stick],
       engaged: Math.hypot(stickX[stick.stick], stickY[stick.stick]) > 0.02,
       label:   stick.label,
-      accent:  THEME.amber,
+      accent:  HUES.cyan,
     })
     overlay.region({
       id:     `stick:${stick.stick}`,

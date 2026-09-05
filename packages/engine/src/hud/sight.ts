@@ -4,7 +4,7 @@ import { WEAPONS } from 'Ψweapons'
 import { drawTrackedText, glowStroke, glowText } from './chrome'
 import { drawFlightPathMarker, drawPitchLadder, pitchFrom, rollFrom, slipFrom } from './instruments'
 import type { HudPanel } from './panel'
-import { HUD_FONT_MONO as FONT, HUD_THEME as THEME } from './tokens'
+import { HUD_FONT_MONO as FONT, HUD_HUES as HUES, HUD_THEME as THEME } from './tokens'
 import type { HudData, HudFrame } from './types'
 
 
@@ -93,7 +93,7 @@ function drawFlightSight (overlay: HudPanel, frame: HudFrame): void {
     pitch,
     roll,
     pixelsPerDegree: unit * 0.0075,
-    accent:          THEME.amber,
+    accent:          HUES.blue,
   })
 
   // Where the hull is actually going. On a craft with this much sideslip the
@@ -105,13 +105,13 @@ function drawFlightSight (overlay: HudPanel, frame: HudFrame): void {
     project(_pathPoint, overlay, frame.camera, _velocity)
     if (_pathPoint.visible) {
       clampToFrame(_pathPoint, overlay, unit * 0.05)
-      drawFlightPathMarker(overlay, _pathPoint.x, _pathPoint.y, unit * 0.018, THEME.cyan)
+      drawFlightPathMarker(overlay, _pathPoint.x, _pathPoint.y, unit * 0.018, HUES.green)
     }
   }
 
   const slip = slipFrom(frame.hullQuaternion, frame.telemetry.velocity)
   context.save()
-  context.strokeStyle = Math.abs(slip) > 0.35 ? THEME.red : THEME.amber
+  context.strokeStyle = Math.abs(slip) > 0.35 ? THEME.red : HUES.blue
   context.globalAlpha = 0.7
   context.lineWidth   = 2
 
@@ -125,7 +125,7 @@ function drawFlightSight (overlay: HudPanel, frame: HudFrame): void {
   context.stroke()
   context.restore()
 
-  overlayLabel(overlay, `${Math.round(pitch)}° PITCH · ${Math.round(roll)}° BANK · ${frame.telemetry.gLoad.toFixed(1)}G`, x, y + unit * 0.25, THEME.amber)
+  overlayLabel(overlay, `${Math.round(pitch)}° PITCH · ${Math.round(roll)}° BANK · ${frame.telemetry.gLoad.toFixed(1)}G`, x, y + unit * 0.25, HUES.blue)
 }
 
 /** Battle: a gun sight on the real aim vector, plus where the shot lands. */
@@ -136,7 +136,7 @@ function drawGunSight (overlay: HudPanel, battle: Extract<HudData, { mode: 'batt
   const lock                = battle.lockOn
   const locked              = lock.phase === 'locked'
   const tracking            = lock.phase === 'tracking'
-  const color               = locked ? THEME.green : tracking ? THEME.amber : THEME.pale
+  const color               = locked ? THEME.green : tracking ? THEME.accent : THEME.pale
 
   drawKillFeed(overlay, battle, unit)
 
@@ -186,12 +186,12 @@ function drawGunSight (overlay: HudPanel, battle: Extract<HudData, { mode: 'batt
   if (sight.impact) {
     project(_impactPoint, overlay, frame.camera, sight.impact)
     if (_impactPoint.visible) {
-      drawImpactMark(overlay, _impactPoint.x, _impactPoint.y, unit * 0.02, sight.onTarget ? THEME.red : THEME.cyan)
+      drawImpactMark(overlay, _impactPoint.x, _impactPoint.y, unit * 0.02, sight.onTarget ? THEME.red : THEME.primary)
 
       const gap = Math.hypot(_impactPoint.x - _aimPoint.x, _impactPoint.y - _aimPoint.y)
       if (gap > unit * 0.03) {
         context.save()
-        context.strokeStyle = THEME.cyan
+        context.strokeStyle = THEME.primary
         context.globalAlpha = 0.34
         context.setLineDash([ 5, 5 ])
         context.lineWidth = 1.5

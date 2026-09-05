@@ -99,6 +99,9 @@ type ActivePointer = {
  */
 const OVERLAY_PIXELS = 1280 * 720
 
+/** Where the screen-space plane hangs in front of the eye, world units. */
+const OVERLAY_DISTANCE = 4.35
+
 /** Look-around deflection for a dragged finger, CSS px. */
 const TOUCH_PAN_RADIUS = 0.22
 
@@ -113,11 +116,11 @@ const PINCH_RANGE = 0.42
  * frame-rate value or pointer move, and every allocation has a paired dispose.
  */
 export function createSpatialHud ({ canvas, controls, source, forcedTouch = null, panelHz = HUD_PANEL_HZ }: SpatialHudOptions): SpatialHud {
-  const station     = createHudStation()
-  const panelPeriod = 1 / THREE.MathUtils.clamp(panelHz, 15, 30)
-  const panels      = createHudPanels()
-  const panelMesh   = createHudPanelMesh(panels)
-  const visorRoot   = new THREE.Group()
+  const station         = createHudStation()
+  const basePanelPeriod = 1 / THREE.MathUtils.clamp(panelHz, 15, 30)
+  const panels          = createHudPanels()
+  const panelMesh       = createHudPanelMesh(panels)
+  const visorRoot       = new THREE.Group()
   visorRoot.add(panelMesh)
 
   const overlay         = new HudPanel({ name: 'overlay', width: 1280, height: 720, center: true })
@@ -150,35 +153,23 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
   const cssSize        = { width: 1, height: 1 }
   let insets: SafeAreaInsets = NO_INSETS
 
-  // `?touch=1` forces the rail on and `?touch=0` forces it off, in EVERY build.
-  //  It used to be dev-only, which meant a device the sniff got wrong had no way
-  //  back and nobody had a way to tell the two halves apart from a bug report.
-  //
-  //  It arrives as a prop from the page's `useSearchParams`. It was read off
-  //  `window.location.search` here, which is a layer that knows nothing about
-  //  the router: the engine mounts on its own schedule, so the value it saw was
-  //  whatever the URL happened to be at that instant rather than the route's.
-  const forced = forcedTouch
-  const coarse = window.matchMedia('(pointer: coarse)')
-  let isTouch = wantsTouchControls(forced, coarse.matches, navigator.maxTouchPoints)
-  const hidden = process.env.NODE_ENV !== 'production' &&
+  // The rail is on for everyone. `?touch=0` is the only way to turn it off, and
+  //  it is honoured in EVERY build — there is no device sniff left to get a
+  //  machine wrong. It arrives as a prop from the page's `useSearchParams`,
+  //  because reading `window.location.search` here is a layer that knows
+  //  nothing about the router: the engine mounts on its own schedule, so the
+  //  value it saw was whatever the URL happened to be at that instant.
+  const forced  = forcedTouch
+  const coarse  = window.matchMedia('(pointer: coarse)')
+  const isTouch = wantsTouchControls(forced)
+  const hidden  = process.env.NODE_ENV !== 'production' &&
     new URLSearchParams(window.location.search).get('nohud') === '1'
 
+  // Canvas drag-steering and a virtual stick want the same finger, so the
+  //  pointer path drops TOUCH input while the sticks are up. Mouse and pen are
+  //  untouched by this, which is what lets the rail be up on a desktop.
   if (isTouch)
     setTouchOverlayActive(true)
-
-  // A device can change its mind: an iPad gains a trackpad and goes `fine`, a
-  //  convertible folds into a tablet. Sniffing once at mount latched whichever
-  //  answer the first frame happened to get, for the life of the scene.
-  const onPointerKind = () => {
-    const next = wantsTouchControls(forced, coarse.matches, navigator.maxTouchPoints)
-    if (next === isTouch)
-      return
-    isTouch      = next
-    overlayDirty = true
-    setTouchOverlayActive(next)
-  }
-  coarse.addEventListener('change', onPointerKind)
 
   /** Last computed blocking state, for the `?touch=1` readout. */
   let lastBlocking = false
@@ -223,9 +214,23 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
 
   object.visible = !hidden
 
-  function syncPose (frame: HudFrame): void {
+  const viewAspect = (camera: THREE.Camera): number => camera instanceof THREE.PerspectiveCamera
+    ? camera.aspect
+    : canvas.clientWidth / Math.max(canvas.clientHeight, 1)
+
+  /**
+   * Put both roots where the camera says they go.
+   *
+   * EVERY rendered frame, and pure maths on purpose — no DOM read, no canvas
+   * resize, no draw. The visor is anchored in world space to a camera that is
+   * riding the ship's hover bob, so a frame in which the anchor is not moved
+   * is a frame in which the HUD slides against the view. Repaints are the
+   * expensive part and they are throttled separately; this is a handful of
+   * quaternion copies.
+   */
+  function syncStation (frame: HudFrame): void {
     const camera = frame.camera
-    const aspect = camera instanceof THREE.PerspectiveCamera ? camera.aspect : canvas.clientWidth / Math.max(canvas.clientHeight, 1)
+    const aspect = viewAspect(camera)
     const fov    = camera instanceof THREE.PerspectiveCamera ? camera.fov : HUD_REFERENCE_FOV
 
     // Seated the visor is worn; in chase it is a hologram the ship carries.
@@ -237,18 +242,28 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
     visorRoot.scale.set(station.scale.x, station.scale.y, 1)
     visorRoot.updateMatrixWorld(true)
 
-    const distance   = 4.35
-    const halfHeight = Math.tan(THREE.MathUtils.degToRad(fov * 0.5)) * distance
+    const halfHeight = Math.tan(THREE.MathUtils.degToRad(fov * 0.5)) * OVERLAY_DISTANCE
     overlayRoot.position.copy(camera.position)
     overlayRoot.quaternion.copy(camera.quaternion)
-    overlayRoot.translateZ(-distance)
+    overlayRoot.translateZ(-OVERLAY_DISTANCE)
     overlayMesh.scale.set(halfHeight * aspect, halfHeight, 1)
     overlayRoot.updateMatrixWorld(true)
+  }
 
-    // Match the viewport's aspect EXACTLY. The plane above is scaled to
-    // `aspect`; a canvas of any other shape is stretched non-uniformly across
-    // it, which is what made the sticks ellipses and every `canvas.width * k`
-    // size mean something different on each axis.
+  /**
+   * Reconcile the overlay's raster with the viewport it is stretched over.
+   *
+   * Kept out of `syncStation` because both halves of it read layout —
+   * `getBoundingClientRect` and the safe-area probe force style resolution —
+   * and neither answer can change without a resize. Called on the frames that
+   * actually repaint.
+   */
+  function syncSurface (frame: HudFrame): void {
+    // Match the viewport's aspect EXACTLY. The plane is scaled to `aspect`; a
+    // canvas of any other shape is stretched non-uniformly across it, which is
+    // what made the sticks ellipses and every `canvas.width * k` size mean
+    // something different on each axis.
+    const aspect      = viewAspect(frame.camera)
     const height      = Math.round(Math.sqrt(OVERLAY_PIXELS / Math.max(aspect, 0.01)))
     const targetWidth = Math.max(1, Math.round(height * aspect))
     if (overlay.canvas.width !== targetWidth || overlay.canvas.height !== height) {
@@ -342,7 +357,7 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
       return
 
     lastFrame = frame
-    syncPose(frame)
+    syncStation(frame)
 
     if (mountedAt === null) {
       mountedAt = frame.elapsed
@@ -362,6 +377,12 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
       overlayDirty = true
     }
 
+    // The renderer's quality tier budgets HUD REPAINTS, so it lands here rather
+    // than on the caller's update rate: it lowers the two texture cadences and
+    // never the pose above.
+    const drawPeriod  = 1 / THREE.MathUtils.clamp(frame.drawHz, 10, 60)
+    const panelPeriod = Math.max(basePanelPeriod, drawPeriod)
+
     if (frame.elapsed - panelDrawAt >= panelPeriod) {
       lastData    = source.read()
       panelDrawAt = frame.elapsed
@@ -378,23 +399,18 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
     else if (!modalReveal.live(frame.elapsed))
       modalData = null
 
-    // The touch rail waits for the visor: both arriving at once is a wall of
-    // motion, and the controls are the thing you look at last anyway. It waits
-    // on the CLOCK rather than on `revealPhase`, though, so the rail's
-    // existence stops depending on the state of a layer it has nothing else to
-    // do with — which is how it came to be missing entirely.
+    // Two gates, and both are about the same frame rather than about the
+    // device: the rail follows the visor in by 87 ms so the mount is not one
+    // wall of motion, and it steps aside for a full-screen layer, which draws
+    // over it and would otherwise be tapped through. Nothing else can withhold
+    // it — a rail whose existence depended on the state of a layer it has
+    // nothing to do with is how it came to be missing entirely.
     //
-    // Same moment as before to the millisecond: the old gate was the EASED
-    // phase passing 0.5, and `1 - (1 - t)³` crosses a half at t ≈ 0.206, not at
-    // the halfway point of the transition.
-    //
-    // `?touch=1` skips all of it. An override that still had to negotiate a
-    // stagger and a modal check was not an override — it forced one of the
-    // three conditions and left the other two to fail silently, which is a
-    // diagnostic that cannot distinguish "the sniff was wrong" from "something
-    // downstream ate the rail".
+    // The stagger waits on the CLOCK, not on `revealPhase`. Same moment to the
+    // millisecond as the old gate, which was the EASED phase passing 0.5:
+    // `1 - (1 - t)³` crosses a half at t ≈ 0.206, not halfway through.
     const staggered = mountedAt !== null && frame.elapsed - mountedAt >= TOUCH_STAGGER_S
-    touchReveal.set(forced === '1' || isTouch && staggered && !blocking, frame.elapsed)
+    touchReveal.set(isTouch && staggered && !blocking, frame.elapsed)
 
     // A layer mid-transition needs every frame. `isHudBlockingOverlay` alone
     // would stop redrawing the moment a modal closed and freeze its exit wipe
@@ -409,9 +425,10 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
       frame.elapsed < crashUntil ||
       lastData.mode === 'race' && lastData.race.status === 'countdown' ||
       lastData.mode === 'battle' && lastData.battle.toasts.length > 0
-    const period = overlayLive ? HUD_OVERLAY_PERIOD : panelPeriod
+    const period = Math.max(overlayLive ? HUD_OVERLAY_PERIOD : panelPeriod, drawPeriod)
     if (overlayDirty || frame.elapsed - overlayDrawAt >= period) {
       overlayDrawAt = frame.elapsed
+      syncSurface(frame)
       drawOverlay(lastData, frame)
     }
   }
@@ -636,22 +653,7 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
     }
   }
 
-  /**
-   * A touch-capable machine that had never been touched used to be decided at
-   * construction, so a laptop with a touchscreen permanently lost canvas
-   * drag-steering to a set of sticks nobody asked for. Decide on evidence.
-   */
-  const noteTouch = (event: PointerEvent) => {
-    if (isTouch || event.pointerType !== 'touch')
-      return
-    isTouch = true
-    setTouchOverlayActive(true)
-    overlayDirty = true
-  }
-
   const onPointerDown = (event: PointerEvent) => {
-    noteTouch(event)
-
     const region = hitAt(event.clientX, event.clientY)
     if (!region) {
       // A finger on empty canvas is a gesture, not a miss. Mouse and pen fall
@@ -800,7 +802,6 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
       canvas.removeEventListener('pointerup', onPointerUp)
       canvas.removeEventListener('pointercancel', onPointerCancel)
       canvas.removeEventListener('pointerleave', onPointerLeave)
-      coarse.removeEventListener('change', onPointerKind)
       canvas.style.cursor = ''
       if (isTouch)
         setTouchOverlayActive(false)

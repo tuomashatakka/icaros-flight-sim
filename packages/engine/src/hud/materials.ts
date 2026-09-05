@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { HUD_HOLO, HUD_THEME } from './tokens'
+import { HUD_GLASS_TINT, HUD_HOLO } from './tokens'
 
 
 export type HoloUniforms = {
@@ -230,7 +230,7 @@ export function createHudGlassMaterial (): HudGlassMaterial {
   return new THREE.ShaderMaterial({
     uniforms: {
       uTime:  { value: 0 },
-      uColor: { value: new THREE.Color(HUD_THEME.amber) },
+      uColor: { value: new THREE.Color(HUD_GLASS_TINT) },
     } satisfies HudGlassUniforms,
     vertexShader:   HUD_VERTEX,
     fragmentShader: HUD_GLASS_FRAGMENT,

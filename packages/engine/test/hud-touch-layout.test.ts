@@ -117,33 +117,26 @@ describe('touch layout', () => {
 /**
  * The rail went missing on tablets once, and every test here still passed —
  * because they all covered the LAYOUT, and what broke was the decision to draw
- * it at all. These cover the decision.
+ * it at all. These cover the decision, which is now "always, unless asked".
  */
 describe('wants touch controls', () => {
-  it('says yes to a coarse pointer', () => {
-    expect(wantsTouchControls(null, true, 0)).toBe(true)
+  it('says yes when nothing is specified', () => {
+    // No device sniff. A plain desktop gets the rail too: a set of clickable
+    //  plates costs nothing to ignore, and a control that is only sometimes
+    //  there cannot be found by anyone looking for it.
+    expect(wantsTouchControls(null)).toBe(true)
   })
 
-  it('says yes to touch points on a fine pointer', () => {
-    // An iPad in desktop mode reports `pointer: fine` and still has five touch
-    //  points. Requiring both would leave it with no controls.
-    expect(wantsTouchControls(null, false, 5)).toBe(true)
+  it('lets ?touch=0 turn the rail off', () => {
+    expect(wantsTouchControls('0')).toBe(false)
   })
 
-  it('says no to a plain desktop', () => {
-    expect(wantsTouchControls(null, false, 0)).toBe(false)
+  it('keeps ?touch=1 working as it always did', () => {
+    expect(wantsTouchControls('1')).toBe(true)
   })
 
-  it('lets ?touch=1 force the rail on where the sniff said no', () => {
-    expect(wantsTouchControls('1', false, 0)).toBe(true)
-  })
-
-  it('lets ?touch=0 force it off where the sniff said yes', () => {
-    expect(wantsTouchControls('0', true, 5)).toBe(false)
-  })
-
-  it('ignores a value that is neither, rather than treating it as off', () => {
-    expect(wantsTouchControls('yes please', true, 5)).toBe(true)
-    expect(wantsTouchControls('', false, 0)).toBe(false)
+  it('treats a value that is neither as absent, rather than as off', () => {
+    expect(wantsTouchControls('yes please')).toBe(true)
+    expect(wantsTouchControls('')).toBe(true)
   })
 })

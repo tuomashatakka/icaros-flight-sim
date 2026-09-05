@@ -60,6 +60,7 @@ const _view: HudViewFrame = {
   hudQuaternion:  _hudQuaternion,
   hudLead:        _hudLead,
   aimPitch:       0,
+  drawHz:         60,
 }
 
 /**
@@ -316,8 +317,6 @@ export async function mountBaseScene<TState extends object> (
     onEffects: config.onQuality,
   })
 
-  let lastHudAt = -Infinity
-
   function renderFrame (frame: FrameContext) {
     frame = { ...frame, delta: Math.min(frame.delta, 1 / 30) }
     quality.beginFrame()
@@ -372,10 +371,17 @@ export async function mountBaseScene<TState extends object> (
       _view.cameraBlend = blend
       _view.camera      = rig.camera
       _view.aimPitch    = aimNorm
-      if (frame.elapsed - lastHudAt >= 1 / quality.settings().hudHz) {
-        hud.current?.update(_view)
-        lastHudAt = frame.elapsed
-      }
+
+      // Every frame, unconditionally. The visor is anchored in world space to
+      // this camera, and the camera moves on every rendered frame — so a
+      // skipped update did not just skip a repaint, it left the anchor a frame
+      // behind a camera that is riding the ship's hover bob. That lag is
+      // almost entirely vertical, and at 30 Hz against 60 fps it reads as the
+      // whole HUD juddering up and down. The quality tier's HUD budget is a
+      // ceiling on REPAINTS, so it travels on the frame and the HUD applies it
+      // to its own texture cadence.
+      _view.drawHz = quality.settings().hudHz
+      hud.current?.update(_view)
 
       onFrame?.(frame, _shipPosition, _shipQuaternion, rig, controls)
       devFrame?.(_shipPosition, frame.delta)

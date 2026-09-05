@@ -219,7 +219,7 @@ export type SpeedTapeOptions = {
 export function drawSpeedTape (panel: HudPanel, options: SpeedTapeOptions): void {
   const { context }                       = panel
   const { x, y, width, height, speedKmh } = options
-  const accent                            = options.accent ?? THEME.amber
+  const accent                            = options.accent ?? THEME.primary
   const span                              = options.spanKmh ?? 140
   const pxPerKmh                          = width / span
   const minor                             = HUD_SPEED_TAPE_MINOR_KMH
@@ -273,7 +273,7 @@ export type HeadingTapeOptions = {
 export function drawHeadingTape (panel: HudPanel, options: HeadingTapeOptions): void {
   const { context }                      = panel
   const { x, y, width, height, heading } = options
-  const accent                           = options.accent ?? THEME.amber
+  const accent                           = options.accent ?? THEME.primary
   const span                             = options.spanDeg ?? 120
   const pxPerDeg                         = width / span
   const minor                            = HUD_HEADING_TAPE_MINOR_DEG
@@ -323,7 +323,7 @@ function drawBearingCaret (
     return
 
   const px            = centerX + delta * pxPerDeg
-  context.fillStyle   = THEME.cyan
+  context.fillStyle   = THEME.accent
   context.globalAlpha = 0.95
   context.beginPath()
   context.moveTo(px, y + height)
@@ -370,7 +370,7 @@ export function drawPitchLadder (panel: HudPanel, options: PitchLadderOptions): 
   const { x, y, halfWidth, halfHeight, pitch, roll } = options
   const perDegree                                    = options.pixelsPerDegree ?? 3.2
   const step                                         = options.step ?? 10
-  const accent                                       = options.accent ?? THEME.amber
+  const accent                                       = options.accent ?? THEME.primary
 
   drawHorizonBar(panel, x + halfWidth + 34, y, 22, halfHeight, pitch, accent)
 
@@ -400,7 +400,7 @@ export function drawPitchLadder (panel: HudPanel, options: PitchLadderOptions): 
     const gap   = zero ? halfWidth * 0.16 : halfWidth * 0.1
     const tick  = angle < 0 ? -7 : 7
 
-    context.strokeStyle = zero ? THEME.amberBright : accent
+    context.strokeStyle = zero ? THEME.bright : accent
     context.globalAlpha = zero ? 0.95 : 0.55
     context.setLineDash(angle < 0 ? [ 6, 5 ] : [])
 
@@ -509,7 +509,7 @@ function drawBankScale (
 
   const pointer       = (THREE.MathUtils.clamp(roll, -60, 60) - 90) / RAD_TO_DEG
   context.globalAlpha = 0.95
-  context.fillStyle   = Math.abs(roll) > 45 ? THEME.red : THEME.amberBright
+  context.fillStyle   = Math.abs(roll) > 45 ? THEME.red : THEME.bright
   context.beginPath()
   context.moveTo(Math.cos(pointer) * radius, Math.sin(pointer) * radius)
   context.lineTo(Math.cos(pointer + 0.05) * (radius - 12), Math.sin(pointer + 0.05) * (radius - 12))
@@ -529,7 +529,7 @@ function drawBoresight (panel: HudPanel, x: number, y: number, arm: number): voi
     context.lineTo(x + arm * 0.5, y + arm * 0.5)
     context.lineTo(x + arm, y)
     context.lineTo(x + arm * 2, y)
-  }, THEME.amberBright, 2, 0.95)
+  }, THEME.bright, 2, 0.95)
 }
 
 /** A small ring-and-wings marker: where the ship is actually going, not pointing. */

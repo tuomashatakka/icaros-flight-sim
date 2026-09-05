@@ -21,6 +21,8 @@ import { drawCornerBrackets, drawSegmentedBar, drawTrackedText } from './chrome'
 import {
   HUD_BAR_SEGMENTS,
   HUD_BOOST_CRITICAL,
+  HUD_HUES as HUES,
+  HUD_PANEL_ACCENTS as ACCENTS,
   HUD_THEME as THEME,
 } from './tokens'
 import type { BattleHudData, HudData, HudFrame, HudPanelKey, RaceHudData } from './types'
@@ -81,13 +83,13 @@ function renderPanel (panel: HudPanel, data: HudData, frame: HudFrame, draw: () 
 
 export function createHudPanels (): Record<HudPanelKey, HudPanel> {
   return {
-    topLeft:      new HudPanel({ name: 'topLeft', title: 'navigation', accent: THEME.amber, trace: HUD_PANEL_TRACES.topLeft }),
-    topCenter:    new HudPanel({ name: 'topCenter', title: 'attitude', accent: THEME.amber, trace: HUD_PANEL_TRACES.topCenter }),
-    topRight:     new HudPanel({ name: 'topRight', title: 'target', accent: THEME.amber, trace: HUD_PANEL_TRACES.topRight }),
-    center:       new HudPanel({ name: 'center', width: 560, height: 560, center: true, accent: THEME.pale }),
-    bottomLeft:   new HudPanel({ name: 'bottomLeft', title: 'defense', accent: THEME.amber, trace: HUD_PANEL_TRACES.bottomLeft }),
-    bottomCenter: new HudPanel({ name: 'bottomCenter', title: 'propulsion', accent: THEME.amber, trace: HUD_PANEL_TRACES.bottomCenter }),
-    bottomRight:  new HudPanel({ name: 'bottomRight', title: 'power', accent: THEME.amber, trace: HUD_PANEL_TRACES.bottomRight }),
+    topLeft:      new HudPanel({ name: 'topLeft', title: 'navigation', accent: ACCENTS.topLeft, trace: HUD_PANEL_TRACES.topLeft }),
+    topCenter:    new HudPanel({ name: 'topCenter', title: 'attitude', accent: ACCENTS.topCenter, trace: HUD_PANEL_TRACES.topCenter }),
+    topRight:     new HudPanel({ name: 'topRight', title: 'target', accent: ACCENTS.topRight, trace: HUD_PANEL_TRACES.topRight }),
+    center:       new HudPanel({ name: 'center', width: 560, height: 560, center: true, accent: ACCENTS.center }),
+    bottomLeft:   new HudPanel({ name: 'bottomLeft', title: 'defense', accent: ACCENTS.bottomLeft, trace: HUD_PANEL_TRACES.bottomLeft }),
+    bottomCenter: new HudPanel({ name: 'bottomCenter', title: 'propulsion', accent: ACCENTS.bottomCenter, trace: HUD_PANEL_TRACES.bottomCenter }),
+    bottomRight:  new HudPanel({ name: 'bottomRight', title: 'power', accent: ACCENTS.bottomRight, trace: HUD_PANEL_TRACES.bottomRight }),
   }
 }
 
@@ -266,7 +268,7 @@ function drawAttitude (
     bearingToTarget,
   })
   drawTrackedText(panel.context, `[ ${String(Math.round(heading) % 360).padStart(3, '0')}° ]`, panel.canvas.width * 0.5, 122, {
-    align: 'center', color: THEME.amberBright, size: 13, alpha: 0.9, glow: true,
+    align: 'center', color: panel.accent, size: 13, alpha: 0.9, glow: true,
   })
 
   drawPitchLadder(panel, {
@@ -290,7 +292,7 @@ function drawAttitude (
   context.moveTo(trackX, 130)
   context.lineTo(trackX, 250)
   context.stroke()
-  context.fillStyle   = THEME.amberBright
+  context.fillStyle   = panel.accent
   context.globalAlpha = 0.9
 
   const caretY        = 190 - THREE.MathUtils.clamp(aimPitch, -1, 1) * 58
@@ -316,10 +318,10 @@ function drawTrackRibbon (panel: HudPanel, total: number, next: number): void {
     const x          = 36 + i * (width + gap)
     const isNext     = i === next
     const isComplete = i < next
-    const color      = isNext ? THEME.cyan : isComplete ? THEME.amber : THEME.dimmer
+    const color      = isNext ? THEME.accent : isComplete ? THEME.primary : THEME.dimmer
 
     if (isNext)
-      drawCornerBrackets(context, { x: x - 5, y: 214, width: width + 10, height: 30 }, THEME.cyan, { len: 8, inset: 0, width: 1.5, alpha: 0.85 })
+      drawCornerBrackets(context, { x: x - 5, y: 214, width: width + 10, height: 30 }, THEME.accent, { len: 8, inset: 0, width: 1.5, alpha: 0.85 })
 
     context.fillStyle   = color
     context.globalAlpha = isNext ? 0.95 : isComplete ? 0.7 : 0.32
@@ -395,9 +397,9 @@ function drawRacePanels (panels: Record<HudPanelKey, HudPanel>, data: RaceHudDat
   const topLeft = panels.topLeft
   topLeft.title = 'navigation'
   renderPanel(topLeft, data, frame, () => {
-    drawTrackedText(topLeft.context, `[ GATE ${frame.checkpointNumber}/${Math.max(frame.checkpointCount, 1)} ]`, 36, 92, { size: 18, color: THEME.cyan, glow: true })
+    drawTrackedText(topLeft.context, `[ GATE ${frame.checkpointNumber}/${Math.max(frame.checkpointCount, 1)} ]`, 36, 92, { size: 18, color: topLeft.accent, glow: true })
     topLeft.text({ x: 36, y: 122, size: 14, alpha: 0.6, value: frame.targetLabel || 'NO ROUTE VECTOR' })
-    topLeft.bar({ x: 36, y: 172, width: 390, height: 14, label: 'gate closure', value: targetClosure, color: THEME.cyan })
+    topLeft.bar({ x: 36, y: 172, width: 390, height: 14, label: 'gate closure', value: targetClosure, color: topLeft.accent })
     topLeft.button({ id: 'menu', x: 456, y: 90, width: 142, height: 44, label: 'menu', action: 'menu' })
     topLeft.button({ id: 'view', x: 456, y: 148, width: 142, height: 44, label: view, action: 'view', active: frame.cameraBlend > 0.5 })
     drawTrackRibbon(topLeft, frame.checkpointCount, Math.max(0, frame.checkpointNumber - 1))
@@ -407,7 +409,7 @@ function drawRacePanels (panels: Record<HudPanelKey, HudPanel>, data: RaceHudDat
   topCenter.title = 'attitude'
   renderPanel(topCenter, data, frame, () => {
     drawTrackedText(topCenter.context, raceStatusLine(data, telemetry.boosting), 320, 60, {
-      align: 'center', color: race.linkError ? THEME.red : THEME.amber, size: 15, glow: true,
+      align: 'center', color: race.linkError ? THEME.red : topCenter.accent, size: 15, glow: true,
     })
     if (race.linkError)
       topCenter.text({ x: 320, y: 82, size: 12, align: 'center', alpha: 0.7, color: THEME.red, value: race.linkError })
@@ -419,10 +421,10 @@ function drawRacePanels (panels: Record<HudPanelKey, HudPanel>, data: RaceHudDat
   const topRight = panels.topRight
   topRight.title = 'target'
   renderPanel(topRight, data, frame, () => {
-    drawTargetFrame(topRight, THEME.cyan)
-    topRight.text({ x: 36, y: 98, size: 19, color: THEME.cyan, value: frame.target ? `GATE ${frame.checkpointNumber} · ${frame.targetLabel}` : 'NO ROUTE TARGET' })
+    drawTargetFrame(topRight, topRight.accent)
+    topRight.text({ x: 36, y: 98, size: 19, color: topRight.accent, value: frame.target ? `GATE ${frame.checkpointNumber} · ${frame.targetLabel}` : 'NO ROUTE TARGET' })
     topRight.text({ x: 36, y: 132, size: 15, alpha: 0.62, value: `RANGE ${Math.round(targetDistance)} m · SPEED ${Math.round(telemetry.speed * 3.6)} km/h` })
-    topRight.bar({ x: 36, y: 176, width: 390, height: 14, label: 'gate closure', value: targetClosure, color: THEME.cyan })
+    topRight.bar({ x: 36, y: 176, width: 390, height: 14, label: 'gate closure', value: targetClosure, color: topRight.accent })
     topRight.button({ id: 'respawn', x: 456, y: 90, width: 142, height: 44, label: 'respawn', action: 'respawn', color: THEME.red })
     topRight.button({ id: 'tuning', x: 456, y: 148, width: 142, height: 44, label: 'tuning', action: 'tuning-toggle', active: data.tuningOpen })
   })
@@ -433,9 +435,9 @@ function drawRacePanels (panels: Record<HudPanelKey, HudPanel>, data: RaceHudDat
   // combat heading. Race calls it what it is.
   bottomLeft.title = 'airframe'
   renderPanel(bottomLeft, data, frame, () => {
-    bottomLeft.bar({ x: 36, y: 104, width: 404, height: 16, label: 'surface alignment', value: upness, color: THEME.amber })
+    bottomLeft.bar({ x: 36, y: 104, width: 404, height: 16, label: 'surface alignment', value: upness, color: bottomLeft.accent })
     drawSegmentedBar(bottomLeft.context, { x: 36, y: 170, width: 404, height: 18 }, telemetry.boostMeter, {
-      color:         THEME.amber,
+      color:         HUES.green,
       criticalColor: THEME.red,
       criticalBelow: HUD_BOOST_CRITICAL,
       segments:      HUD_BAR_SEGMENTS,
@@ -450,10 +452,10 @@ function drawRacePanels (panels: Record<HudPanelKey, HudPanel>, data: RaceHudDat
   bottomCenter.title = 'propulsion'
   renderPanel(bottomCenter, data, frame, () => {
     drawSegmentedBar(bottomCenter.context, { x: 36, y: 96, width: 34, height: 172 }, frame.throttle, {
-      color: THEME.amber, vertical: true, segments: HUD_BAR_SEGMENTS, label: 'thr',
+      color: bottomCenter.accent, vertical: true, segments: HUD_BAR_SEGMENTS, label: 'thr',
     })
     drawSegmentedBar(bottomCenter.context, { x: 88, y: 96, width: 34, height: 172 }, telemetry.boostMeter, {
-      color: THEME.amber, criticalColor: THEME.red, criticalBelow: HUD_BOOST_CRITICAL, vertical: true, segments: HUD_BAR_SEGMENTS, label: 'bst',
+      color: HUES.green, criticalColor: THEME.red, criticalBelow: HUD_BOOST_CRITICAL, vertical: true, segments: HUD_BAR_SEGMENTS, label: 'bst',
     })
 
     const speedWidth = drawTabularNumber(bottomCenter.context, String(Math.round(telemetry.speed * 3.6)), 156, 140, { size: 46, color: THEME.pale, weight: 700, glow: true })
@@ -466,9 +468,9 @@ function drawRacePanels (panels: Record<HudPanelKey, HudPanel>, data: RaceHudDat
   const bottomRight = panels.bottomRight
   bottomRight.title = 'race systems'
   renderPanel(bottomRight, data, frame, () => {
-    bottomRight.bar({ x: 36, y: 104, width: 404, height: 16, label: 'course', value: courseProgress, color: THEME.amber })
-    bottomRight.bar({ x: 36, y: 170, width: 404, height: 16, label: `zone ${data.zone} target`, value: speedRatio, color: THEME.amberBright })
-    drawTrackedText(bottomRight.context, `[ LAP ${race.loop ? `${Math.min(race.currentLap, race.laps)}/${race.laps}` : 'SPRINT'} ]`, 36, 230, { size: 14, color: THEME.amber, glow: true })
+    bottomRight.bar({ x: 36, y: 104, width: 404, height: 16, label: 'course', value: courseProgress, color: bottomRight.accent })
+    bottomRight.bar({ x: 36, y: 170, width: 404, height: 16, label: `zone ${data.zone} target`, value: speedRatio, color: HUES.teal })
+    drawTrackedText(bottomRight.context, `[ LAP ${race.loop ? `${Math.min(race.currentLap, race.laps)}/${race.laps}` : 'SPRINT'} ]`, 36, 230, { size: 14, color: bottomRight.accent, glow: true })
     bottomRight.text({ x: 200, y: 230, size: 13, alpha: 0.6, value: `${data.shipId.toUpperCase()} · ZONE ${data.zone}` })
     drawTabularNumber(bottomRight.context, formatHudRaceTime(data.clocks.lapElapsed), 36, 258, { size: 20, color: THEME.pale, weight: 700 })
     bottomRight.button({ id: 'race-tuning', x: 466, y: 120, width: 132, height: 52, label: 'tune', action: 'tuning-toggle', active: data.tuningOpen })
@@ -478,7 +480,7 @@ function drawRacePanels (panels: Record<HudPanelKey, HudPanel>, data: RaceHudDat
   // this facet is a surface in the world — see `hud/sight.ts`.
   const center = panels.center
   renderPanel(center, data, frame, () => {
-    drawTrackedText(center.context, `[ LAP ${race.loop ? `${Math.min(race.currentLap, race.laps)}/${race.laps}` : 'SPRINT'} ]`, 280, 428, { align: 'center', size: 14, color: THEME.amber, alpha: 0.85, glow: true })
+    drawTrackedText(center.context, `[ LAP ${race.loop ? `${Math.min(race.currentLap, race.laps)}/${race.laps}` : 'SPRINT'} ]`, 280, 428, { align: 'center', size: 14, color: center.accent, alpha: 0.85, glow: true })
     drawTabularNumber(center.context, formatHudRaceTime(data.clocks.elapsed), 280, 454, { size: 18, color: THEME.pale, weight: 600, align: 'center' })
     center.text({ x: 280, y: 480, align: 'center', size: 12, alpha: 0.48, value: race.bestLap === null ? 'BEST --:--.---' : `BEST ${formatHudRaceTime(race.bestLap)}` })
     center.button({ id: 'center-boost', x: 208, y: 500, width: 144, height: 36, label: 'hold boost', action: 'boost', kind: 'hold', active: telemetry.boosting, size: 12 })
@@ -489,7 +491,7 @@ function drawBattlePanels (panels: Record<HudPanelKey, HudPanel>, data: BattleHu
   const battle    = data.battle
   const locked    = battle.lockOn.phase === 'locked'
   const tracking  = battle.lockOn.phase === 'tracking'
-  const lockColor = locked ? THEME.green : tracking ? THEME.amber : THEME.pale
+  const lockColor = locked ? THEME.green : tracking ? THEME.accent : THEME.pale
   const health    = battle.myHealth / Math.max(1, battle.maxHealth)
   const target    = battle.roster.find(entry => entry.id === battle.lockOn.targetId)
   const scoreMax  = Math.max(1, battle.scoreTarget)
@@ -516,7 +518,7 @@ function drawBattlePanels (panels: Record<HudPanelKey, HudPanel>, data: BattleHu
         : battle.status === 'live'
           ? `COMBAT · ${formatHudClock(battle.timeLeft)}`
           : battle.status.toUpperCase()
-    drawTrackedText(topCenter.context, status, 320, 60, { align: 'center', color: THEME.amber, size: 15, glow: true })
+    drawTrackedText(topCenter.context, status, 320, 60, { align: 'center', color: topCenter.accent, size: 15, glow: true })
     drawAttitude(topCenter, frame.hullQuaternion, frame.aimPitch, frame.target ? bearingTo(frame.shipPosition, frame.target) : null)
 
     // NET reads real connection health now. It used to show a hash-match tally
@@ -545,9 +547,9 @@ function drawBattlePanels (panels: Record<HudPanelKey, HudPanel>, data: BattleHu
   const bottomLeft = panels.bottomLeft
   bottomLeft.title = 'defense'
   renderPanel(bottomLeft, data, frame, () => {
-    bottomLeft.bar({ x: 36, y: 104, width: 390, height: 16, label: 'hull', value: health, color: health < 0.3 ? THEME.red : THEME.amber })
+    bottomLeft.bar({ x: 36, y: 104, width: 390, height: 16, label: 'hull', value: health, color: health < 0.3 ? THEME.red : bottomLeft.accent })
     drawSegmentedBar(bottomLeft.context, { x: 36, y: 170, width: 390, height: 16 }, battle.myBoost, {
-      color:         THEME.amber,
+      color:         HUES.green,
       criticalColor: THEME.red,
       criticalBelow: HUD_BOOST_CRITICAL,
       segments:      HUD_BAR_SEGMENTS,
@@ -556,23 +558,23 @@ function drawBattlePanels (panels: Record<HudPanelKey, HudPanel>, data: BattleHu
     })
     bottomLeft.text({ x: 36, y: 246, size: 14, alpha: 0.6, value: `HULL ${battle.myHealth}/${battle.maxHealth} · K/D ${battle.myKills}/${battle.myDeaths}` })
     bottomLeft.button({ id: 'battle-defense-respawn', x: 466, y: 120, width: 132, height: 52, label: 'respawn', action: 'respawn' })
-    bottomLeft.text({ x: 598, y: 246, size: 12, align: 'right', color: battle.carrying ? TEAM_COLORS[battle.carrying] : THEME.cyan, value: battle.carrying ? `${battle.carrying.toUpperCase()} CORE` : 'CORE BAY EMPTY' })
+    bottomLeft.text({ x: 598, y: 246, size: 12, align: 'right', color: battle.carrying ? TEAM_COLORS[battle.carrying] : bottomLeft.accent, value: battle.carrying ? `${battle.carrying.toUpperCase()} CORE` : 'CORE BAY EMPTY' })
   })
 
   const bottomCenter = panels.bottomCenter
   bottomCenter.title = 'propulsion'
   renderPanel(bottomCenter, data, frame, () => {
     drawSegmentedBar(bottomCenter.context, { x: 36, y: 96, width: 34, height: 172 }, frame.throttle, {
-      color: THEME.amber, vertical: true, segments: HUD_BAR_SEGMENTS, label: 'thr',
+      color: bottomCenter.accent, vertical: true, segments: HUD_BAR_SEGMENTS, label: 'thr',
     })
     drawSegmentedBar(bottomCenter.context, { x: 88, y: 96, width: 34, height: 172 }, battle.myBoost, {
-      color: THEME.amber, criticalColor: THEME.red, criticalBelow: HUD_BOOST_CRITICAL, vertical: true, segments: HUD_BAR_SEGMENTS, label: 'bst',
+      color: HUES.green, criticalColor: THEME.red, criticalBelow: HUD_BOOST_CRITICAL, vertical: true, segments: HUD_BAR_SEGMENTS, label: 'bst',
     })
 
     const speedWidth = drawTabularNumber(bottomCenter.context, String(Math.round(frame.telemetry.speed * 3.6)), 156, 140, { size: 46, color: THEME.pale, weight: 700, glow: true })
     bottomCenter.text({ x: 156 + speedWidth + 10, y: 148, size: 13, alpha: 0.55, value: 'KM/H' })
     bottomCenter.text({ x: 156, y: 178, size: 13, alpha: 0.56, value: `CMD ${Math.round(frame.throttle * 100)}% · ${frame.telemetry.gLoad.toFixed(1)}G` })
-    bottomCenter.text({ x: 156, y: 202, size: 13, alpha: 0.6, color: battle.myBoost < 0.15 ? THEME.red : THEME.amber, value: battle.myBoost < 0.15 ? 'BOOST CRITICAL' : 'BOOST ARMED' })
+    bottomCenter.text({ x: 156, y: 202, size: 13, alpha: 0.6, color: battle.myBoost < 0.15 ? THEME.red : bottomCenter.accent, value: battle.myBoost < 0.15 ? 'BOOST CRITICAL' : 'BOOST ARMED' })
     bottomCenter.button({ id: 'battle-boost', x: 466, y: 116, width: 132, height: 54, label: 'boost', action: 'boost', kind: 'hold', active: frame.telemetry.boosting })
   })
 

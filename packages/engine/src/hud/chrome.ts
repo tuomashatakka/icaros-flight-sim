@@ -129,7 +129,7 @@ export function drawTrackedText (
 ): void {
   const text     = value.toUpperCase()
   const size     = options.size ?? HUD_CAPTION_SIZE
-  const color    = options.color ?? THEME.amber
+  const color    = options.color ?? THEME.primary
   const tracking = options.tracking ?? HUD_CAPTION_TRACKING
   const align    = options.align ?? 'left'
   const font     = options.font ?? DISPLAY_FONT
@@ -507,7 +507,7 @@ export function drawPlate (
   rect: Rect,
   style: PlateStyle = {}
 ): void {
-  const accent   = style.accent ?? THEME.amber
+  const accent   = style.accent ?? THEME.primary
   const chamfer  = (style.chamfer ?? 0.22) * Math.min(rect.width, rect.height)
   const disabled = style.disabled ?? false
 
@@ -520,7 +520,7 @@ export function drawPlate (
     : style.active
       ? `${accent}33`
       : style.hovered
-        ? 'rgba(255, 227, 184, .12)'
+        ? 'rgba(215, 248, 255, .12)'
         : THEME.ink
   context.fill()
 
@@ -561,7 +561,7 @@ export function drawScanlines (
   context: CanvasRenderingContext2D,
   rect: Rect,
   elapsed: number,
-  accent: string = THEME.amber
+  accent: string = THEME.primary
 ): void {
   const spacing = 6
   context.save()
@@ -622,7 +622,7 @@ export function drawStick (
   radius: number,
   style: StickStyle
 ): void {
-  const accent = style.accent ?? THEME.amber
+  const accent = style.accent ?? THEME.primary
 
   context.save()
 

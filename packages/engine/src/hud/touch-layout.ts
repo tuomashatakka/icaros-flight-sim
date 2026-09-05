@@ -89,30 +89,22 @@ const STICK_RADIUS = 0.115
 const MIN_TOUCH_CSS = 44
 
 /**
- * Whether this device gets the touch rail.
+ * Whether this session gets the touch rail. It does, unless it says otherwise.
  *
- * A pure function of the three things that decide it, so the rule is testable
- * without a DOM — it went wrong once already and no test could have caught it,
- * because the decision was three `||`s inline in a 500-line closure.
+ * There is no device sniff any more. The rail used to be gated on `pointer:
+ * coarse` or a non-zero `maxTouchPoints`, which meant the controls did not
+ * exist at all on a desktop, could not be found by anyone looking for them,
+ * and silently disappeared on every machine the sniff read wrong — a
+ * convertible reports whichever mode it was last used in, and an iPad in
+ * desktop mode reports `fine`. A rail that is sometimes absent is worse than
+ * one that is always there: on a mouse it is a set of clickable plates next to
+ * the sticks, and it costs nothing to ignore.
  *
- * `forced` is the `?touch` query parameter: `'1'` on, `'0'` off, anything else
- * (including absent) defers to the device. It is honoured in every build, not
- * just dev — a tablet the sniff gets wrong otherwise has no way back.
- *
- * The sniff itself is deliberately either-or. A tablet reports `pointer:
- * coarse`; an iPad in desktop mode reports `fine` but still reports touch
- * points, and a convertible reports whichever it was last used as.
+ * `forced` is the `?touch` query parameter, honoured in every build: `'0'`
+ * turns the rail off, anything else (including absent) leaves it on.
  */
-export function wantsTouchControls (
-  forced: string | null,
-  coarsePointer: boolean,
-  maxTouchPoints: number
-): boolean {
-  if (forced === '1')
-    return true
-  if (forced === '0')
-    return false
-  return coarsePointer || maxTouchPoints > 0
+export function wantsTouchControls (forced: string | null): boolean {
+  return forced !== '0'
 }
 
 export function touchLayout (input: TouchLayoutInput): TouchLayout {
