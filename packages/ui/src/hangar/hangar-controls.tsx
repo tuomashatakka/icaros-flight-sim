@@ -7,6 +7,7 @@ import type { HangarViewToggle } from 'Ƨ'
 import { PALETTES } from 'Ȼship/palettes'
 import { SHIP_IDS, SHIP_PRESETS } from 'Ȼship/registry'
 import type { ShipConfig } from 'Ȼship/registry'
+import { RANDOM_BUILD_RANGES, RANDOM_LOOK_RANGES, RANDOM_TEXTURE_PRESETS } from 'Ȼship/random-ranges'
 import { BEAM_WEAPONS, MISSILE_WEAPONS, WEAPONS } from 'Ψweapons'
 import type { WeaponId } from 'Ψweapons'
 import styles from './hangar-controls.module.css'
@@ -160,6 +161,7 @@ function WeaponPicker ({ options, value, onChange }: WeaponPickerProps) {
 }
 
 const pick = <T,>(list: readonly T[]): T => list[Math.floor(Math.random() * list.length)]
+const roll = ([ min, max ]: readonly [number, number]): number => min + Math.random() * (max - min)
 
 /** Random livery, in the spirit of the forge prototype's `randomize ✦`. */
 function randomLook (): Partial<ShipConfig> {
@@ -170,29 +172,29 @@ function randomLook (): Partial<ShipConfig> {
     bodyColor:         palette.bodyColor,
     emissiveColor:     palette.emissiveColor,
     trimColor:         palette.trimColor,
-    metalness:         0.2 + Math.random() * 0.75,
-    roughness:         0.15 + Math.random() * 0.7,
-    emissiveIntensity: 0.3 + Math.random() * 0.7,
-    gloss:             0.4 + Math.random() * 1.2,
-    texturePreset:     pick(PATTERNS).value,
-    patternAngle:      Math.random() * Math.PI,
+    metalness:         roll(RANDOM_LOOK_RANGES.metalness),
+    roughness:         roll(RANDOM_LOOK_RANGES.roughness),
+    emissiveIntensity: roll(RANDOM_LOOK_RANGES.emissiveIntensity),
+    gloss:             roll(RANDOM_LOOK_RANGES.gloss),
+    texturePreset:     pick(RANDOM_TEXTURE_PRESETS),
+    patternAngle:      roll(RANDOM_LOOK_RANGES.patternAngle),
     burnColor:         palette.emissiveColor,
-    burnIntensity:     0.6 + Math.random() * 1.2,
-    burnLength:        0.7 + Math.random() * 1.6,
+    burnIntensity:     roll(RANDOM_LOOK_RANGES.burnIntensity),
+    burnLength:        roll(RANDOM_LOOK_RANGES.burnLength),
   }
 }
 
 /** Random silhouette + armament. Kept separate: a lot of pilots want one, not both. */
 function randomBuild (): Partial<ShipConfig> {
   return {
-    bodyWidth:       0.7 + Math.random() * 0.9,
-    bodyHeight:      0.7 + Math.random() * 0.8,
-    bodyLength:      0.75 + Math.random() * 0.85,
-    platingDepth:    Math.random() * 2,
+    bodyWidth:       roll(RANDOM_BUILD_RANGES.bodyWidth),
+    bodyHeight:      roll(RANDOM_BUILD_RANGES.bodyHeight),
+    bodyLength:      roll(RANDOM_BUILD_RANGES.bodyLength),
+    platingDepth:    roll(RANDOM_BUILD_RANGES.platingDepth),
     primaryWeapon:   pick(BEAM_WEAPONS),
     secondaryWeapon: pick(MISSILE_WEAPONS),
-    gunScale:        0.6 + Math.random() * 0.8,
-    gunSpread:       0.4 + Math.random() * 0.9,
+    gunScale:        roll(RANDOM_BUILD_RANGES.gunScale),
+    gunSpread:       roll(RANDOM_BUILD_RANGES.gunSpread),
   }
 }
 

@@ -7,7 +7,7 @@ import { TextureLoader } from 'three'
 // Ship identity + presets now live in the registry (single source of truth).
 // Re-exported here so existing importers of '@/lib/ship/materials' keep working.
 import { SHIP_PRESETS } from 'Ȼship/registry'
-import type { ShipConfig, ShipPreset } from 'Ȼship/registry'
+import type { ShipConfig, ShipPreset, TexturePreset } from 'Ȼship/registry'
 import { PALETTES } from 'Ȼship/palettes'
 import type { Palette } from 'Ȼship/palettes'
 
@@ -70,34 +70,7 @@ export function drawBaseTexture (config: BaseConfigType): THREE.CanvasTexture {
   canvas.width  = width
   canvas.height = height
 
-  switch (config.texturePreset) {
-    case 'panels':
-      drawPanelPattern(ctx, config.bodyColor, config.themeColors)
-      break
-    case 'carbon':
-      drawCarbonPattern(ctx, config.bodyColor)
-      break
-    case 'hazard':
-      drawHazardPattern(ctx, config.bodyColor)
-      break
-    case 'city':
-      drawCityPattern(ctx, config.bodyColor)
-      break
-    case 'gallery':
-      drawGalleryPattern(ctx, config.bodyColor)
-      break
-    case 'racing':
-      drawRacingPattern(ctx, config.bodyColor, config.themeColors)
-      break
-    case 'splinter':
-      drawSplinterPattern(ctx, config.bodyColor, config.themeColors)
-      break
-    case 'circuit':
-      drawCircuitPattern(ctx, config.bodyColor, config.themeColors)
-      break
-    default:
-      drawPlainPattern(ctx, config.bodyColor)
-  }
+  PATTERNS[config.texturePreset].base(ctx, config.bodyColor, config.themeColors)
 
   const texture      = new THREE.CanvasTexture(canvas)
   texture.wrapS      = THREE.RepeatWrapping
@@ -331,34 +304,7 @@ export function drawEmissiveTexture (config: EmissiveConfigType): THREE.CanvasTe
 
   ctx.fillStyle = config.emissiveColor
 
-  switch (config.texturePreset) {
-    case 'panels':
-      drawEmissivePanelPattern(ctx, config.emissiveColor)
-      break
-    case 'carbon':
-      drawEmissiveCarbonPattern(ctx, config.emissiveColor)
-      break
-    case 'hazard':
-      drawEmissiveHazardPattern(ctx, config.emissiveColor)
-      break
-    case 'city':
-      drawEmissiveCityPattern(ctx, config.emissiveColor)
-      break
-    case 'gallery':
-      drawEmissiveGalleryPattern(ctx, config.emissiveColor)
-      break
-    case 'racing':
-      drawEmissiveRacingPattern(ctx, config.emissiveColor)
-      break
-    case 'splinter':
-      drawEmissiveSplinterPattern(ctx, config.emissiveColor)
-      break
-    case 'circuit':
-      drawEmissiveCircuitPattern(ctx, config.emissiveColor)
-      break
-    default:
-      drawEmissivePlainPattern(ctx, config.emissiveColor)
-  }
+  PATTERNS[config.texturePreset].emissive(ctx, config.emissiveColor, NO_THEME)
 
   const texture      = new THREE.CanvasTexture(canvas)
   texture.wrapS      = THREE.RepeatWrapping
@@ -484,6 +430,25 @@ function drawEmissivePlainPattern (ctx: CanvasRenderingContext2D, color: string)
   ctx.globalAlpha = 0.5
   ctx.fillRect(0, 0, 1024, 1024)
   ctx.globalAlpha = 1.0
+}
+
+type PatternPainter = (ctx: CanvasRenderingContext2D, color: string, theme: ThemeColorsType) => void
+
+// Emissive painters never read the theme channel — every one of them declares just
+// (ctx, color) — so this exists only to satisfy the one PatternPainter signature shared
+// with the base painters (panel/racing/splinter/circuit) that do need theme colours.
+const NO_THEME: ThemeColorsType = { primary: '', secondary: '', accent: '' }
+
+const PATTERNS: Record<TexturePreset, { base: PatternPainter; emissive: PatternPainter }> = {
+  plain:    { base: drawPlainPattern, emissive: drawEmissivePlainPattern },
+  panels:   { base: drawPanelPattern, emissive: drawEmissivePanelPattern },
+  carbon:   { base: drawCarbonPattern, emissive: drawEmissiveCarbonPattern },
+  hazard:   { base: drawHazardPattern, emissive: drawEmissiveHazardPattern },
+  city:     { base: drawCityPattern, emissive: drawEmissiveCityPattern },
+  gallery:  { base: drawGalleryPattern, emissive: drawEmissiveGalleryPattern },
+  racing:   { base: drawRacingPattern, emissive: drawEmissiveRacingPattern },
+  splinter: { base: drawSplinterPattern, emissive: drawEmissiveSplinterPattern },
+  circuit:  { base: drawCircuitPattern, emissive: drawEmissiveCircuitPattern },
 }
 
 const HANGAR_TEXTURES: Record<string, string> = {
