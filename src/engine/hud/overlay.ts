@@ -631,13 +631,19 @@ export function drawHudOverlay ({
   //  is reporting on drew nothing at all.
   if (touchDebug) {
     context.save()
-    context.font         = `500 ${Math.round(height * 0.022)}px ui-monospace, monospace`
     context.textAlign    = 'left'
     context.textBaseline = 'top'
-    context.fillStyle    = 'rgba(0, 0, 0, .72)'
-    context.fillRect(0, 0, context.measureText(touchDebug).width + 24, height * 0.04)
-    context.fillStyle    = '#7dffe0'
-    context.fillText(touchDebug, 12, height * 0.008)
+
+    // Sized to FIT, not to a fraction of a dimension. A portrait canvas is
+    //  twice as tall as it is wide, so a height-derived size ran the line off
+    //  the edge on exactly the phones this is meant to be read on.
+    const size   = Math.max(9, Math.min(width * 0.026, (width - 24) / (touchDebug.length * 0.62)))
+    context.font = `500 ${size.toFixed(1)}px ui-monospace, monospace`
+
+    context.fillStyle = 'rgba(0, 0, 0, .78)'
+    context.fillRect(0, 0, width, size * 1.8)
+    context.fillStyle = '#7dffe0'
+    context.fillText(touchDebug, 12, size * 0.4)
     context.restore()
   }
 
