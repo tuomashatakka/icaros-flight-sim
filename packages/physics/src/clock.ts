@@ -14,6 +14,9 @@ export interface Clock {
   advance (realDelta: number): readonly number[];
   elapsed (): number;
   reset (): void;
+
+  /** Drop only unsimulated wall time while preserving authoritative sim time. */
+  resetRenderTime? (): void;
 }
 
 /**
@@ -96,6 +99,10 @@ export function createSimClock ({ step = STEP, maxSubSteps = MAX_SUB_STEPS } = {
     reset () {
       accumulator = 0
       total = 0
+    },
+
+    resetRenderTime () {
+      accumulator = 0
     },
   }
 }

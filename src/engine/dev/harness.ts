@@ -10,6 +10,7 @@ import { createOverlays } from './overlay'
 import { readDevParams } from './params'
 import { installTrace, readTrace, recordFrame, watchContextLoss } from './trace'
 import type { DevApi, DevDeps, OverlayFlags, TeleportArgs } from './types'
+import { sceneLifecycleState } from '../lifecycle'
 
 
 /**
@@ -159,11 +160,12 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
       const gameplay = useStore.getState()
 
       return {
-        ok:      true,
-        level:   deps.levelId,
-        seed:    deps.seed,
-        paused:  clock.paused,
-        running: app.running,
+        ok:        true,
+        level:     deps.levelId,
+        seed:      deps.seed,
+        paused:    clock.paused,
+        running:   app.running,
+        lifecycle: { ...sceneLifecycleState() },
 
         sim: {
           alpha:      round(clock.alpha(), 4),

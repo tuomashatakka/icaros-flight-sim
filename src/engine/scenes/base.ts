@@ -27,6 +27,7 @@ import type { EnvironmentOverrides } from './environment'
 import { publishModule } from '../modules/publish'
 import type { PublishHandle } from '../modules/publish'
 import { attachBridge } from '../bridge'
+import { publishSceneLifecycle, reducedMotion, sceneLifecycleState } from '../lifecycle'
 
 
 const SEED = 7
@@ -277,7 +278,7 @@ export async function mountBaseScene<TState extends object> (
       name: 'impact',
       build () {},
       update () {
-        if (telemetry.shake > 0) {
+        if (telemetry.shake > 0 && !reducedMotion()) {
           rig.shake(telemetry.shake)
           telemetry.shake = 0
         }
@@ -318,6 +319,7 @@ export async function mountBaseScene<TState extends object> (
   })
 
   function renderFrame (frame: FrameContext) {
+    frame = { ...frame, delta: Math.min(frame.delta, 1 / 30) }
     if (controls.viewSeq !== lastViewSeq) {
       lastViewSeq = controls.viewSeq
       rig.toggleView()
@@ -387,6 +389,20 @@ export async function mountBaseScene<TState extends object> (
   const detachBridge   = attachBridge(app as any)
 
   let detachDev: (() => void) | null = null
+
+  // SceneCanvas owns visibility; the room deliberately does not. Resuming
+  // drops wall-time residue, snaps the predicted pose, then paints one safe
+  // frame before the shared rAF loop advances again.
+  Object.assign(app, {
+    lifecycleResume () {
+      clock.resetRenderTime?.()
+      vehicle.current?.interpolator?.teleport()
+      renderFrame({ delta: 0, elapsed: clock.elapsed(), frame: 0 })
+    },
+    setReducedMotion (value: boolean) {
+      publishSceneLifecycle({ ...sceneLifecycleState(), reducedMotion: value })
+    },
+  })
   if (process.env.NODE_ENV !== 'production') {
     const { attachDevHarness } = await import('../dev/harness')
     const harness              = attachDevHarness({

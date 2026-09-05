@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { reducedMotion } from '../lifecycle'
 import type { HudPanelTrace, HudPanelUv } from './layout'
 import { HUD_FONT as FONT } from './tokens'
 import type { HudActionId, HudRegion } from './types'
@@ -282,6 +283,12 @@ export class HudPanel {
     }
 
     context.save()
+
+    if (reducedMotion()) {
+      context.restore()
+      this.texture.needsUpdate = true
+      return
+    }
 
     let noise = this.interferenceSeed ^ Math.floor(elapsed * 13) | 0
     for (let i = 0; i < 8; i++) {

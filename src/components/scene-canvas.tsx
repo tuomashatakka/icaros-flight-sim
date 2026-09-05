@@ -5,6 +5,7 @@ import type { App } from 'threejs-scene'
 import { captureDeviceInfo, collectWebglReport, formatWebglReport } from './webgl-report'
 import type { DeviceInfo, WebglReport } from './webgl-report'
 import styles from './scene-canvas.module.css'
+import { attachSceneLifecycle } from './scene-lifecycle'
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any -- mount fns are generic over their own state shape
 export type AnyApp = App<any>
@@ -106,8 +107,9 @@ export function SceneCanvas ({ mount, onApp, className, fallback }: SceneCanvasP
     let drawingSince = 0
     // Which GPU, which limits, how big the buffer. Read while the context still
     // answers, because a lost one refuses these exact questions.
-    let device: DeviceInfo = {}
-    let recoveryTimer      = 0
+    let device: DeviceInfo                   = {}
+    let recoveryTimer                        = 0
+    let detachLifecycle: (() => void) | null = null
 
     // A context lost while playing (tab backgrounded, GPU reset, another page
     // claiming the budget) leaves three rendering into nothing — the scene
@@ -127,6 +129,8 @@ export function SceneCanvas ({ mount, onApp, className, fallback }: SceneCanvasP
       })
       console.error('[scene] webgl context lost', diagnostics)
       setReport(diagnostics)
+      detachLifecycle?.()
+      detachLifecycle = null
 
       if (recoveries.current >= MAX_AUTO_RECOVERIES) {
         setError(new Error('the device took the WebGL context away.'))
@@ -154,6 +158,7 @@ export function SceneCanvas ({ mount, onApp, className, fallback }: SceneCanvasP
         app = built
         detachBridges = onApp?.(built)
         built.start()
+        detachLifecycle = attachSceneLifecycle({ document, window, canvas, app: built })
         drawingSince = performance.now()
         device       = captureDeviceInfo(built)
         setStatus('ready')
@@ -174,6 +179,8 @@ export function SceneCanvas ({ mount, onApp, className, fallback }: SceneCanvasP
       cancelled = true
       window.clearTimeout(recoveryTimer)
       canvas.removeEventListener('webglcontextlost', onContextLost)
+      detachLifecycle?.()
+      detachLifecycle = null
       if (typeof detachBridges === 'function')
         detachBridges()
       if (app) {

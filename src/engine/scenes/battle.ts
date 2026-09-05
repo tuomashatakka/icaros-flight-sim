@@ -3,6 +3,7 @@ import type { App, AppModule } from 'threejs-scene'
 import { defineModule } from 'threejs-scene'
 import { apexArena, BATTLE_TEAMS, TEAM_COLORS } from '@crash-velocity/battle/arena'
 import type { Scenery } from '../battle/scenery'
+import { reducedMotion } from '../lifecycle'
 import type { BattleTeam } from '@crash-velocity/battle/arena'
 import { AIM_MAX, DEFAULT_BATTLE_CONFIG } from '@crash-velocity/battle/sim'
 import type { BattleEvent } from '@crash-velocity/battle/types'
@@ -749,7 +750,8 @@ export async function mountBattle (
       // fast still streaks and tapping boost from a standstill does not.
       const lv = prediction?.rig.chassis.linvel()
       post.setSpeed(lv ? Math.hypot(lv.x, lv.z) / vehicleConfig.maxSpeed : 0)
-      scenery?.update(elapsed)
+      if (!reducedMotion())
+        scenery?.update(elapsed)
       blastPool.update(frame.delta)
 
       renderRemotes(elapsed)

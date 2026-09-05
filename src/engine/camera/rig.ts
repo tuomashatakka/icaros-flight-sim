@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import { createFollowCamera } from 'threejs-scene'
 import type { SeededRng } from 'threejs-scene'
+import { reducedMotion } from '../lifecycle'
 
 // Camera feel — the original framerate-independent damping RATES, in `1 - exp(-k*dt)`.
 const CAM_YAW_STIFFNESS  = 4
@@ -248,6 +249,8 @@ export function createCameraRig (rng: SeededRng, far = 400): CameraRig {
     },
 
     shake (amount) {
+      if (reducedMotion())
+        return
       shakeAmount = Math.max(shakeAmount, amount)
     },
 
