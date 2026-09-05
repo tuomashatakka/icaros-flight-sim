@@ -566,7 +566,7 @@ export type DrawHudOverlayOptions = {
    *
    * Only set under `?touch=1`, and drawn over everything. A rail that fails to
    * appear on someone else's phone is otherwise undiagnosable from here: the
-   * decision has four inputs, a bug report can only report the output, and
+   * decision has three inputs, a bug report can only report the output, and
    * there is no console on a handset worth asking anyone to open.
    */
   touchDebug?: string | null;

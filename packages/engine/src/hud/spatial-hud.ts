@@ -340,9 +340,9 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
   function touchDebugLine (frame: HudFrame): string {
     const age = mountedAt === null ? -1 : frame.elapsed - mountedAt
     return [
-      `touch=${isTouch ? 1 : 0}`,
+      `on=${isTouch ? 1 : 0}`,
+      `forced=${forced ?? '-'}`,
       `coarse=${coarse.matches ? 1 : 0}`,
-      `pts=${navigator.maxTouchPoints}`,
       `phase=${touchReveal.value(frame.elapsed).toFixed(2)}`,
       `age=${age.toFixed(2)}`,
       `block=${lastBlocking ? 1 : 0}`,
@@ -420,13 +420,24 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
     if (transitioning)
       overlayDirty = true
 
-    const overlayLive = activePointers.size > 0 || isTouch || transitioning ||
+    // A rail that is merely PRESENT is not live content — it is a static plate
+    // with a rolling scanline, and it is now present always, so keying this on
+    // `isTouch` would pin the largest surface in the HUD at 30 Hz on every
+    // machine forever. What earns the faster cadence is a thumb actually on it,
+    // which `activePointers` already reports.
+    const overlayLive = activePointers.size > 0 || transitioning ||
       modalReveal.live(frame.elapsed) ||
       frame.elapsed < crashUntil ||
       lastData.mode === 'race' && lastData.race.status === 'countdown' ||
       lastData.mode === 'battle' && lastData.battle.toasts.length > 0
     const period = Math.max(overlayLive ? HUD_OVERLAY_PERIOD : panelPeriod, drawPeriod)
-    if (overlayDirty || frame.elapsed - overlayDrawAt >= period) {
+
+    // `overlayDirty` says the surface is WRONG, not that redrawing it is free —
+    // and things set it every frame (an arriving visor, any layer
+    // mid-transition). Without the second clause it short-circuits the cadence
+    // outright, and the tier's budget stops meaning anything for the duration.
+    const due = overlayDirty || frame.elapsed - overlayDrawAt >= period
+    if (due && frame.elapsed - overlayDrawAt >= drawPeriod) {
       overlayDrawAt = frame.elapsed
       syncSurface(frame)
       drawOverlay(lastData, frame)
@@ -680,8 +691,6 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
 
     if (region.kind === 'hold')
       hold(region.action, true)
-    else if (region.kind === 'stick' && region.stick)
-      applyStick(region.stick, 0, 0)
     else if (region.kind === 'slider')
       applySlider(region, event.clientX)
   }
@@ -838,4 +847,5 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
 }
 
 
-// perf: nine draw calls total; panels upload at 12 hz and the overlay at up to 30 hz.
+// perf: nine draw calls total; panels upload at up to 20 hz and the overlay at up to 30 hz,
+// both floored by the quality tier's `drawHz`. The POSE is synced every frame and draws nothing.

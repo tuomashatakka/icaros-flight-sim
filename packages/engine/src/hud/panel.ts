@@ -381,5 +381,5 @@ export class HudPanel {
   }
 }
 
-// perf: seven small canvas textures redraw at 12 hz; the glass gradient and grid
+// perf: seven small canvas textures redraw at up to 20 hz; the glass gradient and grid
 // texture are built once per panel and reused every subsequent redraw.

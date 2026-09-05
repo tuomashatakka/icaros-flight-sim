@@ -105,20 +105,20 @@ describe('touch layout', () => {
   })
 
   it.each(VIEWPORTS)('keeps the thumb cluster thumb-sized at %s', (_name, cssWidth, cssHeight) => {
-    // The cluster used to be exactly the gap between the two sticks, which
-    // grows with the LONG edge while a thumb does not: on 16:9 the boost plate
-    // came out at 490 px and lay across the reticle. A control is reachable in
-    // physical units, so it is bounded in them.
+    // Asserted in CSS PIXELS, because reach is physical. A fraction of the
+    // overlay's short edge is NOT: the raster is sized to a fixed pixel budget,
+    // so that fraction is a constant fraction of the screen and grew to a 554 px
+    // plate on 3440x1440 while still passing. 200 CSS px admits the one
+    // deliberately wide control — the race boost plate, at 186 — and nothing
+    // that has to be chased across a monitor.
     for (const mode of [ 'race', 'battle' ] as const) {
-      const input     = surface(cssWidth, cssHeight, mode)
-      const layout    = touchLayout(input)
-      const shortEdge = Math.min(input.width, input.height)
+      const layout = touchLayout(surface(cssWidth, cssHeight, mode))
 
       for (const button of layout.buttons)
         expect(
-          button.rect.width,
-          `${mode} ${cssWidth}x${cssHeight}: ${button.id} is wider than a thumb`
-        ).toBeLessThanOrEqual(shortEdge * 0.63)
+          button.rect.width / layout.pixelScale,
+          `${mode} ${cssWidth}x${cssHeight}: ${button.id} is wider than a thumb can reach`
+        ).toBeLessThanOrEqual(200)
     }
   })
 
@@ -129,7 +129,7 @@ describe('touch layout', () => {
     const sticks  = layout.sticks
     const cluster = layout.buttons.filter(button => button.id.startsWith('touch-') &&
       [ 'touch-view', 'touch-reset', 'touch-boost' ].includes(button.id))
-    const midpoint = (sticks[0].centerX + sticks[1].centerX) * 0.5
+    const midpoint  = (sticks[0].centerX + sticks[1].centerX) * 0.5
     const spanLeft  = Math.min(...cluster.map(button => button.rect.x))
     const spanRight = Math.max(...cluster.map(button => button.rect.x + button.rect.width))
 

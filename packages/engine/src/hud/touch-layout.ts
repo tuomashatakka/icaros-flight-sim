@@ -89,6 +89,18 @@ const STICK_RADIUS = 0.115
 const MIN_TOUCH_CSS = 44
 
 /**
+ * Widest the thumb cluster may get, CSS pixels.
+ *
+ * In CSS px on purpose. The first attempt at this capped it at a fraction of
+ * the overlay's short edge, which looks physical and is not: the raster is
+ * sized to a fixed PIXEL BUDGET, so its short edge sits near 720 whatever the
+ * display, while `pixelScale` shrinks as the viewport grows. A raster fraction
+ * is therefore a constant fraction of the SCREEN — still 266 CSS px per utility
+ * button on 1600x900. Reach does not scale with the monitor.
+ */
+const CLUSTER_MAX_CSS = 300
+
+/**
  * Whether this session gets the touch rail. It does, unless it says otherwise.
  *
  * There is no device sniff any more. The rail used to be gated on `pointer:
@@ -105,6 +117,72 @@ const MIN_TOUCH_CSS = 44
  */
 export function wantsTouchControls (forced: string | null): boolean {
   return forced !== '0'
+}
+
+type ClusterInput = {
+  mode:        HudMode;
+  gapLeft:     number;
+  gapRight:    number;
+  left:        number;
+  right:       number;
+  bottom:      number;
+  margin:      number;
+  unit:        number;
+  minTouch:    number;
+  maxClusterW: number;
+  gap:         number;
+  buttonH:     number;
+  stickY:      number;
+  stickRadius: number;
+}
+
+/**
+ * Where the thumb cluster sits, and how wide it is allowed to get.
+ *
+ * Extracted so `touchLayout` stays under the statement limit, but it earns its
+ * own function anyway: every number here is a consequence of one decision —
+ * that a thumb's reach is physical and does not grow with the display.
+ */
+type ClusterBox = {
+  clusterX: number;
+  clusterW: number;
+  utilityY: number;
+}
+
+function clusterBox (input: ClusterInput): ClusterBox {
+  const { mode, gapLeft, gapRight, left, right, bottom, margin, unit, minTouch, maxClusterW, gap, buttonH, stickY, stickRadius } = input
+
+  // The widest row the cluster has to hold: three triggers in battle, two
+  // utility buttons everywhere. Deciding on THIS rather than on a round number
+  // is the point — clamping a column to `minTouch` inside a container too
+  // narrow for it is what drove the cluster straight through the sticks.
+  const columns = mode === 'battle' ? 3 : 2
+  const needed  = minTouch * columns + gap * (columns - 1)
+
+  // On a narrow phone the two sticks leave no usable gap. Above the stick row
+  // is worse for the thumbs and the only thing that fits.
+  const inGap = gapRight - gapLeft >= needed
+
+  // Capped in THUMB units, then centred in whatever space it was given.
+  //
+  // The cluster used to be exactly as wide as the gap between the sticks. On a
+  // phone that gap is barely wider than the buttons, so it read as designed —
+  // but the gap grows with the LONG edge while a thumb does not, and on a 16:9
+  // desktop it came out at 790 px, better than half the screen. Now the rail is
+  // drawn everywhere, that is not a phone-shaped bug any more, it is every
+  // desktop's.
+  const available = inGap ? gapRight - gapLeft : right - left - margin * 2
+  const reach     = Math.min(unit * 0.62, maxClusterW)
+  const clusterW  = Math.min(available, Math.max(needed, reach))
+  const home      = inGap ? gapLeft : left + margin
+
+  return {
+    clusterW,
+    clusterX: home + (available - clusterW) * 0.5,
+    utilityY: inGap
+      ? bottom - margin - buttonH
+      : stickY - stickRadius - gap - buttonH,
+  }
 }
 
 export function touchLayout (input: TouchLayoutInput): TouchLayout {
@@ -197,35 +275,23 @@ export function touchLayout (input: TouchLayoutInput): TouchLayout {
   const gapLeft  = left + margin * 2 + stickRadius * 2
   const gapRight = right - margin * 2 - stickRadius * 2
 
-  // The widest row the cluster has to hold: three triggers in battle, two
-  // utility buttons everywhere. Deciding on THIS rather than on a round number
-  // is the point — clamping a column to `minTouch` inside a container too
-  // narrow for it is what drove the cluster straight through the sticks.
-  const columns = mode === 'battle' ? 3 : 2
-  const needed  = minTouch * columns + gap * (columns - 1)
-
-  // On a narrow phone the two sticks leave no usable gap. Above the stick row
-  // is worse for the thumbs and the only thing that fits.
-  const inGap = gapRight - gapLeft >= needed
-
-  // Capped in THUMB units, then centred in whatever space it was given.
-  //
-  // The cluster used to be exactly as wide as the gap between the sticks. On a
-  // phone that gap is barely wider than the buttons, so it read as designed —
-  // but the gap grows with the LONG edge while a thumb does not, and on a 16:9
-  // desktop it came out at 790 px, better than half the screen, with the boost
-  // plate laid straight across the reticle. Now the rail is drawn everywhere
-  // that is not a phone-shaped bug any more, it is the desktop's.
-  const clusterCap  = Math.max(needed, unit * 0.62)
-  const available   = inGap ? gapRight - gapLeft : right - left - margin * 2
-  const clusterW    = Math.min(available, clusterCap)
-  const clusterHome = inGap ? gapLeft : left + margin
-  const clusterX    = clusterHome + (available - clusterW) * 0.5
-
+  const { clusterX, clusterW, utilityY } = clusterBox({
+    mode,
+    gapLeft,
+    gapRight,
+    left,
+    right,
+    bottom,
+    margin,
+    unit,
+    minTouch,
+    gap,
+    buttonH,
+    stickY,
+    stickRadius,
+    maxClusterW: toPx(CLUSTER_MAX_CSS),
+  })
   const utilityW = clusterW * 0.5 - gap * 0.5
-  const utilityY = inGap
-    ? bottom - margin - buttonH
-    : stickY - stickRadius - gap - buttonH
 
   buttons.push(
     {

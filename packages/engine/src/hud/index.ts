@@ -109,6 +109,17 @@ function sharedHudModule<TState extends object> ({
 
     build (context) {
       context.scene.add(spatial.object)
+
+      // When the mode's own fields were last refreshed. The pose below is
+      // copied every frame — it is what the visor is anchored by — but
+      // `target` is NOT free: in battle it ray-marches the arena through
+      // rapier (`readSight` -> `castArenaRay`, a WASM call with a JS collider
+      // predicate per candidate) and walks every remote. That used to run at
+      // the quality tier's HUD rate because the whole update did; driving the
+      // pose every frame must not drag it along, or the lowest tier pays four
+      // arena raycasts for every one it budgeted.
+      let refreshedAt = -Infinity
+
       handle.current = {
         update (view) {
           frame.elapsed        = view.elapsed
@@ -123,7 +134,15 @@ function sharedHudModule<TState extends object> ({
           frame.drawHz   = view.drawHz
           frame.steer    = controls.steer
           frame.strafe   = controls.strafe
-          target(frame)
+
+          // The HUD never draws faster than this either, so the reticle is
+          // still no staler than the frame it is painted on.
+          const period = 1 / Math.min(Math.max(view.drawHz, 10), 60)
+          if (view.elapsed - refreshedAt >= period) {
+            refreshedAt = view.elapsed
+            target(frame)
+          }
+
           spatial.update(frame)
         },
       }

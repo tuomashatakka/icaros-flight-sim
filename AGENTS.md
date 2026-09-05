@@ -321,7 +321,7 @@ downforce term in `DRAG`/`DOWNFORCE` is what plants it. Removing it looks like
 tidying and turns the track into a launch ramp.
 
 **Touch is a third path onto the same `Controls` object.** The standalone spatial
-HUD (`src/engine/hud/`) draws twin sticks and action buttons into its screen
+HUD (`packages/engine/src/hud/`) draws twin sticks and action buttons into its screen
 plane, then writes through native pointer listeners — never React state, because
 a `useState` per pointermove re-renders at thumb rate. Weapon triggers live on
 `Controls` (`fire`, `fireSecondary`) rather than in `battle.ts` so keys, mouse,
