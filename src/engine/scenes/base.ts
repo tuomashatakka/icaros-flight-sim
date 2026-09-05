@@ -178,6 +178,7 @@ export async function mountBaseScene<TState extends object> (
   const clock     = createSimClock()
   const telemetry = createTelemetry()
   const controls  = createControls()
+  const hudEpoch  = performance.now()
 
   type VehicleType = { current: VehicleHandle | null }
 
@@ -349,7 +350,10 @@ export async function mountBaseScene<TState extends object> (
       const blend = rig.blend()
       shipVisual.current?.setHullVisible(blend < 0.85)
 
-      _view.elapsed     = frame.elapsed
+      // HUD reveals are presentation, not simulation. The fixed clock can sit
+      // at zero while a network seat is being reserved (or remain frozen when
+      // paused), which used to leave the touch rail forever on its first frame.
+      _view.elapsed     = (performance.now() - hudEpoch) / 1000
       _view.throttle    = telemetry.thrustCommand
       _view.cameraBlend = blend
       _view.camera      = rig.camera
