@@ -167,6 +167,7 @@ export async function mountCrashLab (
   // The single loaded hull every lane shares. Held here so teardown can free it
   // exactly once, however many lanes cloned it.
   let hull: ShipInstance | null = null
+  let disposed                  = false
 
   const app = createApp<CrashLabState>(canvas, {
     state: {
@@ -274,6 +275,15 @@ export async function mountCrashLab (
           // Async, so the lab is watchable immediately and the hulls appear as
           // they resolve.
           void loadShip(DEFAULT_CONFIGS.icaras.shipId, SHIP_SIZE).then(instance => {
+            // SceneCanvas can tear this app down while the asset is still in
+            // flight (notably while recovering a lost WebGL context). Never
+            // attach that stale result to emptied lanes or strand its GPU
+            // resources after the disposer has already run.
+            if (disposed) {
+              instance.dispose()
+              return
+            }
+
             hull = instance
 
             lanes.forEach((lane, index) => {
@@ -380,6 +390,7 @@ export async function mountCrashLab (
         },
 
         dispose () {
+          disposed = true
           forceLines.dispose()
           netLines.dispose()
           wireMaterial.dispose()
