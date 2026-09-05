@@ -7,7 +7,7 @@
  * than a second wire format would cost in bugs.
  */
 
-import { ShipFlags } from 'Ξ'
+import { ShipFlags, buildSnapshot } from 'Ξ'
 
 import type { ShipState, Snapshot } from 'Ξ'
 import type { RaceSim } from './sim'
@@ -56,5 +56,5 @@ export function raceSnapshotOf (sim: RaceSim, netIndexOf: (id: string) => number
     })
   }
 
-  return { serverTick: sim.tick, serverTimeMs: Date.now(), baselineTick: 0, lastProcessedInput: 0, ships, removed: []}
+  return buildSnapshot(sim.tick, ships)
 }

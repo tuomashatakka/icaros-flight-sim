@@ -16,7 +16,7 @@
  */
 
 import { Room } from '@colyseus/core'
-import { STEP, TICK_HZ, acceptPacket, createSeat, decodeInputPacket, drainInput, encodeFor, snapshotHistory, ticksPerSnapshot } from 'Ξ'
+import { STEP, TICK_HZ, acceptPacket, createSeat, decodeInputPacket, drainInput, encodeFor, pongFor, snapshotHistory, ticksPerSnapshot } from 'Ξ'
 import { createSimClock } from 'Φclock'
 import { verifyTicket } from 'Ðauth/ticket'
 import { recordMatchEnd, recordMatchStart, recordRaceResults, withDatabase } from 'Ð'
@@ -101,7 +101,7 @@ export class RaceRoom extends Room<{ state: RaceStateType }> {
     })
 
     this.onMessage(MessageKind.PING, (client, t0: number) => {
-      client.send(MessageKind.PONG, { t0, serverTimeMs: Date.now(), serverTick: this.sim.tick })
+      client.send(MessageKind.PONG, pongFor(t0, this.sim.tick))
     })
 
     this.setSimulationInterval(deltaMs => this.drive(deltaMs), 1000 / TICK_HZ)

@@ -116,3 +116,15 @@ export function baselineOf (snapshot: Snapshot): Baseline {
     ships.set(ship.id, { ...ship })
   return { tick: snapshot.serverTick, ships }
 }
+
+/**
+ * The envelope every FRESH snapshot shares, straight off a sim tick.
+ *
+ * `baselineTick` and `lastProcessedInput` are filled in later, per client, by
+ * `encodeFor` in `seats.ts`; `removed` has no equivalent in either sim yet.
+ * Race and battle read their ships completely differently, but the envelope
+ * around them should not be a second place the two formats could drift.
+ */
+export function buildSnapshot (serverTick: number, ships: ShipState[]): Snapshot {
+  return { serverTick, serverTimeMs: Date.now(), baselineTick: 0, lastProcessedInput: 0, ships, removed: []}
+}

@@ -15,7 +15,7 @@
  */
 
 import { Room } from '@colyseus/core'
-import { STEP, TICK_HZ, acceptPacket, createSeat, decodeInputPacket, drainInput, encodeFor, snapshotHistory, ticksPerSnapshot } from 'Ξ'
+import { STEP, TICK_HZ, acceptPacket, createSeat, decodeInputPacket, drainInput, encodeFor, pongFor, snapshotHistory, ticksPerSnapshot } from 'Ξ'
 import { createSimClock } from 'Φclock'
 import { verifyTicket } from 'Ðauth/ticket'
 import { recordMatchEnd, recordMatchPlayers, recordMatchStart, withDatabase } from 'Ð'
@@ -114,7 +114,7 @@ export class BattleRoom extends Room<{ state: BattleStateType }> {
 
     this.onMessage(MessageKind.INPUT, (client, bytes: ArrayBuffer | Uint8Array) => this.acceptInput(client, bytes))
     this.onMessage(MessageKind.PING, (client, t0: number) => {
-      client.send(MessageKind.PONG, { t0, serverTimeMs: Date.now(), serverTick: this.tickNo })
+      client.send(MessageKind.PONG, pongFor(t0, this.tickNo))
     })
 
     this.setSimulationInterval(deltaMs => this.drive(deltaMs), 1000 / TICK_HZ)

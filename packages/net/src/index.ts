@@ -27,7 +27,7 @@ export {
 } from './codec/ship-state'
 export type { ShipCodecConfig, ShipState } from './codec/ship-state'
 
-export { StaleBaselineError, baselineOf, decodeSnapshot, encodeSnapshot } from './codec/snapshot'
+export { StaleBaselineError, baselineOf, buildSnapshot, decodeSnapshot, encodeSnapshot } from './codec/snapshot'
 export type { Baseline, Snapshot } from './codec/snapshot'
 
 export { InputButton, decodeInputPacket, emptyInputFrame, encodeInputPacket } from './codec/input'
@@ -38,6 +38,9 @@ export type { Correction, CorrectionTier, SmoothingConfig } from './prediction'
 
 export { acceptPacket, createSeat, drainInput, encodeFor, snapshotHistory } from './seats'
 export type { Seat, SnapshotHistory } from './seats'
+
+export { pongFor } from './room-clock'
+export type { ClockPong } from './room-clock'
 
 export { MessageType, decodeEvents, encodeEvents } from './channels'
 export type { MessageKey, NetChannel } from './channels'

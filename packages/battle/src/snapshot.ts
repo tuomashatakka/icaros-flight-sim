@@ -7,7 +7,7 @@
  * fighting.
  */
 
-import { ShipFlags } from 'Ξ'
+import { ShipFlags, buildSnapshot } from 'Ξ'
 
 import type { ShipState, Snapshot } from 'Ξ'
 import type { BattleSim } from './sim'
@@ -58,7 +58,7 @@ export function battleSnapshotOf (sim: BattleSim, tick: number, netIndexOf: (id:
     })
   }
 
-  return { serverTick: tick, serverTimeMs: Date.now(), baselineTick: 0, lastProcessedInput: 0, ships, removed: []}
+  return buildSnapshot(tick, ships)
 }
 
 /** Radians of trim the ±1 wire range maps onto. Mirrors `AIM_MAX` in the sim. */
