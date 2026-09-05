@@ -152,6 +152,8 @@ export async function mountRace (
     colliderOffset: track.colliderOffset,
     buildGeometry:  ctx => TRACK_VISUALS[trackId](ctx, bundle),
 
+    renderOffsetSource: (dt, out) => prediction ? prediction.smoothing(dt, out) : out.set(0, 0, 0),
+
     gameModuleFactory: (physics, _isVehicleCollider, telemetry, sceneControls, vehicleRef, rig) => {
       // The ONE body in this world besides the track: the predicted local ship.
       const local = createHovercraft(physics.world, provisionalSpawn)
@@ -244,10 +246,16 @@ export async function mountRace (
             const result = prediction.reconcile(server, transport.unacknowledged(), toRaceInput, provisionalSpawn, racing)
             transport.noteCorrection(result.correctionM)
 
-            if (result.snapped) {
+            // Any correction at all cuts the interpolator, not just a hard
+            // one. The body has been moved to the server's truth, so blending
+            // across that move would render the old pose while the offset is
+            // ALSO displacing by it — the error applied twice, in the same
+            // direction. The offset alone carries the visual now.
+            if (result.correctionM > 0)
               localInterpolator.teleport()
+
+            if (result.snapped)
               rig.requestSnap()
-            }
           }
 
           const velocity       = local.chassis.linvel()

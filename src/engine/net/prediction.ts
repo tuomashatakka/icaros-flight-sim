@@ -40,24 +40,14 @@ import { DEFAULT_TUNING } from '../state'
 import type { Transform } from '@crash-velocity/physics/types'
 import type { HovercraftState } from '@crash-velocity/physics/vehicle-step'
 
+import { ErrorSmoother } from '@crash-velocity/net'
 import type { InputFrame } from '@crash-velocity/net'
 import type RAPIER from '@dimforge/rapier3d-deterministic-compat'
 
 
-/**
- * Position error tolerated before the body is touched at all, metres.
- *
- * Below this the prediction is tracking and a correction would cost more (in
- * disturbed wheel state) than it buys.
- */
-const DEADBAND = 0.35
-
-/** Above this, continuity is a fiction — snap rather than smooth. */
-const HARD_SNAP = 3
-
-// Render offset decay. ~0.12 s to fall to a tenth, so a correction is felt as
-//  a settle rather than seen as a jump.
-const SMOOTH_HALF_LIFE = 0.055
+// The deadband, the hard-snap threshold and the decay half-life all live in
+//  `DEFAULT_SMOOTHING`, which `ErrorSmoother` is constructed with. They used to
+//  be duplicated here, next to a private re-implementation of the class.
 
 /** Trim divergence tolerated before the reticle is pulled to the server's. */
 const AIM_EPSILON = 0.02
@@ -124,7 +114,7 @@ export class LocalPrediction {
 
   // Difference between where the ship was drawn and where it now is, decayed
   //  to zero over a few frames so a correction never reads as a jump.
-  private readonly offset = new Vector3()
+  private readonly smoother = new ErrorSmoother()
 
   private boostMeter = 1
   private groundedNow = false
@@ -256,14 +246,15 @@ export class LocalPrediction {
 
     this.boostMeter = server.boost
 
-    if (!respawn && error <= DEADBAND)
+    const correction = this.smoother.classify(error, respawn)
+    if (correction.tier === 'none')
       return { correctionM: 0, snapped: false }
 
-    // Remember where the ship was being drawn, so the correction can be hidden
-    // in the render offset rather than seen as a jump.
-    const hard = respawn || error > HARD_SNAP
+    // Bank where the ship was being drawn, so the correction is hidden in the
+    // render offset rather than seen as a jump. `base.ts` spends it.
+    const hard = correction.tier === 'snap'
     if (!hard)
-      this.offset.add(_bodyPos).sub(_serverPos)
+      this.smoother.absorb(_bodyPos.x - _serverPos.x, _bodyPos.y - _serverPos.y, _bodyPos.z - _serverPos.z)
 
     this.applyServerPose(server)
 
@@ -278,7 +269,7 @@ export class LocalPrediction {
         this.step(toInput(frame), spawn, allowDrive)
 
     if (hard) {
-      this.offset.set(0, 0, 0)
+      this.smoother.clear()
       this.rig.state.smoothedYawRate = 0
       this.rig.state.prevSpeed       = 0
     }
@@ -306,11 +297,7 @@ export class LocalPrediction {
    * largest and tapers rather than stopping abruptly.
    */
   smoothing (dt: number, out: Vector3): Vector3 {
-    if (this.offset.lengthSq() > 1e-8)
-      this.offset.multiplyScalar(Math.pow(0.5, dt / SMOOTH_HALF_LIFE))
-    else
-      this.offset.set(0, 0, 0)
-
-    return out.copy(this.offset)
+    this.smoother.sample(dt, out)
+    return out
   }
 }

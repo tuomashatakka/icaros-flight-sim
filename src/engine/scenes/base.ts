@@ -43,6 +43,7 @@ function resolveSeed (defaultSeed = SEED): number {
 // Reused so the render phase stays allocation-free; the rig only reads it.
 const _pan            = { panX: 0, panY: 0, pitch: 0 }
 const _shipPosition   = new THREE.Vector3()
+const _renderOffset   = new THREE.Vector3()
 const _shipQuaternion = new THREE.Quaternion()
 const _hudQuaternion  = new THREE.Quaternion()
 
@@ -81,6 +82,20 @@ export type BaseSceneConfig<TState extends object> = {
    * the guns are actually holding.
    */
   aimPitchSource?: () => number;
+
+  /**
+   * The reconciliation error the scene is still hiding, in metres.
+   *
+   * A server correction moves the predicted body to the truth immediately —
+   * that is the point of it — but showing that move is what a player reads as
+   * rubber-banding. The prediction banks the difference and decays it, and this
+   * is where the banked offset is spent: the body is where the server says, and
+   * the ship is drawn walking to meet it.
+   *
+   * Unset for scenes with no prediction (hangar, crash lab), which have nothing
+   * to reconcile against.
+   */
+  renderOffsetSource?: (dt: number, out: THREE.Vector3) => THREE.Vector3;
 
   /**
    * Extra post passes and their per-frame uniform hooks.
@@ -130,6 +145,7 @@ export async function mountBaseScene<TState extends object> (
     colliders,
     colliderOffset,
     aimPitchSource,
+    renderOffsetSource,
     post,
     buildGeometry,
     gameModuleFactory,
@@ -303,6 +319,14 @@ export async function mountBaseScene<TState extends object> (
       shipVisual.current?.setAimPitch(hullAimPitch)
 
       interpolator.sample(clock.alpha(), _shipPosition, _shipQuaternion)
+
+      // Applied before anything reads the pose, so the hull, the camera, the
+      // sun and the HUD all agree on where the ship is. Spending it here rather
+      // than on `shipRoot` alone is the difference between a ship that glides
+      // back into place and a camera that lurches while it does.
+      if (renderOffsetSource)
+        _shipPosition.add(renderOffsetSource(frame.delta, _renderOffset))
+
       shipRoot.position.copy(_shipPosition)
       shipRoot.quaternion.copy(_shipQuaternion)
       _pan.panX  = controls.panX

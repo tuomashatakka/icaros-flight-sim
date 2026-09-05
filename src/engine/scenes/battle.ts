@@ -461,19 +461,20 @@ export async function mountBattle (
 
   const app = await mountBaseScene<BattleState>({
     canvas,
-    initialState:   initialBattleState(),
-    background:     new THREE.Color(arena.background),
-    bloom:          arena.bloom,
-    colliders:      arena.colliders,
-    colliderOffset: arena.colliderOffset,
+    initialState:       initialBattleState(),
+    background:         new THREE.Color(arena.background),
+    bloom:              arena.bloom,
+    colliders:          arena.colliders,
+    colliderOffset:     arena.colliderOffset,
     // The trim is predicted locally and corrected against the server, because
     // a reticle that waits half a round trip to move feels broken; the hull and
     // camera mirror whatever elevation it settled on.
-    aimPitchSource: () => prediction?.aimNormalised ?? 0,
+    aimPitchSource:     () => prediction?.aimNormalised ?? 0,
+    renderOffsetSource: (dt, out) => prediction ? prediction.smoothing(dt, out) : out.set(0, 0, 0),
     // The deck's diagonal is ~850 units; the race rig's 400 far plane would
     // clip the far wall clean off.
-    cameraFar:      1600,
-    buildGeometry:  ctx => {
+    cameraFar:          1600,
+    buildGeometry:      ctx => {
       scenery = buildArenaVisual(ctx, arena)
     },
     post: post.options,
@@ -573,10 +574,16 @@ export async function mountBattle (
             const result = prediction.reconcile(server, transport.unacknowledged(), toBattleInput, provisionalSpawn, true)
             transport.noteCorrection(result.correctionM)
 
-            if (result.snapped) {
+            // Any correction at all cuts the interpolator, not just a hard
+            // one. The body has been moved to the server's truth, so blending
+            // across that move would render the old pose while the offset is
+            // ALSO displacing by it — the error applied twice, in the same
+            // direction. The offset alone carries the visual now.
+            if (result.correctionM > 0)
               localInterpolator.teleport()
+
+            if (result.snapped)
               rig.requestSnap()
-            }
           }
 
           const velocity       = local.chassis.linvel()
