@@ -3,6 +3,7 @@ import { createApp, createSeededRng, defineModule } from 'threejs-scene'
 import type { App, AppModule, FrameContext } from 'threejs-scene'
 import { postProcessing } from 'threejs-scene/modules/post'
 import type { PostProcessingOptions } from 'threejs-scene/modules/post'
+import type { Pass } from 'three/addons/postprocessing/Pass.js'
 import { useCameraView } from '@/hooks/use-camera-view'
 import { initRapier } from '@crash-velocity/physics/rapier'
 import { createSimClock } from '@crash-velocity/physics/clock'
@@ -27,6 +28,10 @@ import type { EnvironmentOverrides } from './environment'
 import { publishModule } from '../modules/publish'
 import type { PublishHandle } from '../modules/publish'
 import { attachBridge } from '../bridge'
+import { createGameRenderer } from '../render/renderer'
+import type { RendererQualityOptions } from '../render/renderer'
+import { createQualityController, registerQualityReport, tierDprCap } from '../render/quality'
+import type { QualitySnapshot } from '../render/quality'
 
 
 const SEED = 7
@@ -80,6 +85,7 @@ export type ScenePost = Pick<PostProcessingOptions, 'depth' | 'effects' | 'onFra
 export type BaseSceneConfig<TState extends object> = {
   canvas:       HTMLCanvasElement;
   initialState: TState;
+  rendererQuality?: RendererQualityOptions;
   seed?:        number;
   levelId?:     string;
   levelSpec?:   unknown;
@@ -201,7 +207,8 @@ export async function mountBaseScene<TState extends object> (
 
   const publish: PublishType = { current: null }
 
-  let composer: { render(delta: number): void } | null = null
+  let composer: { render(delta: number): void; setPixelRatio(value: number): void; setSize(width: number, height: number): void } | null = null
+  let postPasses: Pass[] = []
 
   const seed = resolveSeed(config.seed ?? SEED)
   const rng  = createSeededRng(seed)
@@ -295,11 +302,41 @@ export async function mountBaseScene<TState extends object> (
         // The composer is captured here rather than in `build` because this is
         // the only callback the module hands it out from, and `renderFrame`
         // needs it to draw at all.
-        composer = ctx.composer
-        return post?.effects?.(ctx) ?? []
+        composer   = ctx.composer
+        postPasses = post?.effects?.(ctx) ?? []
+        return postPasses
       },
     })
   )
+
+  const { renderer, tier } = createGameRenderer(canvas, config.rendererQuality)
+  const baseDpr            = Math.min(window.devicePixelRatio || 1, tierDprCap(tier, config.rendererQuality?.desktopDprCap))
+  const resizeQuality      = (scale: number) => {
+    const width  = canvas.parentElement?.clientWidth ?? canvas.clientWidth
+    const height = canvas.parentElement?.clientHeight ?? canvas.clientHeight
+    const ratio  = baseDpr * scale
+    renderer.setPixelRatio(ratio)
+    renderer.setSize(width, height, false)
+    composer?.setPixelRatio(ratio)
+    composer?.setSize(width, height)
+    const drawing = renderer.getDrawingBufferSize(new THREE.Vector2())
+    for (const pass of postPasses)
+      pass.setSize?.(drawing.x, drawing.y)
+    post?.onResize?.({ width: drawing.x, height: drawing.y }, app.ctx)
+  }
+  const quality = createQualityController(tier, resizeQuality)
+  const qualitySnapshot = (): QualitySnapshot => {
+    const css     = renderer.getSize(new THREE.Vector2())
+    const drawing = renderer.getDrawingBufferSize(new THREE.Vector2())
+    return {
+      tier,
+      scale:         quality.scale,
+      cssSize:       [css.x, css.y],
+      drawingBuffer: [drawing.x, drawing.y],
+      transitions:   quality.transitions,
+    }
+  }
+  registerQualityReport(renderer, qualitySnapshot)
 
   const app = createApp<TState>(canvas, {
     state:    initialState,
@@ -307,7 +344,7 @@ export async function mountBaseScene<TState extends object> (
     clock,
     camera:   rig.camera,
     scene:    { background: environment.background },
-    renderer: { shadows: true },
+    renderer,
     use:      modules,
 
     render (frame) {
@@ -318,6 +355,7 @@ export async function mountBaseScene<TState extends object> (
   })
 
   function renderFrame (frame: FrameContext) {
+    quality.sample(frame.delta * 1000)
     if (controls.viewSeq !== lastViewSeq) {
       lastViewSeq = controls.viewSeq
       rig.toggleView()
@@ -400,6 +438,7 @@ export async function mountBaseScene<TState extends object> (
       sun,
       publish,
       rig,
+      quality:       qualitySnapshot,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       level:         config.levelSpec as any,
       seed,

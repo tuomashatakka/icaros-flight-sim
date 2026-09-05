@@ -9,6 +9,7 @@ import type { ShipConfig } from '@/lib/ship/registry'
 import { loadShip } from '../assets/ship-loader'
 import type { ShipInstance } from '../assets/ship-loader'
 import type { SunHandle } from '../modules/sun'
+import { createGameRenderer } from '../render/renderer'
 
 
 type SunRef = { current: SunHandle | null }
@@ -225,6 +226,7 @@ export function mountHangar (
   onStatus: (status: HangarStatus) => void = () => {}
 ): App<HangarState> {
   const sun: SunRef = { current: null }
+  const { renderer } = createGameRenderer(canvas)
 
   const app = createApp<HangarState>(canvas, {
     state: {
@@ -237,7 +239,7 @@ export function mountHangar (
     seed:     11,
     camera:   { position: [ 0, 5, 15 ], lookAt: [ 0, 0, 0 ], fov: 45 },
     scene:    { background: HANGAR_ENVIRONMENT.background },
-    renderer: { shadows: true },
+    renderer,
     use:      [
       // The same environment rig the tracks and the arena mount. Its PMREM env
       // map is what makes the hulls' envMapIntensity and clearcoat do anything

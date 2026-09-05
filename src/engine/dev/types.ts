@@ -10,6 +10,7 @@ import type { Telemetry } from '../telemetry'
 import type { VehicleHandle } from '../vehicle'
 import type { SunHandle } from '../modules/sun'
 import type { PublishHandle } from '../modules/publish'
+import type { QualitySnapshot } from '../render/quality'
 
 
 /**
@@ -29,6 +30,7 @@ export type DevDeps = {
   sun:       { current: SunHandle | null };
   publish:   { current: PublishHandle | null };
   rig:       CameraRig;
+  quality (): QualitySnapshot;
   level:     TrackSpec;
   seed:      number;
   levelId:   string;

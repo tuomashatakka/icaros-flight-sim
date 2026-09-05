@@ -219,6 +219,7 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
           programs:   info.programs?.length ?? null,
           textures:   info.memory.textures,
           geometries: info.memory.geometries,
+          quality:    deps.quality(),
         },
 
         tuning:  useTuningStore.getState().tuning,

@@ -18,6 +18,7 @@ import type { CrashCase, LabSolid, LabTrace } from '@crash-velocity/physics/lab/
 import { runCrashCase } from '@crash-velocity/physics/lab/run'
 import { DEFAULT_CONFIGS } from '@/lib/ship/registry'
 import type { SunHandle } from '../modules/sun'
+import { createGameRenderer } from '../render/renderer'
 
 
 type SunRef = { current: SunHandle | null }
@@ -189,6 +190,7 @@ export async function mountCrashLab (
   let disposed                  = false
 
   const sun: SunRef = { current: null }
+  const { renderer } = createGameRenderer(canvas)
 
   const app = createApp<CrashLabState>(canvas, {
     state: {
@@ -201,7 +203,7 @@ export async function mountCrashLab (
     seed:     17,
     camera:   { position: eye, lookAt: [ focusX, 0, 0 ], fov: 55, far: 12000 },
     scene:    { background: CRASH_LAB_ENVIRONMENT.background },
-    renderer: { shadows: true },
+    renderer,
     use:      [
       ...environmentModules<CrashLabState>(CRASH_LAB_ENVIRONMENT, sun),
 

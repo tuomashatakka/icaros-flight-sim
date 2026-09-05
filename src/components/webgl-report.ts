@@ -6,6 +6,8 @@
 // rendered on screen where it can be screenshotted.
 import * as THREE from 'three'
 import type { AnyApp } from './scene-canvas'
+import { readQualityReport } from '../engine/render/quality'
+import type { QualitySnapshot } from '../engine/render/quality'
 
 
 /**
@@ -88,6 +90,7 @@ export type WebglReport = {
   /** three's own resource census at the moment of death. */
   resources?: string;
   memoryMB?:  number;
+  quality?:   QualitySnapshot;
   error?:     string;
 }
 
@@ -158,6 +161,8 @@ export function collectWebglReport (
   if (!renderer)
     return report
 
+  report.quality = readQualityReport(renderer)
+
   // Read first: these are plain counters three keeps itself, so they survive a
   // context that has already gone and cannot throw on the way.
   try {
@@ -195,6 +200,13 @@ export function formatWebglReport (report: WebglReport): string[] {
     lines.push(`gpu: ${report.renderer}`)
   if (report.drawingBuffer)
     lines.push(`buffer: ${report.drawingBuffer}`)
+
+  if (report.quality) {
+    const q = report.quality
+    lines.push(`quality: ${q.tier} · ${q.scale.toFixed(2)}x · css ${q.cssSize.join('x')} · buffer ${q.drawingBuffer.join('x')}`)
+    if (q.transitions.length)
+      lines.push(`quality changes: ${q.transitions.map(change => `${change.from.toFixed(2)}>${change.to.toFixed(2)} ${change.reason}`).join(', ')}`)
+  }
 
   lines.push(`dpr: ${report.pixelRatio}${report.maxTextureSize ? ` · max tex ${report.maxTextureSize}` : ''}`)
 
