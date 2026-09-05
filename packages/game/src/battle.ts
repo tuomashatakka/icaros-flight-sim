@@ -8,7 +8,7 @@ import type { BattleTeam } from 'Ψarena'
 import { AIM_MAX, DEFAULT_BATTLE_CONFIG } from 'Ψsim'
 import type { BattleEvent } from 'Ψtypes'
 import { DEFAULT_LOADOUT, WEAPONS } from 'Ψweapons'
-import type { Loadout, WeaponId } from 'Ψweapons'
+import type { Loadout } from 'Ψweapons'
 
 // One definition of where a shot starts and which way it goes, shared with the
 //  sim — the discipline `hitscan.ts` already follows. The sight draws the same
@@ -18,30 +18,20 @@ import { resolveBeamHits } from 'Ψhitscan'
 
 import type { HitCandidate } from 'Ψhitscan'
 import type RAPIER from '@dimforge/rapier3d-deterministic-compat'
-import {
-  buildBeamPool,
-  buildCaretMarker,
-  buildMissilePool,
-  buildNameplate,
-  buildObjective,
-  buildZoneVisual,
-  buildExplosionPool
-} from 'Σbattle/visuals'
-import type { CaretMarker, Nameplate, ObjectiveVisual, ZoneVisual } from 'Σbattle/visuals'
+import { buildObjective, buildZoneVisual } from 'Σbattle/visuals'
+import type { ObjectiveVisual, ZoneVisual } from 'Σbattle/visuals'
 import { BattleTransport } from 'Σbattle/transport'
-import type { BattleFrame, NetRemote } from 'Σbattle/transport'
-import type { ViewPlayer } from 'Σbattle/transport'
+import type { BattleFrame, ViewPlayer } from 'Σbattle/transport'
 import { LocalPrediction } from 'Σnet/prediction'
 import { publishTelemetry } from 'Σnet/telemetry-publish'
 import { createHovercraft, createHovercraftState } from 'Φvehicle-step'
 import { BodyInterpolator } from 'Φinterpolation'
-import { IDLE_LOCK, battleActions, battleStore } from 'Ƨ'
+import { battleStore } from 'Ƨ'
 import type { ShipId } from 'Ȼship/registry'
 import { vehicleConfig } from 'Φconfig'
 import { mountBaseScene } from 'Σscenes/base'
 import { activeControls } from 'Σinput'
 import { toBattleInput } from 'Ψinput'
-import { buildRemoteHull } from 'Σnet/remote-hull'
 import { createBattlePost } from 'Σbattle/post'
 import { arenaEnvironment, buildArenaVisual } from 'Σbattle/arena-visuals'
 import { ProjectileField } from 'Σbattle/projectiles'
@@ -49,6 +39,11 @@ import type { CameraRig } from 'Σcamera/rig'
 import { battleHudModule } from 'Σhud/index'
 import type { HudSight } from 'Σhud/index'
 import type { ShipVisualHandle } from 'Σmodules/ship-visual'
+import { createBattlePools } from 'Σbattle/pools'
+import type { BattlePools } from 'Σbattle/pools'
+import { createOpponents } from 'Σbattle/opponents'
+import type { Opponents } from 'Σbattle/opponents'
+import { createBattlePublisher } from 'Σmodules/publish-battle'
 
 
 export type BattleState = {
@@ -66,32 +61,6 @@ export const initialBattleState = (): BattleState => ({
   boost:    false,
   resetSeq: 0,
 })
-
-/** Beams and missiles both cap out well under these; the pools never grow. */
-const BEAM_POOL    = 48
-const MISSILE_POOL = 64
-
-// Smaller than the beam pool on purpose: bursts last under a second, so even a
-// four-on-four scrap never has more than a handful alive at once.
-const BLAST_POOL   = 24
-
-/**
- * Opponent hull.
- *
- * Deliberately procedural rather than a loaded ship: a battle can hold a dozen
- * hulls, and the FBX path clones geometry AND textures per instance. This is
- * one draw call's worth of boxes that still reads as a ship at 100 m.
- */
-
-type Opponent = {
-  root:      THREE.Group;
-  nameplate: Nameplate;
-  caret:     CaretMarker;
-  seen:      number;
-}
-
-const _pose = new THREE.Vector3()
-const _quat = new THREE.Quaternion()
 
 export type BattleMountOptions = {
   name?:    string;
@@ -123,7 +92,8 @@ export type BattleMountOptions = {
  * module in the same tick.
  *
  * Rendering never puts remote positions into React. The canvas HUD reads the
- * slim `battleStore` snapshot, which the transport commits on a timer.
+ * slim `battleStore` snapshot, which `publish-battle.ts` commits on the same
+ * cadence this scene always ran it at.
  */
 export async function mountBattle (
   canvas: HTMLCanvasElement,
@@ -136,14 +106,12 @@ export async function mountBattle (
 
   const transport = new BattleTransport()
   let renderFrame: BattleFrame | null = null
-  let remoteGeneration                = 0
-  const missilePosition  = { x: 0, y: 0, z: 0 }
-  const missileVelocity  = { x: 0, y: 0, z: 0 }
-  const beamFrom         = { x: 0, y: 0, z: 0 }
-  const beamTo           = { x: 0, y: 0, z: 0 }
   const projectilePoseOf = (id: string) => renderFrame?.playersById.get(id) ?? null
 
-  battleActions.resetSession()
+  // Every `battleActions.*` call the scene makes lives behind this — see
+  // `publish-battle.ts`. Constructing it fires the match reset, exactly where
+  // that call used to sit.
+  const publisher = createBattlePublisher({ transport, arena, loadout })
 
   // Prediction needs somewhere to stand before the first snapshot lands. Red
   // lane 0 is a guess; the first reconciliation moves the ship to wherever the
@@ -152,9 +120,12 @@ export async function mountBattle (
   const provisionalSpawn = arena.spawns.red[0]
   let prediction: LocalPrediction | null = null
 
-  // Assigned inside `gameModuleFactory`; the sight reads them long afterwards.
+  // Assigned inside `gameModuleFactory`; the sight and the frame loop read
+  // them long afterwards.
   let world: RAPIER.World | null  = null
   let sightRay: RAPIER.Ray | null = null
+  let opponents: Opponents | null = null
+  let pools: BattlePools | null   = null
   type ShipVisualRefType = { current: ShipVisualHandle | null }
 
   const shipVisualRef: ShipVisualRefType = { current: null }
@@ -210,7 +181,7 @@ export async function mountBattle (
         // in the past, and a reticle that marks where a ship is not is worse
         // than no reticle. The server resolves the actual shot by rewinding to
         // this same view, so agreeing with the screen is the correct choice.
-        const drawn = opponents.get(remote.id)?.root.position
+        const drawn = opponents?.hullPosition(remote.id)
         if (drawn && remote.team !== team)
           hitCandidates.push({ id: remote.id, team: remote.team, position: drawn })
       }
@@ -291,67 +262,6 @@ export async function mountBattle (
   for (const team of BATTLE_TEAMS)
     objectives[team] = buildObjective(team)
 
-  const beamPool    = buildBeamPool(BEAM_POOL)
-  const missilePool = buildMissilePool(MISSILE_POOL)
-  const blastPool   = buildExplosionPool(BLAST_POOL)
-
-  const opponents = new Map<string, Opponent>()
-  const shipRoot  = new THREE.Group()
-  const overlays  = new THREE.Group()
-
-  // The local ship needs its own caret target too — for the ONE enemy the local
-  // player is tracking, drawn around that enemy, not around us.
-
-  /**
-   * Zone views for the HUD.
-   *
-   * The snapshot carries zone ids and state but not display names — those live
-   * in the arena, which the client has its own copy of. Joining them here is
-   * why `battleActions.setChrome` gets real names instead of the id fallback
-   * the transport writes when it commits on its own.
-   */
-  const zoneViews = (snapshot: ReturnType<BattleTransport['latest']>) =>
-    (snapshot?.zones ?? []).map(z => {
-      const def = arena.controlPoints.find(c => c.id === z.id)
-      return {
-        id:        z.id,
-        name:      def?.name ?? z.id,
-        short:     def?.short ?? z.id.slice(0, 2).toUpperCase(),
-        owner:     z.owner,
-        progress:  z.progress,
-        capturing: z.capturing,
-        contested: z.contested,
-      }
-    })
-
-  function ensureOpponent (remote: NetRemote): Opponent {
-    let entry = opponents.get(remote.id)
-    if (entry)
-      return entry
-
-    const root      = buildRemoteHull(TEAM_COLORS[remote.team])
-    const nameplate = buildNameplate()
-    const caret     = buildCaretMarker()
-    root.add(nameplate.sprite)
-    shipRoot.add(root)
-    overlays.add(caret.group)
-
-    entry = { root, nameplate, caret, seen: 0 }
-    opponents.set(remote.id, entry)
-    return entry
-  }
-
-  function dropOpponent (id: string): void {
-    const entry = opponents.get(id)
-    if (!entry)
-      return
-    entry.nameplate.dispose()
-    entry.caret.dispose()
-    entry.root.removeFromParent()
-    entry.caret.group.removeFromParent()
-    opponents.delete(id)
-  }
-
   /** The ship a snapshot id refers to, whoever owns it. */
   function playerIn (id: string): ViewPlayer | undefined {
     return (renderFrame ?? transport.frame())?.playersById.get(id)
@@ -369,7 +279,7 @@ export async function mountBattle (
     if (!player)
       return
 
-    blastPool.spawn({ x: player.x, y: player.y + 0.6, z: player.z }, colour, scale)
+    pools?.blast.spawn({ x: player.x, y: player.y + 0.6, z: player.z }, colour, scale)
   }
 
   /**
@@ -424,108 +334,7 @@ export async function mountBattle (
     }
   }
 
-  /**
-   * Push one snapshot into the HUD store.
-   *
-   * Every field here is the SERVER'S. Lock in particular: the server owns the
-   * cone test, and a client that decided its own would disagree with the
-   * authority about who it was shooting.
-   */
-  function publishHud (server: ViewPlayer, snapshot: BattleFrame): void {
-    const store  = battleStore.get()
-    const target = server.lockTarget ? snapshot.playersById.get(server.lockTarget) : undefined
-
-    if (target)
-      battleActions.setLockOn({
-        phase:    server.lockPhase,
-        targetId: target.id,
-        name:     target.name,
-        distance: Math.hypot(target.x - server.x, target.y - server.y, target.z - server.z),
-        team:     target.team,
-        progress: server.lockMeter,
-      })
-    else
-      battleActions.setLockOn(IDLE_LOCK)
-
-    battleActions.setPilot({
-      health:    server.health,
-      maxHealth: server.maxHealth,
-      boost:     server.boost,
-      kills:     server.kills,
-      deaths:    server.deaths,
-      carrying:  snapshot.flagsByCarrierId.get(server.id)?.team ?? null,
-    })
-
-    const primarySpec   = WEAPONS[loadout.primary]
-    const secondarySpec = WEAPONS[loadout.secondary]
-    battleActions.setWeapons(
-      { id: primarySpec.id, cooldown: server.primaryCd, needsLock: primarySpec.needsLock },
-      { id: secondarySpec.id, cooldown: server.secondaryCd, needsLock: secondarySpec.needsLock }
-    )
-
-    battleActions.setChrome({
-      status:      snapshot.status,
-      countdown:   snapshot.countdown,
-      timeLeft:    Math.round(snapshot.timeLeft),
-      scores:      snapshot.scores,
-      scoreTarget: DEFAULT_BATTLE_CONFIG.scoreTarget,
-      zones:       zoneViews(snapshot),
-      flags:       snapshot.flags.map(f => ({
-        team:      f.team,
-        state:     f.state,
-        carrierId: f.carrierId,
-      })),
-    })
-  }
-
-  /**
-   * Draw every remote ship where the server says it was ~100 ms ago.
-   *
-   * Rendering the newest pose straight onto a transform is what made a clean
-   * 30 Hz stream look like a stuttering one — a remote is only ever drawn from
-   * the interpolator, never from a packet.
-   */
-  function renderRemotes (snapshot: BattleFrame, elapsed: number): void {
-    const server     = snapshot.local
-    const renderTime = transport.renderTimeMs()
-    remoteGeneration++
-
-    for (const remote of snapshot.remotes) {
-      const entry = ensureOpponent(remote)
-      entry.seen  = remoteGeneration
-
-      if (!remote.interp.sampleAt(renderTime, _pose, _quat)) {
-        // Nothing buffered yet. (0, 0, 0) is a real place on this map, so an
-        // unseen ship is hidden rather than parked at the origin.
-        entry.root.visible = false
-        entry.caret.setVisible(false)
-        continue
-      }
-
-      entry.root.visible = true
-      entry.root.position.copy(_pose)
-      entry.root.quaternion.copy(_quat)
-
-      const carrying = snapshot.flagsByCarrierId.has(remote.id)
-      entry.nameplate.set(remote.name, remote.state.health, remote.state.maxHealth, remote.team, carrying)
-
-      // The caret only ever appears on the ONE ship the local player's lock is
-      // working on — a bracket on every enemy is wallpaper, not a target.
-      const tracked = Boolean(server) && server?.lockTarget === remote.id && remote.team !== server?.team
-      entry.caret.setVisible(tracked && server?.lockPhase !== 'idle')
-      if (tracked && server) {
-        entry.caret.group.position.set(_pose.x, _pose.y + 1.4, _pose.z)
-        entry.caret.group.updateMatrixWorld()
-        entry.caret.update(app.ctx.camera, server.lockMeter, server.lockPhase === 'locked', true, elapsed)
-      }
-    }
-
-    for (const [ id, entry ] of opponents)
-      if (entry.seen !== remoteGeneration)
-        dropOpponent(id)
-  }
-
-  /** Objectives, weapons and control points, all straight off the snapshot. */
+  /** Objectives and control points, both straight off the snapshot. */
   function renderWorld (snapshot: BattleFrame, elapsed: number): void {
     for (const team of BATTLE_TEAMS) {
       const visual = objectives[team]
@@ -535,43 +344,6 @@ export async function mountBattle (
       visual.group.position.set(state.x, state.y, state.z)
       visual.update(elapsed, state.state === 'carried')
     }
-
-    // Beams are sub-100 ms flashes, drawn from the newest snapshot rather than
-    // interpolated: one smoothed into the past would arrive after the impact it
-    // belongs to.
-    for (let i = 0; i < snapshot.beams.length; i++) {
-      const b    = snapshot.beams[i]
-      const spec = WEAPONS[b.weapon]
-      beamFrom.x = b.from[0]
-      beamFrom.y = b.from[1]
-      beamFrom.z = b.from[2]
-      beamTo.x   = b.to[0]
-      beamTo.y   = b.to[1]
-      beamTo.z   = b.to[2]
-      // Fade over the beam's remaining life so a hit reads as a flash, not a
-      // rod that blinks out.
-      beamPool.show(i, beamFrom, beamTo,
-                    b.weapon, Math.max(0, Math.min(1, b.life / (spec.beamLife ?? 0.1))))
-    }
-    beamPool.hideFrom(snapshot.beams.length)
-
-    // Missiles are NOT in the snapshot any more — they are spawned from a fire
-    // event and integrated locally, so this draws whatever the field stepped
-    // this frame rather than dead-reckoning from a packet that is already old.
-    for (let i = 0; i < projectiles.count; i++) {
-      const m           = projectiles.at(i)!
-      missilePosition.x = m.position[0]
-      missilePosition.y = m.position[1]
-      missilePosition.z = m.position[2]
-      missileVelocity.x = m.velocity[0]
-      missileVelocity.y = m.velocity[1]
-      missileVelocity.z = m.velocity[2]
-      missilePool.show(i,
-                       missilePosition,
-                       missileVelocity,
-                       m.weapon)
-    }
-    missilePool.hideFrom(projectiles.count)
 
     for (let i = 0; i < zoneVisuals.length; i++) {
       const visual = zoneVisuals[i]
@@ -608,10 +380,12 @@ export async function mountBattle (
       world    = physics.world
       sightRay = new physics.RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: 1 })
 
-      // The ONE body in this world besides the arena: the predicted local ship.
-      // Everyone else is an interpolated transform with no physics at all,
+      // Every remote is an interpolated transform with no physics at all,
       // because their motion is the server's to decide and simulating it here
       // would only produce a second, disagreeing answer.
+      opponents = createOpponents({ transport, camera: rig.camera })
+
+      // The ONE body in this world besides the arena: the predicted local ship.
       const local = createHovercraft(physics.world, {
         position:   provisionalSpawn.position,
         quaternion: provisionalSpawn.quaternion,
@@ -647,25 +421,8 @@ export async function mountBattle (
 
       transport.connect({ name, shipId, loadout, match: options.match, server: options.server })
 
-      let clientTick    = 0
-      let lastSnapshot  = 0
-      let lastAimCommit = -1
-
-      /**
-       * Publish connection health, and raise the alarm once if it is fatal.
-       *
-       * A join that never lands used to show `SYNCING` forever — the same thing
-       * a healthy handshake shows. Battle already draws a full error overlay;
-       * it just had nothing that could ever trigger it.
-       */
-      const reportNet = () => {
-        const stats = transport.stats()
-        const store = battleStore.get()
-        battleActions.setNetStats(stats)
-
-        if (stats.linkError && store.status !== 'error')
-          battleActions.setError(`cannot reach the game server · ${stats.linkError}`)
-      }
+      let clientTick   = 0
+      let lastSnapshot = 0
 
       const battleGameModule: AppModule<BattleState> = defineModule<BattleState>({
         name: 'battle-net',
@@ -708,37 +465,18 @@ export async function mountBattle (
             }
           }
 
-          const velocity       = local.chassis.linvel()
+          const velocity = local.chassis.linvel()
           telemetry.velocity.set(velocity.x, velocity.y, velocity.z)
           publishTelemetry(telemetry, local.chassis, prediction, controls.boost)
 
+          // Every `battleActions.*` write the scene makes happens inside this
+          // one call, on the cadence the scene always ran it at — see
+          // `publish-battle.ts`. What comes back is for US: camera shake and
+          // the post pulse, which are not store writes and stay here.
           const snapshot = transport.frame()
-          const store    = battleStore.get()
-
-          reportNet()
-
-          const aim = prediction?.aimNormalised ?? 0
-          if (Math.abs(aim - lastAimCommit) > 0.01) {
-            lastAimCommit = aim
-            battleActions.setAimPitch(aim)
-          }
-
-          if (!snapshot || !server)
-            return
-
-          publishHud(server, snapshot)
-
-          // Nothing writes `telemetry.shake` any more — the module that used to
-          // is gone with the local simulation — so the base `impact` module
-          // idles and the rig is driven directly from the event stream.
-          const events = transport.drainEvents()
-          if (events.length) {
-            const names = snapshot.namesById
-            for (const event of events) {
-              battleActions.applyEvent(event, names)
-              reactTo(event, rig)
-            }
-          }
+          const events   = publisher.tick(prediction?.aimNormalised ?? 0, snapshot, server)
+          for (const event of events)
+            reactTo(event, rig)
         },
       })
 
@@ -757,7 +495,9 @@ export async function mountBattle (
               ctx.scene.add(objective.group)
           for (const zone of zoneVisuals)
             ctx.scene.add(zone.group)
-          ctx.scene.add(shipRoot, overlays, beamPool.group, missilePool.group, blastPool.group)
+          if (opponents)
+            ctx.scene.add(opponents.shipRoot, opponents.overlays)
+          pools = createBattlePools(ctx.scene)
         },
       }),
     ],
@@ -771,19 +511,21 @@ export async function mountBattle (
       post.setSpeed(lv ? Math.hypot(lv.x, lv.z) / vehicleConfig.maxSpeed : 0)
       if (!reducedMotion())
         scenery?.update(elapsed)
-      blastPool.update(frame.delta)
+      pools?.blast.update(frame.delta)
 
       renderFrame = transport.frame()
       if (!renderFrame)
         return
 
-      renderRemotes(renderFrame, elapsed)
+      opponents?.sync(renderFrame)
+      opponents?.render(elapsed)
 
       // Stepped on the RENDER delta, not the sim step: these are visuals whose
       // authoritative outcome the server already decided, and a missile that
       // stutters between physics ticks reads as a dropped frame.
       projectiles.step(frame.delta, projectilePoseOf)
 
+      pools?.step(renderFrame, projectiles)
       renderWorld(renderFrame, elapsed)
     },
 
@@ -793,15 +535,12 @@ export async function mountBattle (
       canvas.removeEventListener('pointerup', onPointerUp)
       canvas.removeEventListener('contextmenu', onContextMenu)
 
-      for (const id of [ ...opponents.keys() ])
-        dropOpponent(id)
+      opponents?.dispose()
       for (const objective of Object.values(objectives))
         objective?.dispose()
       for (const zone of zoneVisuals)
         zone.dispose()
-      beamPool.dispose()
-      missilePool.dispose()
-      blastPool.dispose()
+      pools?.dispose()
       transport.close()
     },
   })
