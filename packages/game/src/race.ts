@@ -236,7 +236,14 @@ export async function mountRace (
           // replays exactly what was predicted.
           const frameOut = transport.pushInput(input, clientTick)
           const view     = transport.latest()
-          const racing   = view?.status === 'racing'
+          // A live room owns the lights: lobby and countdown still hold the grid.
+          // With no room at all there is nothing to hold FOR, and a ship that
+          // cannot be moved is indistinguishable from a broken build — which is
+          // exactly what this gate looked like with the server down. Battle has
+          // always passed `true` here; this is race catching up without losing
+          // the start line. Client prediction only: `RaceSim` is unchanged, so
+          // the authoritative hash cannot move.
+          const racing   = view ? view.status === 'racing' : true
 
           prediction?.step(toRaceInput(frameOut), provisionalSpawn, racing)
           transport.flushInput(transport.serverTick())

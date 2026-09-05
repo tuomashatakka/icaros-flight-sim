@@ -1,0 +1,133 @@
+/*
+ * The primitives the canvas HUD paints, expressed in CSS.
+ *
+ * Every value here comes from a `--hud-*` custom property, which `hud-theme.ts`
+ * derives from `Σhud/tokens`. Nothing in this file may hardcode a colour: the
+ * whole point is that a DOM surface and the visor agree, and a literal here is
+ * how that agreement quietly ends.
+ *
+ * Each class tints from a LOCAL variable with a sensible default
+ * (`--bracket-color`, `--glow-color`, …) so a caller can recolour one instance
+ * without a second class.
+ */
+
+/*
+ * Corner brackets: eight one-pixel arms, drawn as background gradients on a
+ * single pseudo-element rather than four positioned boxes. The canvas draws the
+ * same figure in `chrome.ts#drawCornerBrackets`.
+ */
+.bracketed {
+  position: relative;
+}
+
+.bracketed::before {
+  content: '';
+  position: absolute;
+  inset: var(--hud-bracket-inset);
+  pointer-events: none;
+  background:
+    linear-gradient(var(--bracket-color, var(--hud-primary)), var(--bracket-color, var(--hud-primary))) 0 0 / var(--hud-bracket-len) 1px no-repeat,
+    linear-gradient(var(--bracket-color, var(--hud-primary)), var(--bracket-color, var(--hud-primary))) 0 0 / 1px var(--hud-bracket-len) no-repeat,
+    linear-gradient(var(--bracket-color, var(--hud-primary)), var(--bracket-color, var(--hud-primary))) 100% 0 / var(--hud-bracket-len) 1px no-repeat,
+    linear-gradient(var(--bracket-color, var(--hud-primary)), var(--bracket-color, var(--hud-primary))) 100% 0 / 1px var(--hud-bracket-len) no-repeat,
+    linear-gradient(var(--bracket-color, var(--hud-primary)), var(--bracket-color, var(--hud-primary))) 0 100% / var(--hud-bracket-len) 1px no-repeat,
+    linear-gradient(var(--bracket-color, var(--hud-primary)), var(--bracket-color, var(--hud-primary))) 0 100% / 1px var(--hud-bracket-len) no-repeat,
+    linear-gradient(var(--bracket-color, var(--hud-primary)), var(--bracket-color, var(--hud-primary))) 100% 100% / var(--hud-bracket-len) 1px no-repeat,
+    linear-gradient(var(--bracket-color, var(--hud-primary)), var(--bracket-color, var(--hud-primary))) 100% 100% / 1px var(--hud-bracket-len) no-repeat;
+  opacity: 0.85;
+}
+
+/* Holo glass: the visor's own ink over whatever is behind it. */
+.glass {
+  background: var(--hud-ink);
+  -webkit-backdrop-filter: blur(6px) saturate(130%);
+  backdrop-filter: blur(6px) saturate(130%);
+}
+
+/*
+ * The faint texture behind data areas. A fill layer, not a background on the
+ * panel itself, so a panel can tint its own background independently.
+ */
+.grid {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  opacity: var(--hud-grid-alpha);
+  background-image:
+    linear-gradient(var(--hud-primary) 1px, transparent 1px),
+    linear-gradient(90deg, var(--hud-primary) 1px, transparent 1px);
+  background-size: var(--hud-grid-cell) var(--hud-grid-cell);
+}
+
+/* Tracked uppercase display face — panel captions and button labels. */
+.caption {
+  font: var(--hud-font-display);
+  font-size: var(--hud-caption-size);
+  letter-spacing: var(--hud-caption-tracking);
+  text-transform: uppercase;
+}
+
+.mono {
+  font-family: var(--hud-font-mono);
+}
+
+/*
+ * The two-pass glow: a wide low-alpha wash under a tight bright core. The canvas
+ * does this with two strokes because `shadowBlur` is a per-pixel convolution;
+ * here it is two shadows, off the same alpha constants.
+ */
+.glow {
+  text-shadow:
+    0 0 calc(var(--hud-glow-wide-scale) * 2px)
+      color-mix(in srgb, var(--glow-color, currentColor) calc(var(--hud-glow-wide-alpha) * 100%), transparent),
+    0 0 3px
+      color-mix(in srgb, var(--glow-color, currentColor) calc(var(--hud-glow-alpha) * 100%), transparent);
+}
+
+.glowBox {
+  box-shadow:
+    0 0 calc(var(--hud-glow-wide-scale) * 3px)
+      color-mix(in srgb, var(--glow-color, var(--hud-primary)) calc(var(--hud-glow-wide-alpha) * 100%), transparent),
+    inset 0 0 24px -12px var(--glow-color, var(--hud-primary));
+}
+
+/* Segmented bar — the chunky throttle-gauge read, used as a nav underline. */
+.segments {
+  background-image: repeating-linear-gradient(
+    90deg,
+    var(--segment-color, var(--hud-primary)) 0,
+    var(--segment-color, var(--hud-primary)) calc(100% / var(--hud-bar-segments) - 1.5px),
+    transparent calc(100% / var(--hud-bar-segments) - 1.5px),
+    transparent calc(100% / var(--hud-bar-segments))
+  );
+}
+
+/*
+ * A slow scan travelling down a panel. Purely atmospheric, so it is the first
+ * thing to go when the viewer has asked for less motion.
+ */
+.scan::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    var(--hud-bright) 0,
+    transparent 2px,
+    transparent calc(100% - 2px)
+  );
+  opacity: 0.14;
+  animation: hud-scan 6s linear infinite;
+}
+
+@keyframes hud-scan {
+  from { transform: translateY(-100%); }
+  to   { transform: translateY(100%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .scan::after {
+    animation: none;
+    opacity: 0;
+  }
+}

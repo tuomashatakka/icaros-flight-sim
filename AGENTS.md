@@ -34,6 +34,20 @@ The server is a separate Bun process in `packages/server`, and it must be,
 because it is a persistent stateful simulation: exactly what a serverless host
 cannot run.
 
+**A missing server does not freeze the ship.** With no room at all, both
+composition roots pass `allowDrive: true` and the local prediction flies — race
+matches battle here. A LIVE room still owns the start line: lobby and countdown
+hold the grid exactly as before. Only the client prediction is involved, so
+`RaceSim` and the replay hashes are untouched. This matters because `allowDrive`
+zeroes thrust, steer, brake, boost and strafe, which made an unreachable server
+indistinguishable from a broken build — the HUD reads `NO LINK · FREE FLIGHT`
+over the URL that failed, rather than nothing at all.
+
+A deployment that serves only the Next client (Vercel) therefore needs
+`NEXT_PUBLIC_GAME_SERVER_URL` pointed at a reachable `wss://` host; without it
+`resolveServerUrl` falls back to the page's own host on the default port, which
+is never right there. It is a playable free-flight demo until you set it.
+
 `src/` is the Next.js app shell — routes, API handlers, the server-only
 helpers under `src/lib/`. Everything else is a workspace package under
 `packages/*`, eleven of them, and the boundaries are enforced rather than

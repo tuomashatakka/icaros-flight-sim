@@ -33,6 +33,9 @@ Set `CHROMIUM_PATH` if the sandbox's chromium build does not match playwright's.
 
 **Every mode is network-only** — race as well as battle. `bun run dev:all`
 starts the client and the server together; `dev-cli` starts the server itself.
+With NO room, though, the ship still flies: both roots pass `allowDrive: true`
+and the prediction free-roams, while a live room keeps the countdown freeze. See
+the note in AGENTS.md before you re-tighten that gate.
 
 The `debug-live` skill has the full `window.__dev` API, the scenario schema, and
 what a summary field means. Invoke it when debugging runtime behaviour.

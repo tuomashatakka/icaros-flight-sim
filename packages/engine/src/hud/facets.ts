@@ -365,8 +365,11 @@ function drawZonePips (panel: HudPanel, data: BattleHudData): void {
 /** The one line at the top of the visor. */
 function raceStatusLine (data: RaceHudData, boosting: boolean): string {
   const race = data.race
+  // Free flight, not a dead ship: with no room to hold the grid the prediction
+  // drives unconditionally (see the `racing` policy in `mountRace`). The detail
+  // line under this one names the server that could not be reached.
   if (race.linkError)
-    return 'NO LINK · GAME SERVER UNREACHABLE'
+    return 'NO LINK · FREE FLIGHT'
   if (race.status === 'countdown')
     return `LAUNCH · ${Math.max(1, Math.ceil(data.clocks.countdown))}`
   if (race.status === 'finished')

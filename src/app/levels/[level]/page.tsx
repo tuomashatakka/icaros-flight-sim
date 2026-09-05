@@ -22,11 +22,17 @@ type RaceSceneProps = { level: string }
 
 function RaceScene ({ level }: RaceSceneProps) {
   const search = useSearchParams()
-  const touch  = search.get('touch')
 
+  // `?n=` and `?sv=` are what the lobby hands out, and battle has always read
+  // both. Race declared the same options and no caller ever filled them, so a
+  // lobby-issued server override silently raced against the default host.
   const mount = useCallback(
-    (canvas: HTMLCanvasElement) => mountRace(canvas, level as TrackId, { forcedTouch: touch }),
-    [ level, touch ]
+    (canvas: HTMLCanvasElement) => mountRace(canvas, level as TrackId, {
+      name:        search.get('n') ?? undefined,
+      server:      search.get('sv') ?? undefined,
+      forcedTouch: search.get('touch'),
+    }),
+    [ level, search ]
   )
 
   return <SceneCanvas mount={ mount } fallback={ false } />

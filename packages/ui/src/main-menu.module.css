@@ -1,33 +1,34 @@
+/*
+ * The menu, dressed as the cockpit.
+ *
+ * Everything visual reads from the `--hud-*` properties `hud-theme.ts` spreads
+ * onto `.page`, and the repeated figures (brackets, glass, grid, glow, segment
+ * rails) come from `hud-chrome.module.css`. What is left here is layout and the
+ * handful of rules specific to this screen.
+ */
+
 .page {
   position: relative;
   width: 100%;
   height: 100%;
   overflow-y: auto;
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--hud-ink-solid);
+  color: var(--hud-wash);
 }
 
-/* Ambient backdrop: radial neon glow, then a faint grid masked to the centre. */
-.glow,
-.grid {
+/* Ambient backdrop: the primary and the accent, washed in from two corners. */
+.glow {
   position: absolute;
   inset: 0;
   pointer-events: none;
-}
-
-.glow {
   background:
-    radial-gradient(1200px 600px at 70% -10%, hsl(var(--accent-hsl) / 0.18), transparent 60%),
-    radial-gradient(900px 500px at 10% 110%, hsl(var(--primary-hsl) / 0.2), transparent 55%);
+    radial-gradient(1200px 600px at 70% -10%, color-mix(in srgb, var(--hud-primary) 16%, transparent), transparent 60%),
+    radial-gradient(900px 500px at 10% 110%, color-mix(in srgb, var(--hud-hue-violet) 18%, transparent), transparent 55%);
 }
 
-.grid {
-  opacity: 0.07;
-  background-image:
-    linear-gradient(#fff 1px, transparent 1px),
-    linear-gradient(90deg, #fff 1px, transparent 1px);
-  background-size: 64px 64px;
-  mask-image: radial-gradient(ellipse at center, black 30%, transparent 75%);
+/* The shared grid, masked to the centre so it never fights the page edges. */
+.backdropGrid {
+  mask-image: radial-gradient(ellipse at center, black 25%, transparent 78%);
 }
 
 .inner {
@@ -36,42 +37,39 @@
   display: flex;
   flex-direction: column;
   min-height: 100%;
-  max-width: 64rem;
+  max-width: 68rem;
   margin: 0 auto;
   padding: 4rem 1.5rem;
 }
 
 .header {
   margin-bottom: 3.5rem;
+  padding: 1.75rem 2rem 2rem;
 }
 
 .eyebrow {
-  margin: 0 0 0.75rem;
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  text-transform: uppercase;
+  margin: 0 0 0.9rem;
+  font-size: 0.7rem;
   letter-spacing: 0.45em;
-  color: var(--accent);
+  color: var(--hud-accent);
 }
 
 .title {
   margin: 0;
-  font-size: clamp(3.25rem, 8vw, 4.5rem);
-  font-weight: 900;
+  font: var(--hud-font-display);
+  /* The shorthand above carries its own size; this has to follow it. */
+  font-size: clamp(3rem, 8vw, 4.5rem);
   line-height: 1;
-  letter-spacing: -0.025em;
-  background: linear-gradient(90deg, var(--primary), var(--accent), var(--primary));
-  -webkit-background-clip: text;
-  background-clip: text;
-  color: transparent;
-  width: fit-content;
+  letter-spacing: 0.06em;
+  color: var(--hud-bright);
 }
 
 .blurb {
-  margin: 1rem 0 0;
+  margin: 1.1rem 0 0;
   max-width: 36rem;
-  font-size: 0.875rem;
-  color: var(--muted-foreground);
+  font-size: 0.85rem;
+  line-height: 1.7;
+  color: color-mix(in srgb, var(--hud-wash) 62%, transparent);
 }
 
 .section {
@@ -80,12 +78,9 @@
 
 .sectionTitle {
   margin: 0 0 1.25rem;
-  font-family: var(--font-mono);
-  font-size: 0.75rem;
-  font-weight: 400;
-  text-transform: uppercase;
+  font-size: 0.7rem;
   letter-spacing: 0.35em;
-  color: var(--muted-foreground);
+  color: var(--hud-dim);
 }
 
 .cards {
@@ -95,101 +90,145 @@
 }
 
 /*
- * `--card-from` / `--card-to` are set inline per level, so one rule covers all
- * four circuits and the palette stays data in `lib/levels.ts`.
+ * `--card-from` / `--card-to` are set inline per level. The gradient is now a
+ * low-alpha wash INSIDE the glass rather than the card's fill — the accent has
+ * to say "this circuit" without turning the panel into a solid colour block.
  */
 .card {
   position: relative;
   overflow: hidden;
-  padding: 1.25rem;
-  border: 1px solid var(--border);
-  border-radius: 0.75rem;
-  background-image: linear-gradient(to bottom right, var(--card-from), var(--card-to));
+  display: flex;
+  flex-direction: column;
+  padding: 1.4rem 1.4rem 1.7rem;
+  border: 1px solid color-mix(in srgb, var(--card-from) 45%, transparent);
+  background-image: linear-gradient(
+    155deg,
+    color-mix(in srgb, var(--card-from) 14%, transparent),
+    color-mix(in srgb, var(--card-to) 6%, transparent)
+  );
+  transition:
+    border-color 0.2s,
+    box-shadow 0.2s,
+    transform 0.2s;
+}
+
+.cardGrid {
+  opacity: calc(var(--hud-grid-alpha) * 2);
+}
+
+.card:hover,
+.card:focus-visible {
+  border-color: var(--card-from);
+  box-shadow: 0 0 34px -10px var(--card-from);
+  transform: translateY(-2px);
+}
+
+/* Every card is a link, so the ring has to read clearly against dark glass. */
+.card:focus-visible,
+.navLink:focus-visible {
+  outline: 2px solid var(--hud-bright);
+  outline-offset: 3px;
+}
+
+.cardKind {
+  font-size: 0.6rem;
+  letter-spacing: 0.3em;
+  color: var(--card-from);
+}
+
+.cardName {
+  margin: 0.45rem 0 0;
+  font: var(--hud-font-display);
+  font-size: 1.3rem;
+  letter-spacing: 0.04em;
+  color: var(--hud-bright);
+}
+
+.cardTagline {
+  margin: 0.55rem 0 0;
+  font-size: 0.74rem;
+  line-height: 1.65;
+  color: color-mix(in srgb, var(--hud-wash) 58%, transparent);
+}
+
+.cardCta {
+  margin-top: 1.2rem;
+  font-size: 0.7rem;
+  letter-spacing: 0.22em;
+  color: var(--card-from);
+}
+
+.cardRail {
+  height: 3px;
+  margin-top: 0.9rem;
+  opacity: 0.55;
+  --segment-color: var(--card-from);
+}
+
+.nav {
+  margin-top: auto;
+  display: grid;
+  gap: 0.85rem;
+  grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr));
+}
+
+.navLink {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 0.9rem;
+  padding: 0.95rem 1.2rem 1.1rem;
+  border: 1px solid color-mix(in srgb, var(--bracket-color) 40%, transparent);
   transition:
     border-color 0.2s,
     box-shadow 0.2s;
 }
 
-.card:hover {
-  border-color: var(--accent);
-  box-shadow: 0 0 30px -8px hsl(var(--accent-hsl) / 0.6);
+.navLink:hover {
+  border-color: var(--bracket-color);
+  box-shadow: 0 0 26px -8px var(--bracket-color);
 }
 
-.cardKind {
-  font-family: var(--font-mono);
-  font-size: 0.625rem;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: hsl(var(--accent-hsl) / 0.8);
+.navGlyph {
+  font-size: 1.15rem;
+  line-height: 1;
+  color: var(--bracket-color);
 }
 
-.cardName {
-  margin: 0.25rem 0 0;
-  font-size: 1.25rem;
-  font-weight: 700;
-}
-
-.cardTagline {
-  margin: 0.5rem 0 0;
-  font-size: 0.75rem;
-  line-height: 1.6;
-  color: hsl(var(--foreground-hsl) / 0.7);
-}
-
-.cardCta {
-  display: inline-block;
-  margin-top: 1rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--accent);
-}
-
-.nav {
-  margin-top: auto;
+.navBody {
   display: flex;
-  flex-wrap: wrap;
-  gap: 1rem;
+  flex-direction: column;
+  gap: 0.2rem;
+  min-width: 0;
 }
 
-.hangarLink {
-  padding: 0.75rem 1.5rem;
-  border: 1px solid hsl(var(--primary-hsl) / 0.6);
-  border-radius: var(--radius);
-  background: hsl(var(--primary-hsl) / 0.1);
-  font-size: 0.875rem;
-  font-weight: 600;
-  transition:
-    background 0.2s,
-    box-shadow 0.2s;
+.navKind {
+  font-size: 0.55rem;
+  letter-spacing: 0.3em;
+  color: color-mix(in srgb, var(--bracket-color) 70%, transparent);
 }
 
-.hangarLink:hover {
-  background: hsl(var(--primary-hsl) / 0.2);
-  box-shadow: 0 0 24px -6px hsl(var(--primary-hsl) / 0.7);
+.navLabel {
+  font-size: 0.74rem;
+  letter-spacing: 0.14em;
+  color: var(--hud-bright);
 }
 
-.battleLink {
-  padding: 0.75rem 1.5rem;
-  border: 1px solid hsl(var(--accent-hsl) / 0.6);
-  border-radius: var(--radius);
-  background: hsl(var(--accent-hsl) / 0.1);
-  font-size: 0.875rem;
-  font-weight: 600;
-  transition:
-    background 0.2s,
-    box-shadow 0.2s;
+.navRail {
+  position: absolute;
+  left: 1.2rem;
+  right: 1.2rem;
+  bottom: 0.5rem;
+  height: 2px;
+  opacity: 0.4;
 }
 
-.battleLink:hover {
-  background: hsl(var(--accent-hsl) / 0.2);
-  box-shadow: 0 0 24px -6px hsl(var(--accent-hsl) / 0.7);
+@media (max-width: 40rem) {
+  .inner {
+    padding: 2.5rem 1rem;
+  }
+
+  .header {
+    padding: 1.25rem 1.25rem 1.5rem;
+  }
 }
-
-.editorLink { padding: .75rem 1.5rem; border: 1px solid hsl(var(--editor-accent-hsl) / .6); border-radius: var(--radius); background: hsl(var(--editor-accent-hsl) / .08); font-size: .875rem; font-weight: 600; transition: background .2s, box-shadow .2s; }
-.editorLink:hover { background: hsl(var(--editor-accent-hsl) / .18); box-shadow: 0 0 24px -6px hsl(var(--editor-accent-hsl) / .7); }
-
-/* The crash lab: deterministic physics cases, played back frame by frame. Cyan
-   rather than an accent variable — it is a diagnostic, not a game mode, and it
-   should read as one next to the three that are. */
-.labLink { padding: .75rem 1.5rem; border: 1px solid hsl(187 92% 55% / .5); border-radius: var(--radius); background: hsl(187 92% 55% / .07); font-size: .875rem; font-weight: 600; transition: background .2s, box-shadow .2s; }
-.labLink:hover { background: hsl(187 92% 55% / .17); box-shadow: 0 0 24px -6px hsl(187 92% 55% / .7); }
