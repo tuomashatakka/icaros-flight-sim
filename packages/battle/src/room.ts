@@ -22,7 +22,7 @@ import { recordMatchEnd, recordMatchPlayers, recordMatchStart, withDatabase } fr
 
 import { BattleSim } from './sim'
 import { BattleState, syncBattleState } from './state'
-import { DEFAULT_BACKFILL, rebalanceBots, teamForJoin } from './bots'
+import { DEFAULT_BACKFILL, rebalanceBots, teamForJoin } from './backfill'
 import { apexArena } from './arena'
 import { createBattleRewind } from './rewind'
 import { battleSnapshotOf } from './snapshot'

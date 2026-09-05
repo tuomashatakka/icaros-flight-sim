@@ -3,7 +3,7 @@
  *
  * A one-human match should still be a match: the arena has five control points
  * and two flags, and none of those rules get exercised by an empty deck. The
- * sim already ships the AI (`Δengine/battle/bot`) and already drives any player
+ * sim already ships the AI (`./bot`) and already drives any player
  * flagged `isBot`, so backfill is purely a population policy — how many, on
  * which team, and who gets evicted when a human takes the seat.
  */
