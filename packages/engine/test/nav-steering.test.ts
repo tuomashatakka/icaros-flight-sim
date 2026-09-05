@@ -73,8 +73,12 @@ describe('steer toward', () => {
     const right = steerToward(from, hull(0), new THREE.Vector3(60, 1, 60), ARRIVE)
     const left  = steerToward(from, hull(0), new THREE.Vector3(-60, 1, 60), ARRIVE)
 
-    // `Controls.steer` is -1 left .. 1 right, and turning right increases the
-    // compass bearing `bearingOf` reports — the sign the vehicle acts on.
+    // `Controls.steer` is -1 left .. 1 right. Turning right increases the
+    // compass bearing `bearingOf` reports, and `packages/physics`'s
+    // `vehicle-step.ts` NEGATES `input.steer` exactly once, on purpose, so that
+    // a positive command is a right turn — a positive rotation about +Y is
+    // counter-clockwise seen from above, i.e. left. That negation is the only
+    // place the sign lives; this pins our end of the same contract.
     expect(right.steer).toBeGreaterThan(0)
     expect(left.steer).toBeLessThan(0)
     expect(right.steer).toBeCloseTo(-left.steer, 5)
