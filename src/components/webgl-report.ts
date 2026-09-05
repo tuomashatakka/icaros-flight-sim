@@ -20,6 +20,8 @@ export type DeviceInfo = {
   vendor?:         string;
   maxTextureSize?: number;
   drawingBuffer?:  string;
+  renderTier?:     string;
+  renderScale?:    number;
 }
 
 /**
@@ -44,6 +46,8 @@ export function captureDeviceInfo (app: AnyApp): DeviceInfo {
 
     const size         = app.ctx.renderer.getDrawingBufferSize(new THREE.Vector2())
     info.drawingBuffer = `${size.x}x${size.y}`
+    info.renderTier    = app.ctx.renderer.domElement.dataset.renderTier
+    info.renderScale   = Number(app.ctx.renderer.getPixelRatio().toFixed(2))
   }
   catch {
     // Nothing to report is itself worth reporting.
@@ -84,6 +88,8 @@ export type WebglReport = {
   maxTextureSize?: number;
   drawingBuffer?:  string;
   pixelRatio?:     number;
+  renderTier?:     string;
+  renderScale?:    number;
 
   /** three's own resource census at the moment of death. */
   resources?: string;
@@ -195,6 +201,9 @@ export function formatWebglReport (report: WebglReport): string[] {
     lines.push(`gpu: ${report.renderer}`)
   if (report.drawingBuffer)
     lines.push(`buffer: ${report.drawingBuffer}`)
+
+  if (report.renderTier)
+    lines.push(`quality: ${report.renderTier} · render scale ${report.renderScale ?? '?'}`)
 
   lines.push(`dpr: ${report.pixelRatio}${report.maxTextureSize ? ` · max tex ${report.maxTextureSize}` : ''}`)
 

@@ -27,6 +27,8 @@ import type { EnvironmentOverrides } from './environment'
 import { publishModule } from '../modules/publish'
 import type { PublishHandle } from '../modules/publish'
 import { attachBridge } from '../bridge'
+import { createFrameBudget, resolveRenderQuality } from '../render/quality'
+import { freezeStaticTree } from '../render/static'
 
 
 const SEED = 7
@@ -94,7 +96,7 @@ export type BaseSceneConfig<TState extends object> = {
    * made every level state the same two values twice.
    */
   environment?:    EnvironmentOverrides;
-  bloom?:          { threshold: number; strength: number; radius: number };
+  bloom?:          false | { threshold: number; strength: number; radius: number };
   colliders?:      readonly BoxCollider[];
   colliderOffset?: readonly [number, number, number];
 
@@ -129,6 +131,7 @@ export type BaseSceneConfig<TState extends object> = {
   /** Camera far plane. Defaults to the race rig's 400. */
   cameraFar?:         number;
   buildGeometry?:     (ctx: AppContext<TState>, physics: Physics) => void;
+  freezeGeometry?:    boolean;
   gameModuleFactory?: (
     physics: Physics,
     isVehicleCollider: (handle: number) => boolean,
@@ -160,12 +163,13 @@ export async function mountBaseScene<TState extends object> (
   const {
     canvas,
     initialState,
-    bloom = { threshold: 0.8, strength: 0.4, radius: 0.4 },
+    bloom = false,
     colliders,
     colliderOffset,
     aimPitchSource,
     post,
     buildGeometry,
+    freezeGeometry = false,
     gameModuleFactory,
     hudModuleFactory,
     extraModules = [],
@@ -174,6 +178,8 @@ export async function mountBaseScene<TState extends object> (
   } = config
 
   const environment = resolveEnvironment(config.environment)
+  const quality     = resolveRenderQuality()
+  const frameBudget = createFrameBudget(quality.pixelRatio)
 
   const RAPIER    = await initRapier()
   const physics   = createPhysics(RAPIER)
@@ -201,7 +207,7 @@ export async function mountBaseScene<TState extends object> (
 
   const publish: PublishType = { current: null }
 
-  let composer: { render(delta: number): void } | null = null
+  let composer: { render(delta: number): void; setPixelRatio(ratio: number): void } | null = null
 
   const seed = resolveSeed(config.seed ?? SEED)
   const rng  = createSeededRng(seed)
@@ -213,6 +219,15 @@ export async function mountBaseScene<TState extends object> (
   let lastViewSeq                                                         = controls.viewSeq
   let lastViewBlendSeq                                                    = controls.viewBlendSeq
   let lastView                                                            = rig.view()
+  const lastControls = {
+    steer:    NaN,
+    throttle: false,
+    brake:    false,
+    boost:    false,
+    reverse:  false,
+    strafe:   NaN,
+    resetSeq: -1,
+  }
 
   useCameraView.getState().setView(lastView)
 
@@ -236,7 +251,12 @@ export async function mountBaseScene<TState extends object> (
     defineModule<TState>({
       name: 'scene-geometry',
       build (ctx) {
+        const existing = freezeGeometry ? new Set(ctx.scene.children) : null
         buildGeometry?.(ctx, physics)
+        if (existing)
+          for (const child of ctx.scene.children)
+            if (!existing.has(child))
+              freezeStaticTree(child)
         if (colliders)
           attachBoxColliders(physics, colliders, colliderOffset)
       },
@@ -253,6 +273,23 @@ export async function mountBaseScene<TState extends object> (
       name: 'input-sync',
       build () {},
       update () {
+        if (controls.steer === lastControls.steer &&
+            controls.throttle === lastControls.throttle &&
+            controls.brake === lastControls.brake &&
+            controls.boost === lastControls.boost &&
+            controls.reverse === lastControls.reverse &&
+            controls.strafe === lastControls.strafe &&
+            controls.resetSeq === lastControls.resetSeq)
+          return
+
+        lastControls.steer    = controls.steer
+        lastControls.throttle = controls.throttle
+        lastControls.brake    = controls.brake
+        lastControls.boost    = controls.boost
+        lastControls.reverse  = controls.reverse
+        lastControls.strafe   = controls.strafe
+        lastControls.resetSeq = controls.resetSeq
+
         app.setState({
           steer:    controls.steer,
           throttle: controls.throttle,
@@ -277,7 +314,7 @@ export async function mountBaseScene<TState extends object> (
       name: 'impact',
       build () {},
       update () {
-        if (telemetry.shake > 0) {
+        if (quality.motion && telemetry.shake > 0) {
           rig.shake(telemetry.shake)
           telemetry.shake = 0
         }
@@ -286,20 +323,19 @@ export async function mountBaseScene<TState extends object> (
 
     ...extraModules,
 
-    postProcessing<TState>({
+  )
+
+  if (quality.post && (bloom || post))
+    modules.push(postProcessing<TState>({
       bloom,
       depth:    post?.depth,
       onFrame:  post?.onFrame,
       onResize: post?.onResize,
       effects:  ctx => {
-        // The composer is captured here rather than in `build` because this is
-        // the only callback the module hands it out from, and `renderFrame`
-        // needs it to draw at all.
         composer = ctx.composer
         return post?.effects?.(ctx) ?? []
       },
-    })
-  )
+    }))
 
   const app = createApp<TState>(canvas, {
     state:    initialState,
@@ -307,8 +343,12 @@ export async function mountBaseScene<TState extends object> (
     clock,
     camera:   rig.camera,
     scene:    { background: environment.background },
-    renderer: { shadows: true },
-    use:      modules,
+    renderer: {
+      antialias:     quality.antialias,
+      pixelRatioMax: quality.pixelRatio,
+      shadows:       quality.shadows,
+    },
+    use: modules,
 
     render (frame) {
       if (skipRender)
@@ -316,8 +356,18 @@ export async function mountBaseScene<TState extends object> (
       renderFrame(frame)
     },
   })
+  canvas.dataset.renderTier  = quality.tier
+  canvas.dataset.renderScale = String(quality.pixelRatio)
 
   function renderFrame (frame: FrameContext) {
+    const nextPixelRatio = frameBudget.sample(frame.delta)
+    if (nextPixelRatio) {
+      const renderer = app.ctx.renderer
+      renderer.setPixelRatio(nextPixelRatio)
+      renderer.setSize(canvas.clientWidth, canvas.clientHeight, false)
+      composer?.setPixelRatio(nextPixelRatio)
+      canvas.dataset.renderScale = String(nextPixelRatio)
+    }
     if (controls.viewSeq !== lastViewSeq) {
       lastViewSeq = controls.viewSeq
       rig.toggleView()

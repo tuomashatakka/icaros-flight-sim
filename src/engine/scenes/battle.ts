@@ -480,8 +480,9 @@ export async function mountBattle (
     const snapshot   = transport.latest()
     const server     = transport.localState()
     const renderTime = transport.renderTimeMs()
+    const remotes    = transport.remotes()
 
-    for (const remote of transport.remotes()) {
+    for (const remote of remotes) {
       const entry = ensureOpponent(remote)
 
       if (!remote.interp.sampleAt(renderTime, _pose, _quat)) {
@@ -510,10 +511,12 @@ export async function mountBattle (
       }
     }
 
-    const live = new Set(transport.remotes().map(r => r.id))
-    for (const id of [ ...opponents.keys() ])
-      if (!live.has(id))
-        dropOpponent(id)
+    opponent: for (const id of opponents.keys()) {
+      for (const remote of remotes)
+        if (remote.id === id)
+          continue opponent
+      dropOpponent(id)
+    }
   }
 
   /** Objectives, weapons and control points, all straight off the snapshot. */
@@ -744,6 +747,7 @@ export async function mountBattle (
 
     onFrame: frame => {
       const elapsed = frame.elapsed
+      const remotes = transport.remotes()
 
       // Motion blur rides ground speed rather than the boost flag, so coasting
       // fast still streaks and tapping boost from a standstill does not.
@@ -758,7 +762,7 @@ export async function mountBattle (
       // authoritative outcome the server already decided, and a missile that
       // stutters between physics ticks reads as a dropped frame.
       projectiles.step(frame.delta, id => {
-        const remote = transport.remotes().find(r => r.id === id)
+        const remote = remotes.find(r => r.id === id)
         if (remote)
           return { x: remote.state.x, y: remote.state.y, z: remote.state.z }
 

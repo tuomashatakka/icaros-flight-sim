@@ -72,7 +72,10 @@ export function shipVisualModule (
 
   // Survives a hull swap: reapplied in `swapTo` so changing ship mid-hold does
   // not silently snap the nose back to level.
-  let aimPitch = 0
+  let aimPitch      = 0
+  let lastAirbrake  = -1
+  let lastIntensity = -1
+  let lastThrottle  = -1
 
   async function swapTo (config: ShipConfig) {
     const mine = ++generation
@@ -155,18 +158,28 @@ export function shipVisualModule (
           instance?.applyConfig(config)
       }
 
-      airbrakes?.setDeploy(telemetry.airbrake)
+      if (telemetry.airbrake !== lastAirbrake) {
+        lastAirbrake = telemetry.airbrake
+        airbrakes?.setDeploy(lastAirbrake)
+      }
 
       // Pulse the engine glow while boosting.
       const intensity = telemetry.boosting ? 3.6 : 1.6
-      for (const material of glowMaterials)
-        material.emissiveIntensity = intensity
+      if (intensity !== lastIntensity) {
+        lastIntensity = intensity
+        for (const material of glowMaterials)
+          material.emissiveIntensity = intensity
+      }
 
       // Plume tracks the throttle. The idle floor is deliberate: an engine that
       // goes fully dark on lift-off reads as a stall rather than a coast.
       const burner = instance?.burner
       if (burner) {
-        burner.setThrottle(telemetry.boosting ? 1 : state.throttle ? 0.72 : 0.12)
+        const throttle = telemetry.boosting ? 1 : state.throttle ? 0.72 : 0.12
+        if (throttle !== lastThrottle) {
+          lastThrottle = throttle
+          burner.setThrottle(throttle)
+        }
         // Driven on the fixed step rather than the render frame so the plume is
         // identical across displays, as the rest of the sim is.
         burner.update(frame.delta, frame.elapsed)
@@ -181,6 +194,9 @@ export function shipVisualModule (
       instance = null
       glowMaterials = []
       lastConfig = null
+      lastAirbrake = -1
+      lastIntensity = -1
+      lastThrottle = -1
       if (handle)
         handle.current = null
     },

@@ -98,7 +98,10 @@ const beamsInFlight: Beam[] = []
 
 export class BattleTransport {
   private readonly link = new RoomLink<BattleStateType, BattleEvent>()
-  private view: BattleView | null = null
+  private view:        BattleView | null = null
+  private viewKey = ''
+  private remoteView:  BattleView | null = null
+  private remoteCache: NetRemote[] = []
 
   get clock () {
     return this.link.clock
@@ -170,6 +173,8 @@ export class BattleTransport {
     const view = this.latest()
     if (!view)
       return []
+    if (view === this.remoteView)
+      return this.remoteCache
 
     const out: NetRemote[] = []
     for (const remote of this.link.remotes()) {
@@ -177,6 +182,8 @@ export class BattleTransport {
       if (player)
         out.push({ id: player.id, team: player.team, name: player.name, interp: remote.interp, state: player })
     }
+    this.remoteView  = view
+    this.remoteCache = out
     return out
   }
 
@@ -223,15 +230,18 @@ export class BattleTransport {
   /**
    * Join the two channels.
    *
-   * Rebuilt per call rather than cached, because both halves change at
-   * different rates and a cache keyed on either would go stale against the
-   * other. The scene asks once per frame.
+   * The two server ticks form the cache key because Schema and packed snapshots
+   * change at different rates. Every consumer in one frame receives one view.
    */
   latest (): BattleView | null {
     const state = this.link.state
     const snap  = this.link.latest()
     if (!state)
       return null
+
+    const key = `${state.serverTick}:${snap?.serverTick ?? 0}`
+    if (this.view && key === this.viewKey)
+      return this.view
 
     const poses = new Map<number, ShipState>()
     for (const ship of snap?.ships ?? [])
@@ -267,7 +277,8 @@ export class BattleTransport {
       })
     }
 
-    this.view = {
+    this.viewKey = key
+    this.view    = {
       tick:      state.serverTick,
       status:    state.status as BattleStatus,
       countdown: state.countdown,

@@ -99,10 +99,14 @@ export type TeleportArgs = {
 
 /** Rolling per-frame record kept by the trace buffer. */
 export type FrameRecord = {
-  ms:        number;
-  speed:     number;
-  grounded:  boolean;
-  drawCalls: number;
+  ms:         number;
+  speed:      number;
+  grounded:   boolean;
+  drawCalls:  number;
+  triangles:  number;
+  geometries: number;
+  textures:   number;
+  programs:   number;
 }
 
 export type CapturedLog = {

@@ -108,6 +108,7 @@ export function SceneCanvas ({ mount, onApp, className, fallback }: SceneCanvasP
     // answers, because a lost one refuses these exact questions.
     let device: DeviceInfo = {}
     let recoveryTimer      = 0
+    let detachVisibility: (() => void) | undefined
 
     // A context lost while playing (tab backgrounded, GPU reset, another page
     // claiming the budget) leaves three rendering into nothing — the scene
@@ -154,6 +155,7 @@ export function SceneCanvas ({ mount, onApp, className, fallback }: SceneCanvasP
         app = built
         detachBridges = onApp?.(built)
         built.start()
+        detachVisibility = attachVisibilityLifecycle(built, host)
         drawingSince = performance.now()
         device       = captureDeviceInfo(built)
         setStatus('ready')
@@ -176,6 +178,7 @@ export function SceneCanvas ({ mount, onApp, className, fallback }: SceneCanvasP
       canvas.removeEventListener('webglcontextlost', onContextLost)
       if (typeof detachBridges === 'function')
         detachBridges()
+      detachVisibility?.()
       if (app) {
         app.dispose()
         releaseContext(app)
@@ -194,6 +197,31 @@ export function SceneCanvas ({ mount, onApp, className, fallback }: SceneCanvasP
     {status === 'loading' && (fallback ?? <SceneFallback status={ status } error={ error } report={ report } onRetry={ retry } />)}
     {status === 'error' && <SceneFallback status={ status } error={ error } report={ report } onRetry={ retry } />}
   </div>
+}
+
+/** Hidden canvases spend battery, then resume with a giant visual delta. */
+function attachVisibilityLifecycle (app: AnyApp, host: HTMLElement): () => void {
+  let intersecting = true
+
+  const sync = () => {
+    if (document.visibilityState === 'visible' && intersecting)
+      app.start()
+    else
+      app.stop()
+  }
+  const observer = typeof IntersectionObserver === 'undefined'
+    ? null
+    : new IntersectionObserver(entries => {
+      intersecting = entries[0]?.isIntersecting ?? true
+      sync()
+    })
+
+  observer?.observe(host)
+  document.addEventListener('visibilitychange', sync)
+  return () => {
+    observer?.disconnect()
+    document.removeEventListener('visibilitychange', sync)
+  }
 }
 
 /**

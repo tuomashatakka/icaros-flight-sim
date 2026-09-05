@@ -118,8 +118,9 @@ export async function mountRace (
    */
   function renderRemotes (): void {
     const renderTime = transport.renderTimeMs()
+    const remotes    = transport.remotes()
 
-    for (const racer of transport.remotes()) {
+    for (const racer of remotes) {
       const entry = ensureOpponent(racer)
 
       if (!racer.interp.sampleAt(renderTime, _pose, _quat)) {
@@ -135,10 +136,12 @@ export async function mountRace (
       entry.nameplate.set(racer.name, racer.state.position, transport.latest()?.racers.length ?? 1, 'red', false)
     }
 
-    const live = new Set(transport.remotes().map(r => r.id))
-    for (const id of [ ...opponents.keys() ])
-      if (!live.has(id))
-        dropOpponent(id)
+    opponent: for (const id of opponents.keys()) {
+      for (const remote of remotes)
+        if (remote.id === id)
+          continue opponent
+      dropOpponent(id)
+    }
   }
 
   const app = await mountBaseScene<RaceState>({
@@ -151,6 +154,7 @@ export async function mountRace (
     colliderOffset: track.colliderOffset,
     environment:    TRACK_VISUALS[trackId].environment,
     buildGeometry:  ctx => TRACK_VISUALS[trackId].build(ctx, bundle),
+    freezeGeometry: true,
 
     gameModuleFactory: (physics, _isVehicleCollider, telemetry, sceneControls, vehicleRef, rig) => {
       // The ONE body in this world besides the track: the predicted local ship.

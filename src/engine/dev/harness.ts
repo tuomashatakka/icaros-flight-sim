@@ -410,10 +410,14 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
       overlays.update(shipPosition)
       legend.render(overlays.flags())
       recordFrame({
-        ms:        +(frameDelta * 1000).toFixed(2),
-        speed:     telemetry.speed,
-        grounded:  telemetry.grounded,
-        drawCalls: app.ctx.renderer.info.render.calls,
+        ms:         +(frameDelta * 1000).toFixed(2),
+        speed:      telemetry.speed,
+        grounded:   telemetry.grounded,
+        drawCalls:  app.ctx.renderer.info.render.calls,
+        triangles:  app.ctx.renderer.info.render.triangles,
+        geometries: app.ctx.renderer.info.memory.geometries,
+        textures:   app.ctx.renderer.info.memory.textures,
+        programs:   app.ctx.renderer.info.programs?.length ?? 0,
       })
     },
 

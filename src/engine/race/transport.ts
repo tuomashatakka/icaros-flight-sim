@@ -83,6 +83,10 @@ export type RaceConnectOptions = {
 
 export class RaceTransport {
   private readonly link = new RoomLink<RaceStateType, RaceEvent>()
+  private view:        RaceView | null = null
+  private viewKey = ''
+  private remoteView:  RaceView | null = null
+  private remoteCache: NetRacer[] = []
 
   get clock () {
     return this.link.clock
@@ -154,6 +158,8 @@ export class RaceTransport {
     const view = this.latest()
     if (!view)
       return []
+    if (view === this.remoteView)
+      return this.remoteCache
 
     const byIndex = new Map<number, ViewRacer>()
     for (const racer of view.racers) {
@@ -168,15 +174,22 @@ export class RaceTransport {
       if (racer)
         out.push({ id: racer.id, name: racer.name, interp: remote.interp, state: racer })
     }
+    this.remoteView  = view
+    this.remoteCache = out
     return out
   }
 
-  // Join the two channels. Rebuilt per call: they change at different rates,
-  //  so a cache keyed on either would go stale against the other.
+  // Join the two channels. The two server ticks form the cache key because
+  // Schema and packed snapshots change at different rates.
   latest (): RaceView | null {
     const state = this.link.state
     if (!state)
       return null
+
+    const snapshotTick = this.link.latest()?.serverTick ?? 0
+    const key          = `${state.serverTick}:${snapshotTick}`
+    if (this.view && key === this.viewKey)
+      return this.view
 
     const poses = new Map<number, ShipState>()
     for (const ship of this.link.latest()?.ships ?? [])
@@ -213,7 +226,8 @@ export class RaceTransport {
       })
     }
 
-    return {
+    this.viewKey = key
+    this.view    = {
       tick:      state.serverTick,
       status:    state.status as RaceStatus,
       countdown: state.countdown,
@@ -221,5 +235,6 @@ export class RaceTransport {
       laps:      state.laps,
       racers,
     }
+    return this.view
   }
 }

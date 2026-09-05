@@ -2,6 +2,7 @@ import * as THREE from 'three'
 import { defineModule } from 'threejs-scene'
 import type { AppModule } from 'threejs-scene'
 import type { RaceState } from '../state'
+import { resolveRenderQuality } from '../render/quality'
 
 
 const _target = new THREE.Vector3()
@@ -42,7 +43,8 @@ export function sunModule (
 ): AppModule<RaceState> {
   const offset  = options.offset ?? [ 40, 60, 25 ]
   const frustum = options.frustum ?? 45
-  const mapSize = options.mapSize ?? 2048
+  const quality = resolveRenderQuality()
+  const mapSize = Math.min(options.mapSize ?? 2048, quality.shadowMapSize)
 
   let light: THREE.DirectionalLight | null = null
 
@@ -54,7 +56,7 @@ export function sunModule (
 
     build (ctx) {
       light = new THREE.DirectionalLight(options.color ?? '#ffffff', options.intensity ?? 1.6)
-      light.castShadow = true
+      light.castShadow = quality.shadows
       light.shadow.mapSize.set(mapSize, mapSize)
 
       const cam  = light.shadow.camera
@@ -98,6 +100,9 @@ export function sunModule (
             Math.round(position.y / texelSize) * texelSize,
             Math.round(position.z / texelSize) * texelSize
           )
+          if (light.target.position.equals(_target))
+            return
+
           light.target.position.copy(_target)
           light.target.updateMatrixWorld()
           light.position.set(
