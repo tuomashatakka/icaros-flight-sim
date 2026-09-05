@@ -4,8 +4,8 @@
 // tsconfig `paths` block in the repository is generated from the two. Run with
 // `bun run aliases` after adding a package or a dependency edge; CI runs it with
 // `--check` and fails if a tsconfig was edited by hand instead.
-import { readFileSync, writeFileSync, existsSync } from 'node:fs'
-import { resolve } from 'node:path'
+import { readFileSync, writeFileSync, existsSync, readdirSync, statSync } from 'node:fs'
+import { dirname, join, relative, resolve } from 'node:path'
 
 
 export const GLYPH = {
@@ -123,6 +123,33 @@ const rootFile                 = resolve(root, 'tsconfig.json')
 const rootJson                 = JSON.parse(readFileSync(rootFile, 'utf8').replace(/^\s*\/\/.*$/gm, ''))
 rootJson.compilerOptions.paths = rootPaths()
 emit('tsconfig.json', `${JSON.stringify(rootJson, null, 2)}\n`)
+
+// A relative import that leaves its own package's `src/` is a boundary hole the
+// glyph tables cannot close (every `paths` entry makes `../../physics/src/x`
+// resolve), so `--check` walks the tree for them.
+function* walk (dir) {
+  for (const entry of readdirSync(dir)) {
+    const path = join(dir, entry)
+    if (statSync(path).isDirectory())
+      yield* walk(path)
+    else if ((/\.(ts|tsx|mjs)$/).test(entry))
+      yield path
+  }
+}
+if (check)
+  for (const pkg of Object.keys(DEPS)) {
+    const srcDir = resolve(root, `packages/${pkg}/src`)
+    if (!existsSync(srcDir))
+      continue
+    for (const file of walk(srcDir))
+      for (const [ , spec ] of readFileSync(file, 'utf8').matchAll(/from\s+['"](\.\.?\/[^'"]+)['"]/g)) {
+        const target = resolve(dirname(file), spec)
+        if (relative(srcDir, target).startsWith('..')) {
+          console.error(`aliases: ${relative(root, file)} imports ${spec}, which leaves packages/${pkg}/src — use a glyph`)
+          drifted = true
+        }
+      }
+  }
 
 if (check && drifted)
   process.exit(1)
