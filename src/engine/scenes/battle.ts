@@ -31,6 +31,7 @@ import { BattleTransport } from '../battle/transport'
 import type { NetRemote } from '../battle/transport'
 import type { ViewPlayer } from '../battle/transport'
 import { LocalPrediction } from '../net/prediction'
+import { publishTelemetry } from '../net/telemetry-publish'
 import { createHovercraft, createHovercraftState } from '@crash-velocity/physics/vehicle-step'
 import { BodyInterpolator } from '@crash-velocity/physics/interpolation'
 import { useBattleStore } from '@/hooks/use-battle-store'
@@ -289,7 +290,6 @@ export async function mountBattle (
 
   // The local ship needs its own caret target too — for the ONE enemy the local
   // player is tracking, drawn around that enemy, not around us.
-  const tickCount = 0
 
   /**
    * Zone views for the HUD.
@@ -578,7 +578,7 @@ export async function mountBattle (
     },
     post: post.options,
 
-    gameModuleFactory: (physics, _isVehicleCollider, telemetry, controls, vehicleRef, rig) => {
+    gameModuleFactory: (physics, telemetry, controls, vehicleRef, rig) => {
       // The sight casts against the same world the sim does, through one reused
       // ray — it runs every frame the HUD redraws.
       world    = physics.world
@@ -686,11 +686,7 @@ export async function mountBattle (
 
           const velocity       = local.chassis.linvel()
           telemetry.velocity.set(velocity.x, velocity.y, velocity.z)
-          telemetry.speed      = Math.hypot(velocity.x, velocity.z)
-          telemetry.boostMeter = prediction?.boost ?? 1
-          telemetry.boosting   = controls.boost
-          telemetry.grounded   = prediction?.grounded ?? false
-          telemetry.airbrake   = prediction?.airbrake ?? 0
+          publishTelemetry(telemetry, local.chassis, prediction, controls.boost)
 
           const snapshot = transport.latest()
           const store    = useBattleStore.getState()

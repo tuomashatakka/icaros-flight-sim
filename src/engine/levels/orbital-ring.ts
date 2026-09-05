@@ -24,7 +24,7 @@ import type { EnvironmentOverrides } from '../scenes/environment'
 export const orbitalRingEnvironment: EnvironmentOverrides = {
   background: '#0a0f1e',
   fog:        [ '#0a0f1e', 200, 700 ],
-  hemi:       { sky: '#3b82f6', ground: '#0a0f1e' },
+  hemi:       { sky: '#3b82f6', ground: '#0a0f1e', intensity: 1.28 },
 }
 
 export function buildOrbitalRing (ctx: SceneContext, bundle: TrackBundle): void {
@@ -55,10 +55,7 @@ export function buildOrbitalRing (ctx: SceneContext, bundle: TrackBundle): void 
   planet.position.set(0, -320, -40)
   ctx.scene.add(planet)
 
-  ctx.scene.add(new THREE.HemisphereLight('#3b82f6', '#0a0f1e', 0.9))
   ctx.scene.add(pointLight('#67e8f9', 70, 160, [ 0, 20, 10 ]))
   ctx.scene.add(pointLight('#22d3ee', 260, 460, [ 180, 50, -150 ]))
   ctx.scene.add(pointLight('#818cf8', 200, 420, [ 250, 40, 60 ]))
-
-  ctx.scene.fog = new THREE.Fog('#0a0f1e', 200, 700)
 }

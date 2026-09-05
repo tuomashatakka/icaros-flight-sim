@@ -15,11 +15,6 @@ import type { BattleHudData, HudData, HudFrame, HudPanelKey, RaceHudData } from 
 
 const TAU = Math.PI * 2
 
-const _forward = new THREE.Vector3()
-const _up      = new THREE.Vector3()
-const _euler   = new THREE.Euler()
-const WORLD_UP = new THREE.Vector3(0, 1, 0)
-
 export function createHudPanels (): Record<HudPanelKey, HudPanel> {
   return {
     topLeft:      new HudPanel({ name: 'topLeft', title: 'navigation', accent: COLORS.cyan, trace: HUD_PANEL_TRACES.topLeft }),

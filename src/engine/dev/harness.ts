@@ -402,6 +402,18 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
     }
   })
 
+  // `renderer.info` resets itself on every `render()` call, and the composer
+  //  makes several per frame — so reading it straight gave the cost of the last
+  //  post pass alone. It reported `drawCalls: 1` for every scene in the game,
+  //  which is a useless number to try to optimise against. Accumulating instead,
+  //  and resetting once per frame here, is the documented way to total a frame
+  //  that renders more than once. Dev-only: nothing switches this on in a build.
+  const info     = app.ctx.renderer.info
+  info.autoReset = false
+  detachers.push(() => {
+    info.autoReset = true
+  })
+
   return {
     api,
 
@@ -409,12 +421,16 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
       markReady()
       overlays.update(shipPosition)
       legend.render(overlays.flags())
+
+      // Read before the reset: at this point `info` holds every pass of the
+      //  frame just drawn, because this runs ahead of the next `composer.render`.
       recordFrame({
         ms:        +(frameDelta * 1000).toFixed(2),
         speed:     telemetry.speed,
         grounded:  telemetry.grounded,
-        drawCalls: app.ctx.renderer.info.render.calls,
+        drawCalls: info.render.calls,
       })
+      info.reset()
     },
 
     detach () {

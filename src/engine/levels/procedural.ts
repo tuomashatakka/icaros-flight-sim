@@ -27,7 +27,7 @@ export const proceduralEnvironment: EnvironmentOverrides = {
 
   // A ~3000-unit sprint: it needs far more range than the fixed decks.
   fog:  [ '#171720', 120, 900 ],
-  hemi: { sky: '#8a9bff', ground: '#171720' },
+  hemi: { sky: '#8a9bff', ground: '#171720', intensity: 1.18 },
 }
 
 export function buildProcedural (ctx: SceneContext, bundle: TrackBundle): void {
@@ -40,12 +40,6 @@ export function buildProcedural (ctx: SceneContext, bundle: TrackBundle): void {
   road.receiveShadow = true
   ctx.scene.add(road)
 
-  // This level carried no lights of its own under R3F — it leaned entirely
-  // on the Canvas ambient + directional + Sky + Environment. The engine's
-  // base layer is deliberately dim, so it needs its own fill here.
-  ctx.scene.add(new THREE.HemisphereLight('#8a9bff', '#171720', 0.8))
   ctx.scene.add(pointLight('#aab4ff', 120, 500, [ 0, 80, -200 ]))
   ctx.scene.add(pointLight('#c8b4ff', 90, 400, [ 400, 60, -800 ]))
-
-  ctx.scene.fog = new THREE.Fog('#171720', 120, 900)
 }

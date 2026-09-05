@@ -57,8 +57,6 @@ const _view: HudViewFrame = {
   camera:         null as unknown as THREE.Camera,
   hudQuaternion:  _hudQuaternion,
   hudLead:        _hudLead,
-  panX:           0,
-  panY:           0,
   aimPitch:       0,
 }
 
@@ -131,12 +129,12 @@ export type BaseSceneConfig<TState extends object> = {
   buildGeometry?:     (ctx: AppContext<TState>, physics: Physics) => void;
   gameModuleFactory?: (
     physics: Physics,
-    isVehicleCollider: (handle: number) => boolean,
+
     telemetry: Telemetry,
     controls: Controls,
     vehicleRef: { current: VehicleHandle | null },
     rig: CameraRig
-  ) => { module: AppModule<TState>; handleCollision?: (a: number, b: number, started: boolean) => void };
+  ) => { module: AppModule<TState> };
   hudModuleFactory?: (
     shipRoot: THREE.Group,
     telemetry: Telemetry,
@@ -218,17 +216,7 @@ export async function mountBaseScene<TState extends object> (
 
   const shipRoot = new THREE.Group()
 
-  const isVehicleCollider = (handle: number) => {
-    const body = vehicle.current?.body
-    if (!body)
-      return false
-    for (let i = 0; i < body.numColliders(); i++)
-      if (body.collider(i).handle === handle)
-        return true
-    return false
-  }
-
-  const game = gameModuleFactory?.(physics, isVehicleCollider, telemetry, controls, vehicle, rig)
+  const game = gameModuleFactory?.(physics, telemetry, controls, vehicle, rig)
 
   const modules: Array<AppModule<TState>> = [
     ...environmentModules<TState>(environment, sun),
@@ -270,7 +258,7 @@ export async function mountBaseScene<TState extends object> (
     modules.push(game.module)
 
   modules.push(
-    physicsStepModule(physics, game?.handleCollision) as unknown as AppModule<TState>,
+    physicsStepModule(physics) as unknown as AppModule<TState>,
     publishModule(telemetry, publish) as unknown as AppModule<TState>,
 
     defineModule<TState>({
@@ -365,8 +353,6 @@ export async function mountBaseScene<TState extends object> (
       _view.throttle    = telemetry.thrustCommand
       _view.cameraBlend = blend
       _view.camera      = rig.camera
-      _view.panX        = controls.panX
-      _view.panY        = controls.panY
       _view.aimPitch    = aimNorm
       hud.current?.update(_view)
 

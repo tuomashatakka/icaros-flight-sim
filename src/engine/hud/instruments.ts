@@ -61,11 +61,6 @@ export function slipFrom (quaternion: THREE.Quaternion, velocity: THREE.Vector3)
   return THREE.MathUtils.clamp(-velocity.dot(_right) / speed, -1, 1)
 }
 
-/** Vertical speed, m/s. Positive is climbing. */
-export function climbRateFrom (velocity: THREE.Vector3): number {
-  return velocity.y
-}
-
 export type PitchLadderOptions = {
 
   /** Panel-space centre of the instrument. */

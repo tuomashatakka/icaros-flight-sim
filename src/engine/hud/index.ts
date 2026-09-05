@@ -92,13 +92,9 @@ function sharedHudModule<TState extends object> ({
     camera:           new THREE.PerspectiveCamera(),
     hudQuaternion:    new THREE.Quaternion(),
     hudLead:          new THREE.Quaternion(),
-    panX:             0,
-    panY:             0,
     aimPitch:         0,
     steer:            0,
     strafe:           0,
-    brake:            false,
-    boost:            false,
     target:           null,
     targetLabel:      '',
     checkpointNumber: 0,
@@ -122,13 +118,9 @@ function sharedHudModule<TState extends object> ({
           frame.camera         = view.camera
           frame.hudQuaternion.copy(view.hudQuaternion)
           frame.hudLead.copy(view.hudLead)
-          frame.panX     = view.panX
-          frame.panY     = view.panY
           frame.aimPitch = view.aimPitch
           frame.steer    = controls.steer
           frame.strafe   = controls.strafe
-          frame.brake    = controls.brake
-          frame.boost    = controls.boost
           target(frame)
           spatial.update(frame)
         },

@@ -63,8 +63,6 @@ export type HudViewFrame = {
   /** The look-around lead alone, for the hull-framed chase anchor. */
   hudLead: THREE.Quaternion;
 
-  panX:     number;
-  panY:     number;
   aimPitch: number;
 }
 
@@ -86,13 +84,9 @@ export type HudFrame = {
   camera:           THREE.Camera;
   hudQuaternion:    THREE.Quaternion;
   hudLead:          THREE.Quaternion;
-  panX:             number;
-  panY:             number;
   aimPitch:         number;
   steer:            number;
   strafe:           number;
-  brake:            boolean;
-  boost:            boolean;
   target:           THREE.Vector3 | null;
   targetLabel:      string;
   checkpointNumber: number;

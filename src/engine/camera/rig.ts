@@ -171,7 +171,6 @@ export type CameraRig = {
   /** Kick a decaying impact shake. */
   shake(amount: number): void;
 
-  setView(view: CameraView): void;
   toggleView(): void;
   view(): CameraView;
 
@@ -249,10 +248,6 @@ export function createCameraRig (rng: SeededRng, far = 400): CameraRig {
 
     shake (amount) {
       shakeAmount = Math.max(shakeAmount, amount)
-    },
-
-    setView (view) {
-      target = view === 'cockpit' ? 1 : 0
     },
 
     toggleView () {

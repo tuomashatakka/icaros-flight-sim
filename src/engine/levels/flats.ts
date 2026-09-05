@@ -27,7 +27,7 @@ export const flatsEnvironment: EnvironmentOverrides = {
   background: '#0a0c14',
 
   // The shared 150-500 default already suits a 400-unit deck.
-  hemi: { sky: '#8a9bff', ground: '#0a0c14' },
+  hemi: { sky: '#8a9bff', ground: '#0a0c14', intensity: 1.08 },
 }
 
 export function buildFlats (ctx: SceneContext, bundle: TrackBundle): void {
@@ -111,11 +111,7 @@ export function buildFlats (ctx: SceneContext, bundle: TrackBundle): void {
     ctx.scene.add(cap)
   }
 
-  ctx.scene.add(new THREE.HemisphereLight('#8a9bff', '#0a0c14', 0.7))
-
   const overhead = new THREE.PointLight('#aab4ff', 120, 400)
   overhead.position.set(0, 60, 0)
   ctx.scene.add(overhead)
-
-  ctx.scene.fog = new THREE.Fog('#0a0c14', 150, 500)
 }

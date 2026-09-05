@@ -25,7 +25,7 @@ import type { EnvironmentOverrides } from '../scenes/environment'
 export const neonCanyonEnvironment: EnvironmentOverrides = {
   background: '#1a0a14',
   fog:        [ '#1a0a14', 140, 620 ],
-  hemi:       { sky: '#ff6a4d', ground: '#1a0a14' },
+  hemi:       { sky: '#ff6a4d', ground: '#1a0a14', intensity: 1.28 },
 }
 
 export function buildNeonCanyon (ctx: SceneContext, bundle: TrackBundle): void {
@@ -40,11 +40,8 @@ export function buildNeonCanyon (ctx: SceneContext, bundle: TrackBundle): void {
 
   ctx.scene.add(guideRail(curve.getSpacedPoints(420), '#ff2d6f', 0.7, 0.2))
 
-  ctx.scene.add(new THREE.HemisphereLight('#ff6a4d', '#1a0a14', 0.9))
   ctx.scene.add(pointLight('#ff5a7a', 60, 140, [ 0, 18, 10 ]))
   ctx.scene.add(pointLight('#ff3b5c', 150, 320, [ 150, 30, -90 ]))
   ctx.scene.add(pointLight('#ff8a3d', 150, 320, [ 190, 30, 20 ]))
   ctx.scene.add(pointLight('#ff2d6f', 130, 300, [ -130, 30, 70 ]))
-
-  ctx.scene.fog = new THREE.Fog('#1a0a14', 140, 620)
 }

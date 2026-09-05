@@ -23,6 +23,7 @@ import { trackBundle } from '@crash-velocity/race'
 import { raceHudModule } from '../hud'
 import { initialRaceState } from '../state'
 import { LocalPrediction } from '../net/prediction'
+import { publishTelemetry } from '../net/telemetry-publish'
 import { buildRemoteHull } from '../net/remote-hull'
 import { buildNameplate } from '../battle/visuals'
 import { RaceTransport } from '../race/transport'
@@ -152,7 +153,7 @@ export async function mountRace (
     environment:    TRACK_VISUALS[trackId].environment,
     buildGeometry:  ctx => TRACK_VISUALS[trackId].build(ctx, bundle),
 
-    gameModuleFactory: (physics, _isVehicleCollider, telemetry, sceneControls, vehicleRef, rig) => {
+    gameModuleFactory: (physics, telemetry, sceneControls, vehicleRef, rig) => {
       // The ONE body in this world besides the track: the predicted local ship.
       const local = createHovercraft(physics.world, provisionalSpawn)
 
@@ -250,16 +251,7 @@ export async function mountRace (
             }
           }
 
-          const velocity       = local.chassis.linvel()
-          telemetry.speed      = Math.hypot(velocity.x, velocity.z)
-          telemetry.boostMeter = prediction?.boost ?? 1
-          telemetry.boosting   = sceneControls.boost
-          telemetry.grounded   = prediction?.grounded ?? false
-          telemetry.airbrake   = prediction?.airbrake ?? 0
-
-          telemetry.thrustCommand = prediction?.thrustCommand ?? 0
-          telemetry.gLoad         = prediction?.gLoad ?? 0
-          telemetry.velocity.set(velocity.x, velocity.y, velocity.z)
+          publishTelemetry(telemetry, local.chassis, prediction, sceneControls.boost)
 
           // Above the early return, deliberately: a link that never came up is
           // exactly the case where there is no view and no server state, so

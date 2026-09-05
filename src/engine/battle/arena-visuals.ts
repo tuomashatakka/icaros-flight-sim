@@ -23,7 +23,6 @@ import type { EnvironmentOverrides } from '../scenes/environment'
 const HALF                                 = 300
 const WALL_IN                              = 6
 const WALL_H                               = 26 // half-height: a 52-unit cliff no ramp launch clears
-const FOG: [string, number, number]        = [ '#0d1120', 340, 1500 ]
 const SUN_ANCHOR: [number, number, number] = [ -430, 300, 1150 ]
 
 /**
@@ -37,7 +36,7 @@ export function arenaEnvironment (arena: BattleArena): EnvironmentOverrides {
   return {
     background: arena.background,
     fog:        arena.fog,
-    hemi:       { sky: '#93a6ff', ground: '#141726' },
+    hemi:       { sky: '#93a6ff', ground: '#141726', intensity: 1.33 },
 
     // The deck is 600 across and the sun follows the local ship, so a race-sized
     // frustum leaves every other hull outside the shadow box, casting nothing.
@@ -151,14 +150,11 @@ function buildApexVisual (
   // Control zones are painted by the battle visual layer (per-ring materials
   // for ownership colours) — not static geometry here.
 
-  scene.add(new THREE.HemisphereLight('#93a6ff', '#141726', 0.95))
   for (const [ x, z ] of [[ 0, 0 ], [ 0, -200 ], [ 0, 200 ]] as Array<[number, number]>) {
     const light = new THREE.PointLight('#aab4ff', 260, 1400, 1.6)
     light.position.set(x, 120, z)
     scene.add(light)
   }
-
-  scene.fog = new THREE.Fog(FOG[0], FOG[1], FOG[2])
 
   return buildScenery(scene, rng, { half: HALF, wallIn: WALL_IN, sunAnchor: SUN_ANCHOR })
 }
