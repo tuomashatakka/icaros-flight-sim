@@ -14,6 +14,27 @@ type PanelOptions = {
   trace?:  HudPanelTrace;
 }
 
+export type HudPanelMetrics = {
+  drawMs:          number;
+  draws:           number;
+  textureUploads:  number;
+  textureUploadHz: number;
+}
+
+const metrics = { drawMs: 0, draws: 0, textureUploads: 0, startedAt: performance.now() }
+
+export function readHudPanelMetrics (): HudPanelMetrics {
+  const seconds = Math.max((performance.now() - metrics.startedAt) / 1000, 0.001)
+  return { ...metrics, textureUploadHz: metrics.textureUploads / seconds }
+}
+
+export function resetHudPanelMetrics (): void {
+  metrics.drawMs         = 0
+  metrics.draws          = 0
+  metrics.textureUploads = 0
+  metrics.startedAt      = performance.now()
+}
+
 type TextOptions = {
   x:       number;
   y:       number;
@@ -110,19 +131,19 @@ function tracedPath (
  * the facet and route a raycast hit back here.
  */
 export class HudPanel {
-  readonly name:             string
-  readonly canvas:           HTMLCanvasElement
-  readonly context:          CanvasRenderingContext2D
-  readonly texture:          THREE.CanvasTexture
-  readonly regions:          HudRegion[] = []
-  readonly interferenceSeed: number
-  readonly trace?:           HudPanelTrace
+  readonly name:    string
+  readonly canvas:  HTMLCanvasElement
+  readonly context: CanvasRenderingContext2D
+  readonly texture: THREE.CanvasTexture
+  readonly regions: HudRegion[] = []
+  readonly trace?:  HudPanelTrace
 
-  title:   string
-  accent:  string
-  center:  boolean
-  hovered: string | null = null
+  title:             string
+  accent:            string
+  center:            boolean
+  hovered:           string | null = null
   private contentTransformActive = false
+  private renderKey: string | null = null
 
   constructor ({
     name,
@@ -141,20 +162,35 @@ export class HudPanel {
     if (!context)
       throw new Error(`2d canvas unavailable for hud panel ${name}`)
 
-    this.name             = name
-    this.title            = title
-    this.accent           = accent
-    this.center           = center
-    this.canvas           = canvas
-    this.context          = context
-    this.trace            = trace
-    this.interferenceSeed = Array.from(name).reduce((seed, character) =>
-      Math.imul(seed ^ character.charCodeAt(0), 16777619), 2166136261)
+    this.name                    = name
+    this.title                   = title
+    this.accent                  = accent
+    this.center                  = center
+    this.canvas                  = canvas
+    this.context                 = context
+    this.trace                   = trace
     this.texture                 = new THREE.CanvasTexture(canvas)
     this.texture.colorSpace      = THREE.SRGBColorSpace
     this.texture.minFilter       = THREE.LinearFilter
     this.texture.magFilter       = THREE.LinearFilter
     this.texture.generateMipmaps = false
+  }
+
+  /** Draw and upload only when displayed state, interaction, or layout changed. */
+  render (key: string, elapsed: number, draw: () => void): boolean {
+    const renderKey = `${key}|${this.title}|${this.hovered ?? ''}|${this.canvas.width}x${this.canvas.height}`
+    if (renderKey === this.renderKey)
+      return false
+
+    const started = performance.now()
+    this.begin()
+    draw()
+    this.finish(elapsed)
+    this.renderKey = renderKey
+    metrics.drawMs += performance.now() - started
+    metrics.draws++
+    metrics.textureUploads++
+    return true
   }
 
   begin (): void {
@@ -270,43 +306,12 @@ export class HudPanel {
     context.globalAlpha = 1
   }
 
-  finish (elapsed: number): void {
-    const { context, canvas } = this
+  finish (_elapsed: number): void {
+    const { context } = this
     if (this.contentTransformActive) {
       context.restore()
       this.contentTransformActive = false
     }
-    if (this.trace?.variant !== 'screen') {
-      this.texture.needsUpdate = true
-      return
-    }
-
-    context.save()
-
-    let noise = this.interferenceSeed ^ Math.floor(elapsed * 13) | 0
-    for (let i = 0; i < 8; i++) {
-      noise ^= noise << 13
-      noise ^= noise >>> 17
-      noise ^= noise << 5
-
-      const x = 12 + (noise >>> 0) % Math.max(1, canvas.width - 28)
-      noise ^= noise << 13
-      noise ^= noise >>> 17
-      noise ^= noise << 5
-
-      const y             = 12 + (noise >>> 0) % Math.max(1, canvas.height - 28)
-      const size          = 2 + (noise >>> 27)
-      context.globalAlpha = i % 5 === 0 ? 0.08 : 0.03
-      context.fillStyle   = i % 3 === 0 ? this.accent : '#d7ffff'
-      context.fillRect(x, y, size, Math.max(2, size * 0.55))
-    }
-
-    context.globalAlpha = 0.04
-    context.fillStyle   = '#d7ffff'
-
-    const scanY               = Math.floor(elapsed * 90 % canvas.height)
-    context.fillRect(12, scanY, canvas.width - 24, 1)
-    context.restore()
     this.texture.needsUpdate = true
   }
 

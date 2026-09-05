@@ -5,6 +5,7 @@ import { useTuningStore } from '@/hooks/use-tuning-store'
 import { STEP } from '@crash-velocity/physics/clock'
 import { DEFAULT_TUNING } from '../state'
 import type { ShipTuning } from '../state'
+import { readHudPanelMetrics } from '../hud/panel'
 import { createLegend } from './legend'
 import { createOverlays } from './overlay'
 import { readDevParams } from './params'
@@ -354,9 +355,10 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
     trace () {
       return {
         ...readTrace(),
-        level:  deps.levelId,
-        status: useRaceStore.getState().status,
-        ship:   shipPose(),
+        hudPanels: readHudPanelMetrics(),
+        level:     deps.levelId,
+        status:    useRaceStore.getState().status,
+        ship:      shipPose(),
       }
     },
   }

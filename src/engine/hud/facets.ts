@@ -20,6 +20,50 @@ const _up      = new THREE.Vector3()
 const _euler   = new THREE.Euler()
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
 
+const quantise = (value: number, step = 0.02) => Math.round(value / step)
+
+/** Values are deliberately quantised at their displayed precision. */
+function panelRenderKey (panel: HudPanel, data: HudData, frame: HudFrame): string {
+  const pose   = [ quantise(pitchFrom(frame.hullQuaternion), 1), quantise(rollFrom(frame.hullQuaternion), 1) ]
+  const common = [ data.mode, panel.name, frame.cameraBlend > 0.5, panel.hovered ]
+  if (panel.name === 'topCenter') {
+    const status = data.mode === 'race'
+      ? [ data.race.status, data.race.linkError, quantise(data.clocks.countdown, 1), frame.telemetry.boosting ]
+      : [ data.battle.status, quantise(data.battle.countdown, 1), quantise(data.battle.timeLeft, 1), data.battle.net.linkError, data.battle.net.synced, data.battle.net.rttMs, data.battle.net.jitterMs ]
+    return [ ...common, ...status, ...pose, quantise(frame.aimPitch, 0.01), quantise(frame.steer, 0.01), quantise(frame.strafe, 0.01) ].join('|')
+  }
+
+  if (data.mode === 'race') {
+    const race                               = data.race
+    const distance                           = frame.target ? frame.shipPosition.distanceTo(frame.target) : 0
+    const telemetry                          = frame.telemetry
+    const byPanel: Record<string, unknown[]> = {
+      topLeft:      [ quantise(headingFrom(frame.hullQuaternion), 1), frame.targetLabel, frame.checkpointNumber, frame.checkpointCount, quantise(gateClosure(frame), 0.01) ],
+      topRight:     [ frame.targetLabel, frame.checkpointNumber, quantise(distance, 1), quantise(telemetry.speed * 3.6, 1), quantise(gateClosure(frame), 0.01), data.tuningOpen ],
+      bottomLeft:   [ quantise(surfaceAlignment(frame.hullQuaternion), 0.01), quantise(telemetry.boostMeter, 0.01), telemetry.grounded, quantise(telemetry.gLoad, 0.1), quantise(telemetry.airbrake, 0.01), telemetry.crashSeq ],
+      bottomCenter: [ quantise(frame.throttle, 0.01), quantise(telemetry.speed * 3.6, 1), quantise(telemetry.velocity.y, 0.1), telemetry.boosting ],
+      bottomRight:  [ race.currentLap, race.laps, frame.checkpointNumber, quantise(data.clocks.lapElapsed, 0.001), data.zone, data.shipId, quantise(telemetry.speed / Math.max(data.targetSpeed, 1), 0.01), data.tuningOpen ],
+      center:       [ race.currentLap, race.laps, quantise(data.clocks.elapsed, 0.001), race.bestLap, telemetry.boosting ],
+    }
+    return [ ...common, race.status, race.linkError, ...byPanel[panel.name] ].join('|')
+  }
+
+  const battle                             = data.battle
+  const byPanel: Record<string, unknown[]> = {
+    topLeft:      [ battle.scores.red, battle.scores.blue, battle.scoreTarget, ...battle.zones.flatMap(zone => [ zone.owner, zone.capturing, quantise(zone.progress, 0.01), zone.contested ]) ],
+    topRight:     [ battle.lockOn.phase, battle.lockOn.name, quantise(battle.lockOn.progress, 0.01), quantise(frame.sight?.range ?? battle.lockOn.distance, 1), battle.lockOn.targetId ],
+    bottomLeft:   [ battle.myHealth, battle.maxHealth, quantise(battle.myBoost, 0.01), battle.myKills, battle.myDeaths, battle.carrying ],
+    bottomCenter: [ quantise(frame.throttle, 0.01), quantise(frame.telemetry.speed * 3.6, 1), quantise(frame.telemetry.gLoad, 0.1), battle.myBoost < 0.15, frame.telemetry.boosting ],
+    bottomRight:  [ battle.primary?.id, quantise(battle.primary?.cooldown ?? 0, 0.01), battle.secondary?.id, quantise(battle.secondary?.cooldown ?? 0, 0.01), battle.lockOn.phase, battle.carrying ],
+    center:       [ battle.myName, battle.myTeam, battle.scores.red, battle.scores.blue, quantise(battle.timeLeft, 1), battle.primary?.id ],
+  }
+  return [ ...common, battle.status, quantise(battle.countdown, 1), ...byPanel[panel.name] ].join('|')
+}
+
+function renderPanel (panel: HudPanel, data: HudData, frame: HudFrame, draw: () => void): void {
+  panel.render(panelRenderKey(panel, data, frame), frame.elapsed, draw)
+}
+
 export function createHudPanels (): Record<HudPanelKey, HudPanel> {
   return {
     topLeft:      new HudPanel({ name: 'topLeft', title: 'navigation', accent: COLORS.cyan, trace: HUD_PANEL_TRACES.topLeft }),
@@ -324,76 +368,75 @@ function drawRacePanels (panels: Record<HudPanelKey, HudPanel>, data: RaceHudDat
 
   const topLeft = panels.topLeft
   topLeft.title = 'navigation'
-  topLeft.begin()
-  topLeft.text({ x: 36, y: 96, size: 18, color: COLORS.paleCyan, value: `HDG ${String(Math.round(heading) % 360).padStart(3, '0')}°` })
-  topLeft.text({ x: 36, y: 128, size: 15, alpha: 0.62, value: `${frame.targetLabel || 'VECTOR'} / GATE ${frame.checkpointNumber}/${Math.max(frame.checkpointCount, 1)}` })
-  topLeft.bar({ x: 36, y: 172, width: 390, height: 16, label: 'gate closure', value: targetClosure, color: COLORS.cyan, color2: COLORS.blue })
-  topLeft.button({ id: 'menu', x: 456, y: 90, width: 142, height: 44, label: 'menu', action: 'menu' })
-  topLeft.button({ id: 'view', x: 456, y: 148, width: 142, height: 44, label: view, action: 'view', active: frame.cameraBlend > 0.5 })
-  drawCheckpointPips(topLeft, frame.checkpointCount, Math.max(0, frame.checkpointNumber - 1))
-  topLeft.finish(frame.elapsed)
+  renderPanel(topLeft, data, frame, () => {
+    topLeft.text({ x: 36, y: 96, size: 18, color: COLORS.paleCyan, value: `HDG ${String(Math.round(heading) % 360).padStart(3, '0')}°` })
+    topLeft.text({ x: 36, y: 128, size: 15, alpha: 0.62, value: `${frame.targetLabel || 'VECTOR'} / GATE ${frame.checkpointNumber}/${Math.max(frame.checkpointCount, 1)}` })
+    topLeft.bar({ x: 36, y: 172, width: 390, height: 16, label: 'gate closure', value: targetClosure, color: COLORS.cyan, color2: COLORS.blue })
+    topLeft.button({ id: 'menu', x: 456, y: 90, width: 142, height: 44, label: 'menu', action: 'menu' })
+    topLeft.button({ id: 'view', x: 456, y: 148, width: 142, height: 44, label: view, action: 'view', active: frame.cameraBlend > 0.5 })
+    drawCheckpointPips(topLeft, frame.checkpointCount, Math.max(0, frame.checkpointNumber - 1))
+  })
 
   const topCenter = panels.topCenter
   topCenter.title = 'attitude'
-  topCenter.begin()
-
-  topCenter.text({ x: 320, y: 74, size: 18, align: 'center', color: race.linkError ? ALERT : COLORS.paleBlue, value: raceStatusLine(data, telemetry.boosting) })
-  if (race.linkError)
-    topCenter.text({ x: 320, y: 98, size: 12, align: 'center', alpha: 0.7, color: ALERT, value: race.linkError })
-  drawAttitude(topCenter, frame.hullQuaternion, frame.aimPitch)
-  topCenter.text({ x: 36, y: 278, size: 13, alpha: 0.55, value: `TURN ${signedPercent(frame.steer)} · STRAFE ${signedPercent(frame.strafe)} · AIM ${signedPercent(frame.aimPitch)}` })
-  topCenter.button({ id: 'attitude-view', x: 500, y: 254, width: 108, height: 38, label: view, action: 'view', active: frame.cameraBlend > 0.5, size: 13 })
-  topCenter.finish(frame.elapsed)
+  renderPanel(topCenter, data, frame, () => {
+    topCenter.text({ x: 320, y: 74, size: 18, align: 'center', color: race.linkError ? ALERT : COLORS.paleBlue, value: raceStatusLine(data, telemetry.boosting) })
+    if (race.linkError)
+      topCenter.text({ x: 320, y: 98, size: 12, align: 'center', alpha: 0.7, color: ALERT, value: race.linkError })
+    drawAttitude(topCenter, frame.hullQuaternion, frame.aimPitch)
+    topCenter.text({ x: 36, y: 278, size: 13, alpha: 0.55, value: `TURN ${signedPercent(frame.steer)} · STRAFE ${signedPercent(frame.strafe)} · AIM ${signedPercent(frame.aimPitch)}` })
+    topCenter.button({ id: 'attitude-view', x: 500, y: 254, width: 108, height: 38, label: view, action: 'view', active: frame.cameraBlend > 0.5, size: 13 })
+  })
 
   const topRight = panels.topRight
   topRight.title = 'target'
-  topRight.begin()
-  topRight.text({ x: 36, y: 98, size: 19, color: COLORS.paleMagenta, value: frame.target ? `GATE ${frame.checkpointNumber} · ${frame.targetLabel}` : 'NO ROUTE TARGET' })
-  topRight.text({ x: 36, y: 132, size: 15, alpha: 0.62, value: `RANGE ${Math.round(targetDistance)} m · SPEED ${Math.round(telemetry.speed * 3.6)} km/h` })
-  topRight.bar({ x: 36, y: 176, width: 390, height: 16, label: 'gate closure', value: targetClosure, color: COLORS.magenta, color2: COLORS.violet })
-  topRight.button({ id: 'respawn', x: 456, y: 90, width: 142, height: 44, label: 'respawn', action: 'respawn', color: COLORS.magenta })
-  topRight.button({ id: 'tuning', x: 456, y: 148, width: 142, height: 44, label: 'tuning', action: 'tuning-toggle', active: data.tuningOpen, color: COLORS.magenta })
-  drawTargetGlyph(topRight, frame.target !== null)
-  topRight.finish(frame.elapsed)
+  renderPanel(topRight, data, frame, () => {
+    topRight.text({ x: 36, y: 98, size: 19, color: COLORS.paleMagenta, value: frame.target ? `GATE ${frame.checkpointNumber} · ${frame.targetLabel}` : 'NO ROUTE TARGET' })
+    topRight.text({ x: 36, y: 132, size: 15, alpha: 0.62, value: `RANGE ${Math.round(targetDistance)} m · SPEED ${Math.round(telemetry.speed * 3.6)} km/h` })
+    topRight.bar({ x: 36, y: 176, width: 390, height: 16, label: 'gate closure', value: targetClosure, color: COLORS.magenta, color2: COLORS.violet })
+    topRight.button({ id: 'respawn', x: 456, y: 90, width: 142, height: 44, label: 'respawn', action: 'respawn', color: COLORS.magenta })
+    topRight.button({ id: 'tuning', x: 456, y: 148, width: 142, height: 44, label: 'tuning', action: 'tuning-toggle', active: data.tuningOpen, color: COLORS.magenta })
+    drawTargetGlyph(topRight, frame.target !== null)
+  })
 
   const bottomLeft = panels.bottomLeft
   // 'defense' was the battle panel's title worn by a mode with no hull model,
   // no shields and nothing to defend against — it showed airframe data under a
   // combat heading. Race calls it what it is.
   bottomLeft.title = 'airframe'
-  bottomLeft.begin()
-  bottomLeft.bar({ x: 36, y: 104, width: 404, height: 18, label: 'surface alignment', value: upness, color: COLORS.cyan, color2: COLORS.blue })
-  bottomLeft.bar({ x: 36, y: 178, width: 404, height: 18, label: 'boost reserve', value: telemetry.boostMeter, color: COLORS.green, color2: COLORS.lime })
-  bottomLeft.text({ x: 36, y: 246, size: 15, alpha: 0.64, value: `${telemetry.grounded ? 'SURFACE LOCK' : 'AIRBORNE'} · ${telemetry.gLoad.toFixed(1)}G · AIRBRAKE ${Math.round(telemetry.airbrake * 100)}% · IMPACTS ${telemetry.crashSeq}` })
-  bottomLeft.button({ id: 'defense-reset', x: 466, y: 120, width: 132, height: 52, label: 'reset', action: 'respawn' })
-  bottomLeft.finish(frame.elapsed)
+  renderPanel(bottomLeft, data, frame, () => {
+    bottomLeft.bar({ x: 36, y: 104, width: 404, height: 18, label: 'surface alignment', value: upness, color: COLORS.cyan, color2: COLORS.blue })
+    bottomLeft.bar({ x: 36, y: 178, width: 404, height: 18, label: 'boost reserve', value: telemetry.boostMeter, color: COLORS.green, color2: COLORS.lime })
+    bottomLeft.text({ x: 36, y: 246, size: 15, alpha: 0.64, value: `${telemetry.grounded ? 'SURFACE LOCK' : 'AIRBORNE'} · ${telemetry.gLoad.toFixed(1)}G · AIRBRAKE ${Math.round(telemetry.airbrake * 100)}% · IMPACTS ${telemetry.crashSeq}` })
+    bottomLeft.button({ id: 'defense-reset', x: 466, y: 120, width: 132, height: 52, label: 'reset', action: 'respawn' })
+  })
 
   const bottomCenter = panels.bottomCenter
   bottomCenter.title = 'propulsion'
-  bottomCenter.begin()
-  bottomCenter.bar({ x: 36, y: 118, width: 410, height: 22, label: 'thrust', value: frame.throttle, color: COLORS.violet, color2: COLORS.cyan })
-  bottomCenter.text({ x: 36, y: 196, size: 18, color: COLORS.paleViolet, value: `${Math.round(telemetry.speed * 3.6)} / ${Math.round(data.targetSpeed * 3.6)} km/h` })
-  bottomCenter.text({ x: 36, y: 236, size: 14, alpha: 0.56, value: `CMD ${Math.round(frame.throttle * 100)}% · CLIMB ${telemetry.velocity.y >= 0 ? '+' : ''}${telemetry.velocity.y.toFixed(1)} m/s · ${telemetry.boosting ? 'BOOST ACTIVE' : 'CRUISE'}` })
-  bottomCenter.button({ id: 'boost', x: 466, y: 116, width: 132, height: 54, label: 'boost', action: 'boost', kind: 'hold', active: telemetry.boosting, color: COLORS.paleViolet })
-  bottomCenter.finish(frame.elapsed)
+  renderPanel(bottomCenter, data, frame, () => {
+    bottomCenter.bar({ x: 36, y: 118, width: 410, height: 22, label: 'thrust', value: frame.throttle, color: COLORS.violet, color2: COLORS.cyan })
+    bottomCenter.text({ x: 36, y: 196, size: 18, color: COLORS.paleViolet, value: `${Math.round(telemetry.speed * 3.6)} / ${Math.round(data.targetSpeed * 3.6)} km/h` })
+    bottomCenter.text({ x: 36, y: 236, size: 14, alpha: 0.56, value: `CMD ${Math.round(frame.throttle * 100)}% · CLIMB ${telemetry.velocity.y >= 0 ? '+' : ''}${telemetry.velocity.y.toFixed(1)} m/s · ${telemetry.boosting ? 'BOOST ACTIVE' : 'CRUISE'}` })
+    bottomCenter.button({ id: 'boost', x: 466, y: 116, width: 132, height: 54, label: 'boost', action: 'boost', kind: 'hold', active: telemetry.boosting, color: COLORS.paleViolet })
+  })
 
   const bottomRight = panels.bottomRight
   bottomRight.title = 'race systems'
-  bottomRight.begin()
-  bottomRight.bar({ x: 36, y: 104, width: 404, height: 18, label: 'course', value: courseProgress, color: COLORS.amber, color2: COLORS.magenta })
-  bottomRight.bar({ x: 36, y: 178, width: 404, height: 18, label: `zone ${data.zone} target`, value: speedRatio, color: COLORS.paleAmber, color2: COLORS.teal })
-  bottomRight.text({ x: 36, y: 246, size: 15, alpha: 0.64, value: `${data.shipId.toUpperCase()} · ZONE ${data.zone} · LAP ${race.loop ? `${Math.min(race.currentLap, race.laps)}/${race.laps}` : 'SPRINT'} · ${formatHudRaceTime(data.clocks.lapElapsed)}` })
-  bottomRight.button({ id: 'race-tuning', x: 466, y: 120, width: 132, height: 52, label: 'tune', action: 'tuning-toggle', active: data.tuningOpen, color: COLORS.amber })
-  bottomRight.finish(frame.elapsed)
+  renderPanel(bottomRight, data, frame, () => {
+    bottomRight.bar({ x: 36, y: 104, width: 404, height: 18, label: 'course', value: courseProgress, color: COLORS.amber, color2: COLORS.magenta })
+    bottomRight.bar({ x: 36, y: 178, width: 404, height: 18, label: `zone ${data.zone} target`, value: speedRatio, color: COLORS.paleAmber, color2: COLORS.teal })
+    bottomRight.text({ x: 36, y: 246, size: 15, alpha: 0.64, value: `${data.shipId.toUpperCase()} · ZONE ${data.zone} · LAP ${race.loop ? `${Math.min(race.currentLap, race.laps)}/${race.laps}` : 'SPRINT'} · ${formatHudRaceTime(data.clocks.lapElapsed)}` })
+    bottomRight.button({ id: 'race-tuning', x: 466, y: 120, width: 132, height: 52, label: 'tune', action: 'tuning-toggle', active: data.tuningOpen, color: COLORS.amber })
+  })
 
   // No reticle here any more: the sight has to sit at a screen position and
   // this facet is a surface in the world — see `hud/sight.ts`.
   const center = panels.center
-  center.begin()
-  center.text({ x: 280, y: 442, align: 'center', size: 15, alpha: 0.68, value: `LAP ${race.loop ? `${Math.min(race.currentLap, race.laps)}/${race.laps}` : 'SPRINT'} · ${formatHudRaceTime(data.clocks.elapsed)}` })
-  center.text({ x: 280, y: 470, align: 'center', size: 13, alpha: 0.48, value: race.bestLap === null ? 'BEST --:--.---' : `BEST ${formatHudRaceTime(race.bestLap)}` })
-  center.button({ id: 'center-boost', x: 208, y: 496, width: 144, height: 40, label: 'hold boost', action: 'boost', kind: 'hold', active: telemetry.boosting, color: COLORS.violet, size: 13 })
-  center.finish(frame.elapsed)
+  renderPanel(center, data, frame, () => {
+    center.text({ x: 280, y: 442, align: 'center', size: 15, alpha: 0.68, value: `LAP ${race.loop ? `${Math.min(race.currentLap, race.laps)}/${race.laps}` : 'SPRINT'} · ${formatHudRaceTime(data.clocks.elapsed)}` })
+    center.text({ x: 280, y: 470, align: 'center', size: 13, alpha: 0.48, value: race.bestLap === null ? 'BEST --:--.---' : `BEST ${formatHudRaceTime(race.bestLap)}` })
+    center.button({ id: 'center-boost', x: 208, y: 496, width: 144, height: 40, label: 'hold boost', action: 'boost', kind: 'hold', active: telemetry.boosting, color: COLORS.violet, size: 13 })
+  })
 }
 
 function drawBattlePanels (panels: Record<HudPanelKey, HudPanel>, data: BattleHudData, frame: HudFrame): void {
@@ -405,107 +448,106 @@ function drawBattlePanels (panels: Record<HudPanelKey, HudPanel>, data: BattleHu
 
   const topLeft = panels.topLeft
   topLeft.title = 'tactical'
-  topLeft.begin()
-  topLeft.text({ x: 36, y: 96, size: 20, color: TEAM_COLORS.red, value: `RED ${battle.scores.red}` })
-  topLeft.text({ x: 210, y: 96, size: 15, color: TEAM_COLORS.blue, value: `BLUE ${battle.scores.blue} · FIRST ${battle.scoreTarget}` })
-  topLeft.bar({ x: 36, y: 150, width: 390, height: 16, label: 'red score', value: battle.scores.red / Math.max(1, battle.scoreTarget), color: TEAM_COLORS.red, color2: COLORS.magenta })
-  topLeft.button({ id: 'battle-menu', x: 456, y: 90, width: 142, height: 44, label: 'menu', action: 'menu' })
-  topLeft.button({ id: 'battle-view', x: 456, y: 148, width: 142, height: 44, label: frame.cameraBlend > 0.5 ? 'cockpit' : 'chase', action: 'view', active: frame.cameraBlend > 0.5 })
-  drawZonePips(topLeft, data)
-  topLeft.finish(frame.elapsed)
+  renderPanel(topLeft, data, frame, () => {
+    topLeft.text({ x: 36, y: 96, size: 20, color: TEAM_COLORS.red, value: `RED ${battle.scores.red}` })
+    topLeft.text({ x: 210, y: 96, size: 15, color: TEAM_COLORS.blue, value: `BLUE ${battle.scores.blue} · FIRST ${battle.scoreTarget}` })
+    topLeft.bar({ x: 36, y: 150, width: 390, height: 16, label: 'red score', value: battle.scores.red / Math.max(1, battle.scoreTarget), color: TEAM_COLORS.red, color2: COLORS.magenta })
+    topLeft.button({ id: 'battle-menu', x: 456, y: 90, width: 142, height: 44, label: 'menu', action: 'menu' })
+    topLeft.button({ id: 'battle-view', x: 456, y: 148, width: 142, height: 44, label: frame.cameraBlend > 0.5 ? 'cockpit' : 'chase', action: 'view', active: frame.cameraBlend > 0.5 })
+    drawZonePips(topLeft, data)
+  })
 
   const topCenter = panels.topCenter
   topCenter.title = 'attitude'
-  topCenter.begin()
+  renderPanel(topCenter, data, frame, () => {
+    const status = battle.status === 'countdown'
+      ? `DEPLOY · ${Math.max(1, Math.ceil(battle.countdown))}`
+      : battle.status === 'finished'
+        ? 'MATCH OVER'
+        : battle.status === 'live'
+          ? `COMBAT · ${formatHudClock(battle.timeLeft)}`
+          : battle.status.toUpperCase()
+    topCenter.text({ x: 320, y: 74, size: 18, align: 'center', color: COLORS.paleBlue, value: status })
+    drawAttitude(topCenter, frame.hullQuaternion, frame.aimPitch)
 
-  const status = battle.status === 'countdown'
-    ? `DEPLOY · ${Math.max(1, Math.ceil(battle.countdown))}`
-    : battle.status === 'finished'
-      ? 'MATCH OVER'
-      : battle.status === 'live'
-        ? `COMBAT · ${formatHudClock(battle.timeLeft)}`
-        : battle.status.toUpperCase()
-  topCenter.text({ x: 320, y: 74, size: 18, align: 'center', color: COLORS.paleBlue, value: status })
-  drawAttitude(topCenter, frame.hullQuaternion, frame.aimPitch)
-
-  // NET reads real connection health now. It used to show a hash-match tally
-  // from a verifier that compared the local sim against a hash the local sim
-  // had just produced — it was pinned to OK by construction.
-  const net = battle.net.linkError
-    ? 'NO LINK'
-    : battle.net.synced
-      ? `${battle.net.rttMs}ms ±${battle.net.jitterMs}`
-      : 'SYNCING'
-  topCenter.text({ x: 36, y: 278, size: 13, alpha: 0.55, value: `TURN ${signedPercent(frame.steer)} · STRAFE ${signedPercent(frame.strafe)} · NET ${net}` })
-  topCenter.button({ id: 'battle-attitude-view', x: 500, y: 254, width: 108, height: 38, label: frame.cameraBlend > 0.5 ? 'cockpit' : 'chase', action: 'view', active: frame.cameraBlend > 0.5, size: 13 })
-  topCenter.finish(frame.elapsed)
+    // NET reads real connection health now. It used to show a hash-match tally
+    // from a verifier that compared the local sim against a hash the local sim
+    // had just produced — it was pinned to OK by construction.
+    const net = battle.net.linkError
+      ? 'NO LINK'
+      : battle.net.synced
+        ? `${battle.net.rttMs}ms ±${battle.net.jitterMs}`
+        : 'SYNCING'
+    topCenter.text({ x: 36, y: 278, size: 13, alpha: 0.55, value: `TURN ${signedPercent(frame.steer)} · STRAFE ${signedPercent(frame.strafe)} · NET ${net}` })
+    topCenter.button({ id: 'battle-attitude-view', x: 500, y: 254, width: 108, height: 38, label: frame.cameraBlend > 0.5 ? 'cockpit' : 'chase', action: 'view', active: frame.cameraBlend > 0.5, size: 13 })
+  })
 
   const topRight = panels.topRight
   topRight.title = 'target'
-  topRight.begin()
-  topRight.text({ x: 36, y: 98, size: 19, color: COLORS.paleMagenta, value: locked ? `LOCKED · ${battle.lockOn.name?.toUpperCase() ?? 'TARGET'}` : tracking ? `ACQUIRING · ${battle.lockOn.name?.toUpperCase() ?? 'TARGET'}` : 'NO HARD LOCK' })
-  topRight.text({ x: 36, y: 132, size: 15, alpha: 0.62, value: `RANGE ${Math.round(frame.sight && Number.isFinite(frame.sight.range) ? frame.sight.range : battle.lockOn.distance || 0)} m · ${target ? `${target.team.toUpperCase()} · K/D ${target.kills}/${target.deaths}` : 'NO CONTACT DATA'}` })
-  topRight.bar({ x: 36, y: 176, width: 390, height: 16, label: 'lock signal', value: battle.lockOn.progress, color: COLORS.magenta, color2: COLORS.violet })
-  topRight.button({ id: 'battle-respawn', x: 456, y: 90, width: 142, height: 44, label: 'respawn', action: 'respawn', color: COLORS.magenta })
-  topRight.button({ id: 'battle-view-right', x: 456, y: 148, width: 142, height: 44, label: 'view', action: 'view', color: COLORS.magenta })
-  drawTargetGlyph(topRight, locked || tracking)
-  topRight.finish(frame.elapsed)
+  renderPanel(topRight, data, frame, () => {
+    topRight.text({ x: 36, y: 98, size: 19, color: COLORS.paleMagenta, value: locked ? `LOCKED · ${battle.lockOn.name?.toUpperCase() ?? 'TARGET'}` : tracking ? `ACQUIRING · ${battle.lockOn.name?.toUpperCase() ?? 'TARGET'}` : 'NO HARD LOCK' })
+    topRight.text({ x: 36, y: 132, size: 15, alpha: 0.62, value: `RANGE ${Math.round(frame.sight && Number.isFinite(frame.sight.range) ? frame.sight.range : battle.lockOn.distance || 0)} m · ${target ? `${target.team.toUpperCase()} · K/D ${target.kills}/${target.deaths}` : 'NO CONTACT DATA'}` })
+    topRight.bar({ x: 36, y: 176, width: 390, height: 16, label: 'lock signal', value: battle.lockOn.progress, color: COLORS.magenta, color2: COLORS.violet })
+    topRight.button({ id: 'battle-respawn', x: 456, y: 90, width: 142, height: 44, label: 'respawn', action: 'respawn', color: COLORS.magenta })
+    topRight.button({ id: 'battle-view-right', x: 456, y: 148, width: 142, height: 44, label: 'view', action: 'view', color: COLORS.magenta })
+    drawTargetGlyph(topRight, locked || tracking)
+  })
 
   const bottomLeft = panels.bottomLeft
   bottomLeft.title = 'defense'
-  bottomLeft.begin()
-  bottomLeft.bar({ x: 36, y: 104, width: 390, height: 18, label: 'hull', value: health, color: health < 0.3 ? COLORS.red : COLORS.cyan, color2: health < 0.3 ? COLORS.amber : COLORS.blue })
-  bottomLeft.bar({ x: 36, y: 178, width: 390, height: 18, label: 'boost', value: battle.myBoost, color: COLORS.green, color2: COLORS.lime })
-  bottomLeft.text({ x: 36, y: 246, size: 15, alpha: 0.64, value: `HULL ${battle.myHealth}/${battle.maxHealth} · K/D ${battle.myKills}/${battle.myDeaths}` })
-  bottomLeft.button({ id: 'battle-defense-respawn', x: 466, y: 120, width: 132, height: 52, label: 'respawn', action: 'respawn' })
-  bottomLeft.text({ x: 598, y: 246, size: 13, align: 'right', color: battle.carrying ? TEAM_COLORS[battle.carrying] : COLORS.cyan, value: battle.carrying ? `${battle.carrying.toUpperCase()} CORE` : 'CORE BAY EMPTY' })
-  bottomLeft.finish(frame.elapsed)
+  renderPanel(bottomLeft, data, frame, () => {
+    bottomLeft.bar({ x: 36, y: 104, width: 390, height: 18, label: 'hull', value: health, color: health < 0.3 ? COLORS.red : COLORS.cyan, color2: health < 0.3 ? COLORS.amber : COLORS.blue })
+    bottomLeft.bar({ x: 36, y: 178, width: 390, height: 18, label: 'boost', value: battle.myBoost, color: COLORS.green, color2: COLORS.lime })
+    bottomLeft.text({ x: 36, y: 246, size: 15, alpha: 0.64, value: `HULL ${battle.myHealth}/${battle.maxHealth} · K/D ${battle.myKills}/${battle.myDeaths}` })
+    bottomLeft.button({ id: 'battle-defense-respawn', x: 466, y: 120, width: 132, height: 52, label: 'respawn', action: 'respawn' })
+    bottomLeft.text({ x: 598, y: 246, size: 13, align: 'right', color: battle.carrying ? TEAM_COLORS[battle.carrying] : COLORS.cyan, value: battle.carrying ? `${battle.carrying.toUpperCase()} CORE` : 'CORE BAY EMPTY' })
+  })
 
   const bottomCenter = panels.bottomCenter
   bottomCenter.title = 'propulsion'
-  bottomCenter.begin()
-  bottomCenter.bar({ x: 36, y: 118, width: 410, height: 22, label: 'thrust', value: frame.throttle, color: COLORS.violet, color2: COLORS.cyan })
-  bottomCenter.text({ x: 36, y: 196, size: 18, color: COLORS.paleViolet, value: `${Math.round(frame.telemetry.speed * 3.6)} km/h` })
-  bottomCenter.text({ x: 36, y: 236, size: 14, alpha: 0.56, value: `CMD ${Math.round(frame.throttle * 100)}% · ${frame.telemetry.gLoad.toFixed(1)}G · ${battle.myBoost < 0.15 ? 'BOOST CRITICAL' : 'ARMED'}` })
-  bottomCenter.button({ id: 'battle-boost', x: 466, y: 116, width: 132, height: 54, label: 'boost', action: 'boost', kind: 'hold', active: frame.telemetry.boosting, color: COLORS.paleViolet })
-  bottomCenter.finish(frame.elapsed)
+  renderPanel(bottomCenter, data, frame, () => {
+    bottomCenter.bar({ x: 36, y: 118, width: 410, height: 22, label: 'thrust', value: frame.throttle, color: COLORS.violet, color2: COLORS.cyan })
+    bottomCenter.text({ x: 36, y: 196, size: 18, color: COLORS.paleViolet, value: `${Math.round(frame.telemetry.speed * 3.6)} km/h` })
+    bottomCenter.text({ x: 36, y: 236, size: 14, alpha: 0.56, value: `CMD ${Math.round(frame.throttle * 100)}% · ${frame.telemetry.gLoad.toFixed(1)}G · ${battle.myBoost < 0.15 ? 'BOOST CRITICAL' : 'ARMED'}` })
+    bottomCenter.button({ id: 'battle-boost', x: 466, y: 116, width: 132, height: 54, label: 'boost', action: 'boost', kind: 'hold', active: frame.telemetry.boosting, color: COLORS.paleViolet })
+  })
 
   const primary     = battle.primary
   const secondary   = battle.secondary
   const bottomRight = panels.bottomRight
   bottomRight.title = 'weapons'
-  bottomRight.begin()
-  if (primary) {
-    const weapon = WEAPONS[primary.id]
-    bottomRight.bar({ x: 36, y: 104, width: 350, height: 18, label: weapon.label, value: 1 - primary.cooldown, color: weapon.color, color2: COLORS.magenta })
-    bottomRight.button({ id: 'fire-primary', x: 414, y: 88, width: 184, height: 48, label: 'fire · space', action: 'fire-primary', kind: 'hold', color: weapon.color })
-  }
-  if (secondary) {
-    const weapon = WEAPONS[secondary.id]
-    bottomRight.bar({ x: 36, y: 190, width: 350, height: 18, label: weapon.label, value: 1 - secondary.cooldown, color: weapon.color, color2: COLORS.amber })
-    bottomRight.button({
-      id:       'fire-secondary',
-      x:        414,
-      y:        174,
-      width:    184,
-      height:   48,
-      label:    secondary.needsLock && !locked ? 'needs lock' : 'missile · x',
-      action:   'fire-secondary',
-      kind:     'hold',
-      disabled: secondary.needsLock && !locked,
-      color:    weapon.color,
-    })
-  }
-  bottomRight.text({ x: 36, y: 264, size: 14, alpha: 0.6, value: battle.carrying ? 'OBJECTIVE CORE SECURED' : 'WEAPON BUS ARMED' })
-  bottomRight.finish(frame.elapsed)
+  renderPanel(bottomRight, data, frame, () => {
+    if (primary) {
+      const weapon = WEAPONS[primary.id]
+      bottomRight.bar({ x: 36, y: 104, width: 350, height: 18, label: weapon.label, value: 1 - primary.cooldown, color: weapon.color, color2: COLORS.magenta })
+      bottomRight.button({ id: 'fire-primary', x: 414, y: 88, width: 184, height: 48, label: 'fire · space', action: 'fire-primary', kind: 'hold', color: weapon.color })
+    }
+    if (secondary) {
+      const weapon = WEAPONS[secondary.id]
+      bottomRight.bar({ x: 36, y: 190, width: 350, height: 18, label: weapon.label, value: 1 - secondary.cooldown, color: weapon.color, color2: COLORS.amber })
+      bottomRight.button({
+        id:       'fire-secondary',
+        x:        414,
+        y:        174,
+        width:    184,
+        height:   48,
+        label:    secondary.needsLock && !locked ? 'needs lock' : 'missile · x',
+        action:   'fire-secondary',
+        kind:     'hold',
+        disabled: secondary.needsLock && !locked,
+        color:    weapon.color,
+      })
+    }
+    bottomRight.text({ x: 36, y: 264, size: 14, alpha: 0.6, value: battle.carrying ? 'OBJECTIVE CORE SECURED' : 'WEAPON BUS ARMED' })
+  })
 
   const center = panels.center
-  center.begin()
-  center.text({ x: 280, y: 442, align: 'center', size: 15, color: battle.myTeam ? TEAM_COLORS[battle.myTeam] : COLORS.white, value: `${battle.myName?.toUpperCase() ?? 'PILOT'} · ${battle.myTeam?.toUpperCase() ?? 'UNASSIGNED'}` })
-  center.text({ x: 280, y: 470, align: 'center', size: 13, alpha: 0.48, value: `${battle.scores.red} RED · ${formatHudClock(battle.timeLeft)} · BLUE ${battle.scores.blue}` })
-  if (battle.primary)
-    center.button({ id: 'center-fire', x: 208, y: 496, width: 144, height: 40, label: `fire ${WEAPONS[battle.primary.id].label}`, action: 'fire-primary', kind: 'hold', color: WEAPONS[battle.primary.id].color, size: 12 })
-  center.finish(frame.elapsed)
+  renderPanel(center, data, frame, () => {
+    center.text({ x: 280, y: 442, align: 'center', size: 15, color: battle.myTeam ? TEAM_COLORS[battle.myTeam] : COLORS.white, value: `${battle.myName?.toUpperCase() ?? 'PILOT'} · ${battle.myTeam?.toUpperCase() ?? 'UNASSIGNED'}` })
+    center.text({ x: 280, y: 470, align: 'center', size: 13, alpha: 0.48, value: `${battle.scores.red} RED · ${formatHudClock(battle.timeLeft)} · BLUE ${battle.scores.blue}` })
+    if (battle.primary)
+      center.button({ id: 'center-fire', x: 208, y: 496, width: 144, height: 40, label: `fire ${WEAPONS[battle.primary.id].label}`, action: 'fire-primary', kind: 'hold', color: WEAPONS[battle.primary.id].color, size: 12 })
+  })
 }
 
 function drawTargetGlyph (panel: HudPanel, active: boolean): void {
