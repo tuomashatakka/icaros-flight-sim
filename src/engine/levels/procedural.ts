@@ -6,7 +6,7 @@
 
 import * as THREE from 'three'
 
-import { pointLight, roadMaterial } from './shared'
+import { finaliseStaticScene, pointLight, roadMaterial } from './shared'
 
 import type { SceneContext } from 'threejs-scene'
 import type { TrackBundle } from '@crash-velocity/race'
@@ -31,6 +31,7 @@ export const proceduralEnvironment: EnvironmentOverrides = {
 }
 
 export function buildProcedural (ctx: SceneContext, bundle: TrackBundle): void {
+  const root         = new THREE.Group()
   const { geometry } = bundle
   if (!geometry)
     return
@@ -38,8 +39,11 @@ export function buildProcedural (ctx: SceneContext, bundle: TrackBundle): void {
   const road         = new THREE.Mesh(geometry, roadMaterial('#333333', 0.15, 0.85))
   road.position.y    = -0.05
   road.receiveShadow = true
-  ctx.scene.add(road)
+  root.add(road)
 
-  ctx.scene.add(pointLight('#aab4ff', 120, 500, [ 0, 80, -200 ]))
-  ctx.scene.add(pointLight('#c8b4ff', 90, 400, [ 400, 60, -800 ]))
+  root.add(pointLight('#aab4ff', 120, 500, [ 0, 80, -200 ]))
+  root.add(pointLight('#c8b4ff', 90, 400, [ 400, 60, -800 ]))
+
+  finaliseStaticScene('procedural sprint', root)
+  ctx.scene.add(root)
 }

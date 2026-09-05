@@ -8,6 +8,7 @@
 
 import * as THREE from 'three'
 import { FLATS_HALF, FLATS_WALLS } from '@crash-velocity/race'
+import { finaliseStaticScene } from './shared'
 
 import type { SceneContext } from 'threejs-scene'
 import type { TrackBundle } from '@crash-velocity/race'
@@ -31,6 +32,7 @@ export const flatsEnvironment: EnvironmentOverrides = {
 }
 
 export function buildFlats (ctx: SceneContext, bundle: TrackBundle): void {
+  const root      = new THREE.Group()
   const waypoints = bundle.spec.waypoints.map(p => new THREE.Vector3(p[0], p[1], p[2]))
 
   const floor = new THREE.Mesh(
@@ -39,12 +41,12 @@ export function buildFlats (ctx: SceneContext, bundle: TrackBundle): void {
   )
   floor.rotation.x    = -Math.PI / 2
   floor.receiveShadow = true
-  ctx.scene.add(floor)
+  root.add(floor)
 
   // Grid so motion + turning read clearly while tuning.
   const grid      = new THREE.GridHelper(FLATS_HALF * 2, 80, '#3a3f55', '#23263a')
   grid.position.y = 0.02
-  ctx.scene.add(grid)
+  root.add(grid)
 
   // Emissive racing-line markers, batched by colour: the glow comes from
   // `emissive`, which InstancedMesh cannot vary per instance (setColorAt
@@ -73,7 +75,7 @@ export function buildFlats (ctx: SceneContext, bundle: TrackBundle): void {
       mesh.setMatrixAt(i, matrix)
     })
     mesh.instanceMatrix.needsUpdate = true
-    ctx.scene.add(mesh)
+    root.add(mesh)
   }
 
   // Containment fence, built FROM the wall colliders (half-extents -> full
@@ -87,31 +89,33 @@ export function buildFlats (ctx: SceneContext, bundle: TrackBundle): void {
     side:              THREE.DoubleSide,
     depthWrite:        false,
   })
-  for (const wall of FLATS_WALLS) {
+  const fenceGeometry = new THREE.BoxGeometry(1, 1, 1)
+  const capMaterial   = new THREE.MeshStandardMaterial({
+    color: '#22d3ee', emissive: '#22d3ee', emissiveIntensity: 1.6,
+  })
+  const panels      = new THREE.InstancedMesh(fenceGeometry, fenceMaterial, FLATS_WALLS.length)
+  const caps        = new THREE.InstancedMesh(fenceGeometry, capMaterial, FLATS_WALLS.length)
+  const fenceMatrix = new THREE.Matrix4()
+  const rotation    = new THREE.Quaternion()
+  const at          = new THREE.Vector3()
+  const scale       = new THREE.Vector3()
+  FLATS_WALLS.forEach((wall, i) => {
     const [ hx, hy, hz ] = wall.args
-    const panel          = new THREE.Mesh(
-      new THREE.BoxGeometry(hx * 2, hy * 2, hz * 2),
-      fenceMaterial
-    )
-    panel.position.set(wall.position[0], wall.position[1], wall.position[2])
-    ctx.scene.add(panel)
+    panels.setMatrixAt(i, fenceMatrix.compose(at.set(...wall.position), rotation, scale.set(hx * 2, hy * 2, hz * 2)))
 
     // A 16%-opacity slab is nearly invisible edge-on at 200 units out, which
     // is exactly the approach angle you hit it from. The lit cap is what you
     // actually read as "wall" while driving at it.
-    const cap      = new THREE.Mesh(
-      new THREE.BoxGeometry(hx * 2, 0.25, hz * 2),
-      new THREE.MeshStandardMaterial({
-        color:             '#22d3ee',
-        emissive:          '#22d3ee',
-        emissiveIntensity: 1.6,
-      })
-    )
-    cap.position.set(wall.position[0], wall.position[1] + hy, wall.position[2])
-    ctx.scene.add(cap)
-  }
+    caps.setMatrixAt(i, fenceMatrix.compose(at.set(wall.position[0], wall.position[1] + hy, wall.position[2]), rotation, scale.set(hx * 2, 0.25, hz * 2)))
+  })
+  panels.instanceMatrix.needsUpdate = caps.instanceMatrix.needsUpdate = true
+  root.add(panels, caps)
+
 
   const overhead = new THREE.PointLight('#aab4ff', 120, 400)
   overhead.position.set(0, 60, 0)
-  ctx.scene.add(overhead)
+  root.add(overhead)
+
+  finaliseStaticScene('flats', root)
+  ctx.scene.add(root)
 }
