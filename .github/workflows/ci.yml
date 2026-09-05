@@ -3,7 +3,7 @@
 # There was no CI in this repository at all: the netcode refactor — 204 files,
 # six packages — merged its pull request with nothing but a Vercel preview build
 # having looked at it, and a preview build is a weak signal. It compiles a Next
-# app; it does not run 258 tests, it does not typecheck the six workspace
+# app; it does not run 258 tests, it does not typecheck the workspace
 # packages (Next only ever sees the ones it transpiles), and it cannot notice
 # that a simulation stopped being reproducible.
 name: CI
@@ -38,9 +38,9 @@ jobs:
       # lockfile change showing up in the diff.
       - run: bun install --frozen-lockfile
 
-      # Typecheck covers the app AND all six packages. Their tsconfigs set
-      # `paths: {}`, so this is also what enforces the package boundaries — an
-      # `@/…` import inside a package fails here rather than at boot.
+      # Typecheck covers the app AND every workspace package. Each package's
+      # tsconfig `paths` lists only the glyphs it may import, so this is also what
+      # enforces the package boundaries — an upward import fails here, not at boot.
       # Every tsconfig `paths` table is generated from scripts/aliases.mjs; a
       # hand-edited one would silently widen a package boundary.
       - run: bun run aliases:check
