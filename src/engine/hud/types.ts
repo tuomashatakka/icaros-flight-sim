@@ -152,6 +152,9 @@ export type HudActionId =
   'boost' |
   'fire-primary' |
   'fire-secondary' |
+  'strafe-left' |
+  'strafe-right' |
+  'airbrake' |
   'race-again' |
   'tuning-toggle' |
   'tuning-reset' |

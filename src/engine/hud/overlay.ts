@@ -1,31 +1,34 @@
 import { TEAM_COLORS } from '@crash-velocity/battle/arena'
 import type { Controls } from '../input'
+import { chamferPath, drawPlate, drawPlateLabel, drawScanlines, drawStick } from './chrome'
+import type { Rect } from './chrome'
 import { HudPanel } from './panel'
 import { drawHudSight } from './sight'
+import { touchLayout } from './touch-layout'
+import type { SafeAreaInsets } from './touch-layout'
 import { formatHudRaceTime } from './interaction'
-import { HUD_COLORS as COLORS, HUD_FONT as FONT, HUD_TUNING_SPECS } from './tokens'
+import { HUD_COLORS as COLORS, HUD_FONT as FONT, HUD_SURFACES as SURFACES, HUD_TUNING_SPECS } from './tokens'
 import type { BattleHudData, HudActionId, HudData, HudFrame, RaceHudData } from './types'
 
 
 const TAU = Math.PI * 2
 
+/** A modal surface, in the same cut-corner language as the visor's facets. */
 function fillPanel (
   context: CanvasRenderingContext2D,
   x: number,
   y: number,
   width: number,
   height: number,
-  color = 'rgba(3, 9, 15, .90)',
-  stroke = 'rgba(88, 247, 239, .48)'
+  accent: string = COLORS.cyan
 ): void {
-  context.fillStyle   = color
-  context.strokeStyle = stroke
-  context.lineWidth   = 2
-  context.fillRect(x, y, width, height)
-  context.strokeRect(x, y, width, height)
-  context.globalAlpha = 0.25
-  context.strokeRect(x + 9, y + 9, width - 18, height - 18)
-  context.globalAlpha = 1
+  const rect = { x, y, width, height }
+  context.save()
+  chamferPath(context, rect, Math.min(width, height) * 0.06)
+  context.fillStyle = SURFACES.inkSolid
+  context.fill()
+  context.restore()
+  drawPlate(context, rect, { accent, chamfer: 0.06, alpha: 0.9 })
 }
 
 function overlayText (
@@ -46,39 +49,121 @@ function overlayText (
 }
 
 type OptionsType = {
-  id:      string;
-  label:   string;
-  x:       number;
-  y:       number;
-  width:   number;
-  height:  number;
-  action:  HudActionId;
-  kind?:   'button' | 'hold';
-  color?:  string;
-  active?: boolean;
+  id:        string;
+  label:     string;
+  x:         number;
+  y:         number;
+  width:     number;
+  height:    number;
+  action:    HudActionId;
+  kind?:     'button' | 'hold';
+  color?:    string;
+  active?:   boolean;
+  disabled?: boolean;
 }
 
 function overlayButton (
   overlay: HudPanel,
   options: OptionsType
 ): void {
-  const { context }   = overlay
-  const color         = options.color ?? COLORS.cyan
-  const active        = options.active ?? false
-  context.fillStyle   = active ? `${color}44` : 'rgba(6, 17, 25, .88)'
-  context.strokeStyle = overlay.hovered === options.id ? COLORS.white : color
-  context.lineWidth   = overlay.hovered === options.id ? 3 : 2
-  context.fillRect(options.x, options.y, options.width, options.height)
-  context.strokeRect(options.x, options.y, options.width, options.height)
-  overlayText(context, options.label.toUpperCase(), options.x + options.width * 0.5, options.y + options.height * 0.5, Math.max(11, options.height * 0.24), color)
+  const { context } = overlay
+  const color       = options.color ?? COLORS.cyan
+  const rect        = { x: options.x, y: options.y, width: options.width, height: options.height }
+
+  drawPlate(context, rect, {
+    accent:   color,
+    active:   options.active ?? false,
+    hovered:  overlay.hovered === options.id,
+    disabled: options.disabled,
+  })
+  drawPlateLabel(context, options.label, rect.x + rect.width * 0.5, rect.y + rect.height * 0.5, {
+    size:  Math.max(11, rect.height * 0.24),
+    color: options.disabled ? SURFACES.edgeDim : color,
+    alpha: options.disabled ? 0.5 : 0.9,
+  })
+
+  if (options.disabled)
+    return
+
   overlay.region({
     id:     options.id,
     kind:   options.kind ?? 'button',
-    x:      options.x,
-    y:      options.y,
-    width:  options.width,
-    height: options.height,
+    x:      rect.x,
+    y:      rect.y,
+    width:  rect.width,
+    height: rect.height,
     action: options.action,
+  })
+}
+
+/**
+ * The rectangle a modal may occupy, inside the device's safe area.
+ *
+ * The modals sized themselves off the raw canvas, so on a phone they ran under
+ * the notch and the home indicator at both ends.
+ */
+type CssSizeType = { width: number; height: number }
+
+function modalRect (
+  overlay: HudPanel,
+  insets: SafeAreaInsets,
+  cssSize: CssSizeType,
+  maxWidth: number,
+  maxHeight: number
+): Rect {
+  const { canvas } = overlay
+  const scale      = Math.min(canvas.width / Math.max(cssSize.width, 1), canvas.height / Math.max(cssSize.height, 1))
+  const left       = insets.left * scale
+  const top        = insets.top * scale
+  const availW     = canvas.width - left - insets.right * scale
+  const availH     = canvas.height - top - insets.bottom * scale
+  const width      = Math.min(maxWidth, availW - 32)
+  const height     = Math.min(maxHeight, availH - 32)
+
+  return {
+    x: left + (availW - width) * 0.5,
+    y: top + (availH - height) * 0.5,
+    width,
+    height,
+  }
+}
+
+type FooterButton = {
+  id:     string;
+  label:  string;
+  action: HudActionId;
+  color:  string;
+}
+
+/**
+ * A modal's footer row, sized to the modal.
+ *
+ * These were three fixed 150 px buttons at three hard-coded offsets inside a
+ * panel that was already responsive. On a phone the panel came out 388 px wide
+ * and they overlapped each other by about 63 px; `drawRaceFinish` went further
+ * and computed a NEGATIVE width below ~137 px. Below a threshold the row
+ * stacks, which is the only thing that fits a portrait phone.
+ */
+function footerButtons (
+  overlay: HudPanel,
+  panelX: number,
+  rowY: number,
+  panelWidth: number,
+  buttons: readonly FooterButton[]
+): void {
+  const inset   = Math.min(32, panelWidth * 0.06)
+  const gap     = 12
+  const usable  = panelWidth - inset * 2
+  const stacked = usable / buttons.length < 132
+  const height  = stacked ? 42 : 46
+
+  buttons.forEach((button, index) => {
+    const width = stacked ? usable : (usable - gap * (buttons.length - 1)) / buttons.length
+    const x     = panelX + inset + (stacked ? 0 : index * (width + gap))
+    // Stacking grows upward from the footer line so the row's bottom edge stays
+    // where the modal reserved space for it.
+    const y     = stacked ? rowY - (buttons.length - 1 - index) * (height + 8) : rowY
+    overlayButton(overlay, { ...button, x, y, width, height })
   })
 }
 
@@ -134,40 +219,50 @@ function drawCountdown (overlay: HudPanel, data: HudData): void {
   context.shadowBlur = 0
 }
 
-function drawRaceFinish (overlay: HudPanel, data: RaceHudData): void {
+type CssSizeType = { width: number; height: number }
+
+function drawRaceFinish (
+  overlay: HudPanel,
+  data: RaceHudData,
+  insets: SafeAreaInsets,
+  cssSize: CssSizeType
+): void {
   const { context, canvas } = overlay
   context.fillStyle         = 'rgba(1, 4, 8, .72)'
   context.fillRect(0, 0, canvas.width, canvas.height)
 
-  const width  = Math.min(620, canvas.width - 40)
-  const height = Math.min(520, canvas.height - 40)
-  const x      = (canvas.width - width) * 0.5
-  const y      = (canvas.height - height) * 0.5
+  const { x, y, width, height } = modalRect(overlay, insets, cssSize, 620, 520)
+  const midX                    = x + width * 0.5
   fillPanel(context, x, y, width, height)
-  overlayText(context, 'COURSE COMPLETE', canvas.width * 0.5, y + 58, 28, COLORS.cyan)
-  overlayText(context, `TOTAL ${formatHudRaceTime(data.clocks.elapsed)}`, canvas.width * 0.5, y + 122, 20)
-  overlayText(context, `BEST ${data.race.bestLap === null ? '--:--.---' : formatHudRaceTime(data.race.bestLap)}`, canvas.width * 0.5, y + 158, 17, COLORS.amber)
+  overlayText(context, 'COURSE COMPLETE', midX, y + 58, 28, COLORS.cyan)
+  overlayText(context, `TOTAL ${formatHudRaceTime(data.clocks.elapsed)}`, midX, y + 122, 20)
+  overlayText(context, `BEST ${data.race.bestLap === null ? '--:--.---' : formatHudRaceTime(data.race.bestLap)}`, midX, y + 158, 17, COLORS.amber)
 
   data.race.lapTimes.slice(0, 5).forEach((time, index) => {
-    overlayText(context, `LAP ${index + 1}  ${formatHudRaceTime(time)}`, canvas.width * 0.5, y + 208 + index * 28, 14, COLORS.white)
+    overlayText(context, `LAP ${index + 1}  ${formatHudRaceTime(time)}`, midX, y + 208 + index * 28, 14, COLORS.white)
   })
 
-  const buttonY = y + height - 82
-  overlayButton(overlay, { id: 'race-again', label: 'race again', x: x + 54, y: buttonY, width: width * 0.48 - 66, height: 50, action: 'race-again' })
-  overlayButton(overlay, { id: 'finish-menu', label: 'menu', x: x + width * 0.52 + 12, y: buttonY, width: width * 0.48 - 66, height: 50, action: 'menu', color: COLORS.magenta })
+  footerButtons(overlay, x, y + height - 82, width, [
+    { id: 'race-again', label: 'race again', action: 'race-again', color: COLORS.cyan },
+    { id: 'finish-menu', label: 'menu', action: 'menu', color: COLORS.magenta },
+  ])
 }
 
-function drawBattleFinish (overlay: HudPanel, data: BattleHudData): void {
+type CssSizeType = { width: number; height: number }
+
+function drawBattleFinish (
+  overlay: HudPanel,
+  data: BattleHudData,
+  insets: SafeAreaInsets,
+  cssSize: CssSizeType
+): void {
   const { context, canvas } = overlay
   context.fillStyle         = 'rgba(1, 4, 8, .76)'
   context.fillRect(0, 0, canvas.width, canvas.height)
 
-  const width  = Math.min(860, canvas.width - 36)
-  const height = Math.min(570, canvas.height - 36)
-  const x      = (canvas.width - width) * 0.5
-  const y      = (canvas.height - height) * 0.5
+  const { x, y, width, height } = modalRect(overlay, insets, cssSize, 860, 570)
   fillPanel(context, x, y, width, height)
-  overlayText(context, 'MATCH OVER', canvas.width * 0.5, y + 52, 28, COLORS.white)
+  overlayText(context, 'MATCH OVER', x + width * 0.5, y + 52, 28, COLORS.white)
   overlayText(context, `${data.battle.scores.red}`, x + width * 0.25, y + 100, 34, TEAM_COLORS.red)
   overlayText(context, `${data.battle.scores.blue}`, x + width * 0.75, y + 100, 34, TEAM_COLORS.blue)
 
@@ -181,143 +276,200 @@ function drawBattleFinish (overlay: HudPanel, data: BattleHudData): void {
       })
   })
 
-  overlayButton(overlay, { id: 'battle-finish-menu', label: 'return to menu', x: canvas.width * 0.5 - 130, y: y + height - 74, width: 260, height: 48, action: 'menu', color: COLORS.cyan })
+  footerButtons(overlay, x, y + height - 74, width, [
+    { id: 'battle-finish-menu', label: 'return to menu', action: 'menu', color: COLORS.cyan },
+  ])
 }
 
-function drawBattleError (overlay: HudPanel, data: BattleHudData): void {
+type CssSizeType = { width: number; height: number }
+
+function drawBattleError (
+  overlay: HudPanel,
+  data: BattleHudData,
+  insets: SafeAreaInsets,
+  cssSize: CssSizeType
+): void {
   const { context, canvas } = overlay
   context.fillStyle         = 'rgba(1, 4, 8, .78)'
   context.fillRect(0, 0, canvas.width, canvas.height)
 
-  const width  = Math.min(620, canvas.width - 40)
-  const height = 240
-  const x      = (canvas.width - width) * 0.5
-  const y      = (canvas.height - height) * 0.5
-  fillPanel(context, x, y, width, height, 'rgba(18, 3, 8, .92)', 'rgba(255, 84, 112, .72)')
-  overlayText(context, 'CONNECTION FAILURE', canvas.width * 0.5, y + 58, 24, COLORS.red)
-  overlayText(context, (data.battle.error ?? 'connection lost').toUpperCase(), canvas.width * 0.5, y + 112, 14, COLORS.white)
-  overlayButton(overlay, { id: 'battle-error-menu', label: 'menu', x: canvas.width * 0.5 - 90, y: y + 160, width: 180, height: 46, action: 'menu', color: COLORS.red })
+  const { x, y, width, height } = modalRect(overlay, insets, cssSize, 620, 260)
+  fillPanel(context, x, y, width, height, COLORS.red)
+  overlayText(context, 'CONNECTION FAILURE', x + width * 0.5, y + 58, 24, COLORS.red)
+  overlayText(context, (data.battle.error ?? 'connection lost').toUpperCase(), x + width * 0.5, y + 112, 14, COLORS.white)
+  footerButtons(overlay, x, y + height - 68, width, [
+    { id: 'battle-error-menu', label: 'menu', action: 'menu', color: COLORS.red },
+  ])
 }
 
-function drawTuning (overlay: HudPanel, data: RaceHudData, frame: HudFrame, copyUntil: number): void {
+type CssSizeType = { width: number; height: number }
+
+function drawTuning (
+  overlay: HudPanel,
+  data: RaceHudData,
+  frame: HudFrame,
+  copyUntil: number,
+  insets: SafeAreaInsets,
+  cssSize: CssSizeType
+): void {
   const { context, canvas } = overlay
   context.fillStyle         = 'rgba(1, 4, 8, .80)'
   context.fillRect(0, 0, canvas.width, canvas.height)
 
-  const width  = Math.min(900, canvas.width - 32)
-  const height = Math.min(650, canvas.height - 32)
-  const x      = (canvas.width - width) * 0.5
-  const y      = (canvas.height - height) * 0.5
+  const { x, y, width, height } = modalRect(overlay, insets, cssSize, 900, 700)
   fillPanel(context, x, y, width, height)
   overlayText(context, 'SHIP PHYSICS · LIVE TUNING', x + 34, y + 42, 20, COLORS.cyan, 'left')
 
-  const rowStart = y + 92
-  const rowGap   = Math.min(64, (height - 190) / HUD_TUNING_SPECS.length)
-  const sliderX  = x + Math.min(230, width * 0.34)
-  const sliderW  = width - (sliderX - x) - 54
+  // Below this the label column and the track cannot both fit on one line, so
+  // the label moves above its own full-width track instead of being squeezed
+  // into 200 px next to it.
+  const narrow    = width < 520
+  const labelCol  = narrow ? 0 : Math.min(230, width * 0.34)
+  const rowHeight = narrow ? 56 : 40
+  const rowStart  = y + 96 + (narrow ? 12 : 0)
+  const rowGap    = Math.min(narrow ? 64 : 62, (height - 190) / HUD_TUNING_SPECS.length)
+  const sliderX   = x + 36 + labelCol
+  const sliderW   = Math.max(80, x + width - 36 - sliderX)
 
   HUD_TUNING_SPECS.forEach((spec, index) => {
-    const rowY  = rowStart + index * rowGap
-    const value = data.tuning[spec.key]
-    const ratio = (value - spec.min) / (spec.max - spec.min)
+    const rowY   = rowStart + index * rowGap
+    const trackY = narrow ? rowY + 16 : rowY
+    const value  = data.tuning[spec.key]
+    const ratio  = (value - spec.min) / (spec.max - spec.min)
     overlayText(context, spec.label.toUpperCase(), x + 36, rowY, 13, COLORS.white, 'left')
-    overlayText(context, String(value), sliderX - 18, rowY, 13, COLORS.amber, 'right')
-    context.fillStyle = 'rgba(126, 168, 190, .18)'
-    context.fillRect(sliderX, rowY - 5, sliderW, 10)
+    overlayText(context, String(value), x + width - 36, rowY, 13, COLORS.amber, 'right')
+    context.fillStyle = SURFACES.track
+    context.fillRect(sliderX, trackY - 5, sliderW, 10)
     context.fillStyle = COLORS.cyan
-    context.fillRect(sliderX, rowY - 5, sliderW * ratio, 10)
-    context.strokeStyle = 'rgba(215, 248, 255, .35)'
-    context.strokeRect(sliderX, rowY - 5, sliderW, 10)
-    context.fillStyle = COLORS.white
-    context.fillRect(sliderX + sliderW * ratio - 4, rowY - 12, 8, 24)
+    context.fillRect(sliderX, trackY - 5, sliderW * ratio, 10)
+    context.strokeStyle = SURFACES.edge
+    context.strokeRect(sliderX, trackY - 5, sliderW, 10)
+    drawPlate(context, { x: sliderX + sliderW * ratio - 7, y: trackY - 13, width: 14, height: 26 }, {
+      accent:  COLORS.white,
+      active:  true,
+      chamfer: 0.3,
+      plain:   true,
+    })
     overlay.region({
       id:     `tuning:${spec.key}`,
       kind:   'slider',
       x:      sliderX,
-      y:      rowY - 18,
+      y:      trackY - rowHeight * 0.5,
       width:  sliderW,
-      height: 36,
+      height: rowHeight,
       tuning: spec,
     })
   })
 
-  const buttonY = y + height - 68
-  overlayButton(overlay, { id: 'tuning-close', label: 'close', x: x + 32, y: buttonY, width: 150, height: 42, action: 'tuning-toggle' })
-  overlayButton(overlay, { id: 'tuning-reset', label: 'reset', x: x + width * 0.5 - 75, y: buttonY, width: 150, height: 42, action: 'tuning-reset', color: COLORS.amber })
-  overlayButton(overlay, { id: 'tuning-copy', label: frame.elapsed < copyUntil ? 'copied' : 'copy as ts', x: x + width - 182, y: buttonY, width: 150, height: 42, action: 'tuning-copy', color: COLORS.magenta })
+  footerButtons(overlay, x, y + height - 68, width, [
+    { id: 'tuning-close', label: 'close', action: 'tuning-toggle', color: COLORS.cyan },
+    { id: 'tuning-reset', label: 'reset', action: 'tuning-reset', color: COLORS.amber },
+    { id: 'tuning-copy', label: frame.elapsed < copyUntil ? 'copied' : 'copy as ts', action: 'tuning-copy', color: COLORS.magenta },
+  ])
 }
+
+const ACCENTS = {
+  cyan:    COLORS.cyan,
+  magenta: COLORS.magenta,
+  amber:   COLORS.amber,
+  violet:  COLORS.violet,
+  green:   COLORS.green,
+} as const
+
+/**
+ * The on-screen controls, in the visor's own language.
+ *
+ * Geometry comes from `touchLayout` and nothing here invents a coordinate:
+ * that record is the single source for the drawing AND — because regions are
+ * emitted while drawing — for the hitboxes, so the two cannot drift.
+ */
+type CssSizeType = { width: number; height: number }
 
 function drawTouchControls (
   overlay: HudPanel,
   data: HudData,
+  frame: HudFrame,
   controls: Controls,
+  insets: SafeAreaInsets,
+  cssSize: CssSizeType,
   stickX: Record<'move' | 'aim', number>,
-  stickY: Record<'move' | 'aim', number>
+  stickY: Record<'move' | 'aim', number>,
+  held: ReadonlySet<HudActionId>
 ): void {
   const { context, canvas } = overlay
-  const diameter            = Math.min(canvas.width * 0.25, canvas.height * 0.32, 210)
-  const margin              = Math.max(18, canvas.width * 0.025)
-  const y                   = canvas.height - diameter - margin
+  const layout              = touchLayout({
+    width:     canvas.width,
+    height:    canvas.height,
+    cssWidth:  cssSize.width,
+    cssHeight: cssSize.height,
+    insets,
+    mode:      data.mode,
+  })
 
-  drawTouchPad(overlay, 'move', margin, y, diameter, stickX.move, stickY.move)
-  drawTouchPad(overlay, 'aim', canvas.width - diameter - margin, y, diameter, stickX.aim, stickY.aim)
-
-  const actionWidth = Math.max(68, Math.min(112, canvas.width * 0.095))
-  const actionGap   = 10
-  const centerX     = canvas.width * 0.5
-  const smallY      = canvas.height - 64
-  overlayButton(overlay, { id: 'touch-view', label: 'view', x: centerX - actionWidth - actionGap * 0.5, y: smallY, width: actionWidth, height: 42, action: 'view' })
-  overlayButton(overlay, { id: 'touch-reset', label: 'reset', x: centerX + actionGap * 0.5, y: smallY, width: actionWidth, height: 42, action: 'respawn', color: COLORS.amber })
-
-  const holdY = smallY - 62
-  if (data.mode === 'battle') {
-    overlayButton(overlay, { id: 'touch-secondary', label: 'msl', x: centerX - actionWidth * 1.55 - actionGap, y: holdY, width: actionWidth, height: 50, action: 'fire-secondary', kind: 'hold', color: COLORS.amber, active: controls.fireSecondary })
-    overlayButton(overlay, { id: 'touch-fire', label: 'fire', x: centerX - actionWidth * 0.5, y: holdY - 18, width: actionWidth, height: 68, action: 'fire-primary', kind: 'hold', color: COLORS.magenta, active: controls.fire })
-    overlayButton(overlay, { id: 'touch-boost', label: 'boost', x: centerX + actionWidth * 0.55 + actionGap, y: holdY, width: actionWidth, height: 50, action: 'boost', kind: 'hold', color: COLORS.cyan, active: controls.boost })
+  for (const stick of layout.sticks) {
+    drawStick(context, stick.centerX, stick.centerY, stick.radius, {
+      offsetX: stickX[stick.stick],
+      offsetY: stickY[stick.stick],
+      engaged: Math.hypot(stickX[stick.stick], stickY[stick.stick]) > 0.02,
+      label:   stick.label,
+      accent:  COLORS.cyan,
+    })
+    overlay.region({
+      id:     `stick:${stick.stick}`,
+      kind:   'stick',
+      stick:  stick.stick,
+      x:      stick.centerX - stick.radius,
+      y:      stick.centerY - stick.radius,
+      width:  stick.radius * 2,
+      height: stick.radius * 2,
+    })
   }
-  else
-    overlayButton(overlay, { id: 'touch-boost', label: 'boost', x: centerX - actionWidth * 0.5, y: holdY, width: actionWidth, height: 50, action: 'boost', kind: 'hold', color: COLORS.cyan, active: controls.boost })
+
+  for (const button of layout.buttons) {
+    const accent = ACCENTS[button.accent]
+    const active = button.hold
+      ? held.has(button.action) || liveHold(button.action, controls)
+      : false
+
+    drawPlate(context, button.rect, { accent, active })
+    drawScanlines(context, button.rect, frame.elapsed, accent)
+    drawPlateLabel(
+      context,
+      button.label,
+      button.rect.x + button.rect.width * 0.5,
+      button.rect.y + button.rect.height * 0.5,
+      { size: Math.max(11, Math.min(button.rect.height * 0.26, button.rect.width * 0.19)), color: accent }
+    )
+    overlay.region({
+      id:     button.id,
+      kind:   button.hold ? 'hold' : 'button',
+      x:      button.rect.x,
+      y:      button.rect.y,
+      width:  button.rect.width,
+      height: button.rect.height,
+      action: button.action,
+    })
+  }
 }
 
-function drawTouchPad (
-  overlay: HudPanel,
-  stick: 'move' | 'aim',
-  x: number,
-  y: number,
-  diameter: number,
-  offsetX: number,
-  offsetY: number
-): void {
-  const { context }   = overlay
-  const centerX       = x + diameter * 0.5
-  const centerY       = y + diameter * 0.5
-  const radius        = diameter * 0.5
-  context.fillStyle   = 'rgba(4, 14, 22, .48)'
-  context.strokeStyle = 'rgba(88, 247, 239, .32)'
-  context.lineWidth   = 2
-  context.beginPath()
-  context.arc(centerX, centerY, radius, 0, TAU)
-  context.fill()
-  context.stroke()
-  context.strokeStyle = 'rgba(88, 247, 239, .14)'
-  context.beginPath()
-  context.moveTo(centerX - radius, centerY)
-  context.lineTo(centerX + radius, centerY)
-  context.moveTo(centerX, centerY - radius)
-  context.lineTo(centerX, centerY + radius)
-  context.stroke()
-
-  const knobRadius    = diameter * 0.15
-  const knobX         = centerX + offsetX * diameter * 0.34
-  const knobY         = centerY + offsetY * diameter * 0.34
-  context.fillStyle   = 'rgba(88, 247, 239, .18)'
-  context.strokeStyle = COLORS.cyan
-  context.beginPath()
-  context.arc(knobX, knobY, knobRadius, 0, TAU)
-  context.fill()
-  context.stroke()
-  overlayText(context, stick.toUpperCase(), centerX, y + 18, 11, 'rgba(210, 250, 255, .55)')
-  overlay.region({ id: `stick:${stick}`, kind: 'stick', stick, x, y, width: diameter, height: diameter })
+/**
+ * Whether a hold action is engaged right now.
+ *
+ * Read off `Controls` where it exists there, so a key and a thumb light the
+ * same plate. The lateral and brake axes are shared with the sticks, so those
+ * fall back to the pressed set rather than claiming a stick's deflection.
+ */
+function liveHold (action: HudActionId, controls: Controls): boolean {
+  switch (action) {
+    case 'boost':
+      return controls.boost
+    case 'fire-primary':
+      return controls.fire
+    case 'fire-secondary':
+      return controls.fireSecondary
+    default:
+      return false
+  }
 }
 
 export type DrawHudOverlayOptions = {
@@ -330,6 +482,13 @@ export type DrawHudOverlayOptions = {
   controls:   Controls;
   stickX:     Record<'move' | 'aim', number>;
   stickY:     Record<'move' | 'aim', number>;
+
+  /** Safe-area insets in CSS pixels, and the surface they were measured on. */
+  insets:  SafeAreaInsets;
+  cssSize: { width: number; height: number };
+
+  /** Hold actions with a finger on them, for the ones `Controls` cannot report. */
+  held: ReadonlySet<HudActionId>;
 }
 
 export function drawHudOverlay ({
@@ -342,6 +501,9 @@ export function drawHudOverlay ({
   controls,
   stickX,
   stickY,
+  insets,
+  cssSize,
+  held,
 }: DrawHudOverlayOptions): void {
   const { context, canvas } = overlay
   const { width, height }   = canvas
@@ -367,13 +529,13 @@ export function drawHudOverlay ({
   drawToasts(overlay, data, frame)
 
   if (data.mode === 'race' && data.tuningOpen)
-    drawTuning(overlay, data, frame, copyUntil)
+    drawTuning(overlay, data, frame, copyUntil, insets, cssSize)
   else if (data.mode === 'race' && data.race.status === 'finished')
-    drawRaceFinish(overlay, data)
+    drawRaceFinish(overlay, data, insets, cssSize)
   else if (data.mode === 'battle' && data.battle.status === 'finished')
-    drawBattleFinish(overlay, data)
+    drawBattleFinish(overlay, data, insets, cssSize)
   else if (data.mode === 'battle' && data.battle.status === 'error')
-    drawBattleError(overlay, data)
+    drawBattleError(overlay, data, insets, cssSize)
   else {
     // The sight is screen space by necessity — see `hud/sight.ts`. It draws
     // under the countdown and the touch controls so neither is ever occluded
@@ -381,7 +543,7 @@ export function drawHudOverlay ({
     drawHudSight(overlay, data, frame)
     drawCountdown(overlay, data)
     if (isTouch)
-      drawTouchControls(overlay, data, controls, stickX, stickY)
+      drawTouchControls(overlay, data, frame, controls, insets, cssSize, stickX, stickY, held)
   }
 
   overlay.texture.needsUpdate = true
