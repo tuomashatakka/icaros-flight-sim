@@ -23,6 +23,12 @@
       }
     ],
     "paths": {
+      "@crash-velocity/data": [
+        "./packages/data/src/index.ts"
+      ],
+      "@crash-velocity/data/*": [
+        "./packages/data/src/*"
+      ],
       "@crash-velocity/physics": [
         "./packages/physics/src/index.ts"
       ],

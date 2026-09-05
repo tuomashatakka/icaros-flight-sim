@@ -29,12 +29,21 @@ connects — `bun run dev:all` is the one to reach for. The server is a separate
 Bun process in `packages/server`, and it must be, because it is a persistent
 stateful simulation: exactly what a serverless host cannot run.
 
-The workspace is `packages/*`: `server` and `physics`.
+The workspace is `packages/*`: `server`, `physics` and `data`.
 
-**`packages/server` has no runtime dependencies** — `Bun.serve` does HTTP and
-WebSocket, `bun:sqlite` is the database and `Bun.password` is the hasher, so
-nothing is installed to do what the runtime already does. (That rule is about
-the server specifically; `physics` genuinely needs `three` and `rapier`.)
+**`packages/server` has exactly one runtime dependency: `@crash-velocity/data`.**
+It used to have none — `Bun.serve`, `bun:sqlite`, `Bun.password` — and the first
+two of those still hold. The hasher and the database moved out because accounts
+are now written by Next route handlers on Vercel and read by this process, so
+that code has to run under Node as well as Bun. Nothing else is installed to do
+what the runtime already does.
+
+**`packages/data` is accounts and persistence, and it is a leaf.** `node:crypto`
+and `@neondatabase/serverless`, nothing else — its tsconfig sets `types: ["node"]`
+and `paths: {}`, so a stray `Bun.*` or `Δ…` in there is a build error rather
+than a runtime surprise on whichever of the two hosts hits it first. The SQLite
+adapter is the one thing that could not move: it imports `bun:sqlite`, so it
+stays in `packages/server` and layers itself onto `openStore`.
 
 **`packages/physics` is the simulation, and it is a leaf.** It depends on
 `three` and `@dimforge/rapier3d-compat` and nothing else — no React, no zustand,
@@ -389,8 +398,13 @@ src/engine/       The game. Vanilla three + threejs-scene, no React.
   hud/            Continuous visor GUI: live facets, overlays, hit testing, touch.
   levels/         The four tracks, as LevelSpec data.
   physics/        Rapier world + collider helpers (the app's side of it).
+src/app/api/      Route handlers. /api/auth/{register,login,logout,me} — the
+                  only server-side code in the Next app, and the half of the
+                  deployment that sits next to the database.
 src/hooks/        zustand stores.
 src/lib/net/      Browser-side account and lobby clients.
+src/lib/server/   Server-only. The shared `Store` and the auth response shapes.
+                  Never import from a client component.
 public/scenarios/ Race scenario scripts for the CLI and ?scenario=.
 scripts/          dev-cli.mjs, dev-all.mjs.
 
@@ -401,15 +415,21 @@ packages/physics/ The simulation. Thruster rig, flight control, crash lab.
   src/vehicle-step.ts  One tick: sense, control, allocate, apply.
   src/lab/        The eight crash dummies and the headless runner.
 
-packages/server/  The authoritative battle server. Zero runtime dependencies.
+packages/server/  The authoritative battle server. One runtime dependency.
   src/match/      Room, fixed-rate loop, bot backfill, lag-compensation rewind.
   src/lobby/      Matchmaker and the /lobby socket.
-  src/auth/       Registration, login, sessions.
-  src/store/      Store interface + sqlite and in-memory implementations.
+  src/store/      The sqlite adapter, and `openStore` layering it onto data's.
   src/dev/        Headless replay harness (battle's determinism check).
   test/           vitest, alongside the rest of the repo.
   test-bun/       Runs under `bun test` — see Conventions.
   scenarios/      Replay scripts.
+
+packages/data/    Accounts and persistence, shared by Next and the server.
+  src/store/      Store interface + neon and in-memory adapters, `openStore`,
+                  and the Postgres schema.
+  src/auth/       Registration, login, sessions, and the scrypt hasher.
+  src/migrate.ts  `bun run db:push`.
+  test/           vitest, including the contract every adapter answers.
 ```
 
 The server imports engine code across the boundary (`Δengine/battle/sim` and
@@ -425,9 +445,14 @@ even though only the server instantiates it.
 - Dev-only code lives behind `process.env.NODE_ENV !== 'production'` and is
   reached via dynamic `import()`, so it is eliminated from production bundles.
   Verify with `grep -r "__dev" .next/static` after a build — it must be empty.
-- **Two test runners, for one reason.** `Bun.password` and `bun:sqlite` are
-  runtime builtins vitest's node process cannot load, so anything touching them
-  lives in `packages/server/test-bun/` and runs under `bun test`. Everything
-  else — including all the server logic — runs under vitest with the rest of the
-  repo, against `MemoryStore`. `bun run test` runs both. If a new server test
-  does not need the runtime, put it in `test/`, not `test-bun/`.
+- **Two test runners, for one reason, and it is down to one file.**
+  `bun:sqlite` is a runtime builtin vitest's node process cannot load, so
+  `packages/server/test-bun/sqlite.test.ts` runs under `bun test`. Everything
+  else runs under vitest with the rest of the repo — including the hasher and
+  the account tests, which moved out of `test-bun/` when `Bun.password` became
+  portable scrypt. If a new test does not need the runtime, put it in `test/`.
+- **Every `Store` adapter answers one contract.** `packages/data/test/store-contract.ts`
+  is the suite; memory, neon and sqlite each run it, from whichever runner can
+  load them. An interface only buys anything if the implementations agree, so a
+  behaviour that differs between them belongs in that file as a failing case
+  before it is fixed anywhere.

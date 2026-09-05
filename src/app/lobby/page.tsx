@@ -5,26 +5,50 @@ import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
 import { Suspense } from 'react'
 import { LobbyClient } from 'Δlib/net/lobby-client'
-import { login, register, signOut, storedName, storedToken, storeName } from 'Δlib/net/account'
+import { login, me, register, signOut, storedName, storedToken, storeName } from 'Δlib/net/account'
 import { useLobbyStore } from 'Δhooks/use-lobby-store'
 import styles from './lobby.module.css'
 
 
-type IdentityProps = { server?: string }
-
-function Identity ({ server }: IdentityProps) {
+/**
+ * Auth takes no `server` override, unlike everything else on this page.
+ * `?sv=` points at a battle server, and identity is not there any more — it is
+ * same-origin, next to the database. The socket below still honours it.
+ */
+function Identity () {
   const { name, registered, stats } = useLobbyStore()
   const [ open, setOpen ]           = useState(false)
   const [ username, setUsername ]   = useState('')
   const [ password, setPassword ]   = useState('')
   const [ error, setError ]         = useState<string | null>(null)
   const [ busy, setBusy ]           = useState(false)
+  const [ known, setKnown ]         = useState<{ name: string } | null>(null)
+
+  // The socket's `welcome` says who you are too, but only once it has connected
+  // and only by falling back to a guest when the token has expired. Asking
+  // outright means the panel does not flicker through "guest" on every load,
+  // and a week-old token is a visible sign-out rather than a silent demotion.
+  useEffect(() => {
+    let live = true
+    void me().then(found => {
+      if (!live)
+        return
+      if (found)
+        setKnown({ name: found.account.username })
+      else if (storedToken())
+        signOut().catch(() => {})
+    })
+
+    return () => {
+      live = false
+    }
+  }, [])
 
   const submit = async (mode: 'login' | 'register') => {
     setBusy(true)
     setError(null)
 
-    const result = await (mode === 'register' ? register : login)(username, password, server)
+    const result = await (mode === 'register' ? register : login)(username, password)
     setBusy(false)
 
     if (!result.ok) {
@@ -37,17 +61,16 @@ function Identity ({ server }: IdentityProps) {
     globalThis.location?.reload()
   }
 
-  if (registered)
+  if (registered || known)
     return <p className={ styles.identity }>
-      <span>{ name }</span>
+      <span>{ registered ? name : known?.name }</span>
       { stats && <span>{ stats.matches } matches · { stats.kills }/{ stats.deaths } K/D</span> }
 
       <button
         type="button"
         className={ styles.button }
         onClick={ () => {
-          signOut()
-          globalThis.location?.reload()
+          void signOut().finally(() => globalThis.location?.reload())
         } }>
         sign out
       </button>
@@ -273,7 +296,7 @@ function LobbyContent () {
     <section className={ styles.inner }>
       <header className={ styles.header }>
         <h1 className={ styles.title }>Lobby</h1>
-        <Identity server={ server } />
+        <Identity />
         <Link href="/" className={ styles.back }>‹ Back to menu</Link>
       </header>
 

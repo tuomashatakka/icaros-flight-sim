@@ -1,20 +1,21 @@
 /**
- * `Store` on `bun:sqlite`.
+ * `Store` on `bun:sqlite`. The offline adapter.
  *
- * SQLite because it is built into Bun — no dependency, no service to run, and a
- * hobby server's whole database is a file you can copy. Swapping it for
- * Postgres later is this one file; nothing above the `Store` interface knows
- * which is underneath.
+ * Neon is the default now, because accounts have to be written by Next on
+ * Vercel and read by this process, and a file on one machine cannot serve the
+ * other. SQLite survives for the case Neon is bad at: developing offline, with
+ * no account, no network and no connection string — `STORE_DRIVER=sqlite`.
  *
  * NOTE: this module imports `bun:sqlite`, so it can only be loaded under Bun.
- * That is why the interface exists and why every test that is not specifically
- * about SQL uses `MemoryStore` — vitest runs on node and cannot import it.
+ * That is why it stayed in this package rather than moving to
+ * `@crash-velocity/data` with the interface and the other two adapters, which
+ * have to typecheck and run under Node as well.
  */
 
 import { Database } from 'bun:sqlite'
 import { dirname } from 'node:path'
 import { mkdirSync, readFileSync } from 'node:fs'
-import { SESSION_TTL_MS } from './store'
+import { SESSION_TTL_MS } from '@crash-velocity/data'
 import type {
   Account,
   AccountStats,
@@ -22,7 +23,7 @@ import type {
   MatchRecord,
   Session,
   Store,
-} from './store'
+} from '@crash-velocity/data'
 
 
 type AccountRow = {
@@ -121,8 +122,18 @@ export class SqliteStore implements Store {
   }
 
   async recordMatchStart (record: MatchRecord): Promise<void> {
-    this.db.query('INSERT OR REPLACE INTO matches (id, mode, arena, started_at, ended_at, winner, scores) VALUES (?, ?, ?, ?, ?, ?, ?)')
-      .run(record.id, record.mode, record.arena, record.startedAt, record.endedAt, record.winner, JSON.stringify(record.scores))
+    // `ON CONFLICT ... DO UPDATE`, never `INSERT OR REPLACE`: replace deletes the
+    // conflicting row first, which fires `match_players`' ON DELETE CASCADE and
+    // silently takes the roster with it. Postgres' DO UPDATE does not, so leaving
+    // this would make the two adapters disagree the first time a match was
+    // re-recorded.
+    this.db.query(`
+      INSERT INTO matches (id, mode, arena, started_at, ended_at, winner, scores)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (id) DO UPDATE SET
+        mode = excluded.mode, arena = excluded.arena, started_at = excluded.started_at,
+        ended_at = excluded.ended_at, winner = excluded.winner, scores = excluded.scores
+    `).run(record.id, record.mode, record.arena, record.startedAt, record.endedAt, record.winner, JSON.stringify(record.scores))
   }
 
   async recordMatchEnd (id: string, endedAt: number, winner: string | null, scores: Record<string, number>): Promise<void> {
@@ -131,9 +142,13 @@ export class SqliteStore implements Store {
   }
 
   async recordMatchPlayers (players: MatchPlayerRecord[]): Promise<void> {
-    const insert = this.db.query(
-      'INSERT OR REPLACE INTO match_players (match_id, account_id, name, team, kills, deaths, captures) VALUES (?, ?, ?, ?, ?, ?, ?)'
-    )
+    const insert = this.db.query(`
+      INSERT INTO match_players (match_id, account_id, name, team, kills, deaths, captures)
+      VALUES (?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (match_id, name) DO UPDATE SET
+        account_id = excluded.account_id, team = excluded.team,
+        kills = excluded.kills, deaths = excluded.deaths, captures = excluded.captures
+    `)
 
     // One transaction: a half-written roster is worse than none, and this runs
     // at match end when the tick loop is still going.

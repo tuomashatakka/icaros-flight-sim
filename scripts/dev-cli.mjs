@@ -122,7 +122,10 @@ async function ensureBattleServer () {
   const child = spawn('bun', [ 'run', 'dev:server' ], {
     cwd:   ROOT,
     stdio: 'ignore',
-    env:   { ...process.env, DEV_COMMANDS: '1' },
+    // `STORE_DRIVER=memory` on purpose: a probe or a screenshot must not write
+    // to a real database, and must not fail because a `DATABASE_URL` happens to
+    // be exported in whatever shell started it.
+    env:   { ...process.env, DEV_COMMANDS: '1', STORE_DRIVER: 'memory' },
   })
 
   const deadline = Date.now() + BATTLE_TIMEOUT

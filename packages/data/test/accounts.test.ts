@@ -1,13 +1,15 @@
 /**
  * Accounts.
  *
- * Lives in `test-bun/` because `Bun.password` is a runtime builtin — vitest
- * runs on node and cannot provide it, the same reason `bun:sqlite` forced the
- * `Store` interface. Everything in this directory runs under `bun test`; the
- * rest of the suite runs under vitest with the rest of the repo.
+ * This used to live in `test-bun/`, because `Bun.password` was a runtime
+ * builtin that vitest's node process could not provide. Hashing is scrypt from
+ * `node:crypto` now — the same code runs on both hosts — so the file runs with
+ * the rest of the suite, which is where AGENTS.md says a test belongs when it
+ * does not actually need the runtime.
  */
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { login, register, validCredentials } from '../src/auth/accounts'
+import { verifyPassword } from '../src/auth/hash'
 import { MemoryStore } from '../src/store/memory'
 
 
@@ -59,7 +61,7 @@ describe('register', () => {
 
     const found = await store.findAccount('Maverick')
     expect(found?.passwordHash).not.toContain(GOOD)
-    expect(await Bun.password.verify(GOOD, found!.passwordHash)).toBe(true)
+    expect(await verifyPassword(GOOD, found!.passwordHash)).toBe(true)
   })
 })
 

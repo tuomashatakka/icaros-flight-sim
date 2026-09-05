@@ -9,8 +9,14 @@
  *     bun run dev:server        # this alone
  *     bun run dev:all           # this plus the Next client
  *
+ * It no longer owns identity. Registration and login are Next route handlers on
+ * Vercel, next to the database; this process only *reads* a session token, to
+ * decide whether a lobby connection is a registered pilot or a guest. What is
+ * left here is what genuinely needs a live process: the sockets, the matchmaker
+ * and the tick loop.
+ *
  * Nothing here is host-specific. Every knob is an environment variable with a
- * localhost default (see `config.ts`), and the database is a file.
+ * localhost default (see `config.ts` and `@crash-velocity/data`'s `openStore`).
  */
 
 import { loadConfig } from './config'
@@ -19,12 +25,11 @@ import { CLOSE_SHUTDOWN, routeMessage } from './net/battle-socket'
 import { MAX_MESSAGE_BYTES, createBucket, originAllowed } from './net/session'
 import { Matchmaker } from './lobby/matchmaker'
 import { dropLobbySocket, routeLobbyMessage } from './lobby/lobby-socket'
-import { login, register } from './auth/accounts'
-import { MemoryStore } from './store/memory'
+import { migrateIfRequested, openStore } from './store/open'
+import { storeDescription } from '@crash-velocity/data'
 import { jsonCodec } from 'Δengine/battle/protocol'
 import type { LobbySocket } from './lobby/lobby-socket'
 import type { SocketData } from './net/session'
-import type { Store } from './store/store'
 import type { LobbyServerMessage, ServerMessage } from 'Δengine/battle/protocol'
 import type { ServerWebSocket } from 'bun'
 
@@ -33,15 +38,9 @@ const config    = loadConfig()
 const now       = () => Date.now()
 const startedAt = now()
 
-/**
- * `bun:sqlite` is imported dynamically so the module is only loaded when a
- * database is actually configured. `DB_PATH=` (empty) gives an in-memory store,
- * which is what a throwaway LAN session wants — it should not leave a database
- * file behind.
- */
-const store: Store = config.dbPath
-  ? new (await import('./store/sqlite')).SqliteStore(config.dbPath)
-  : new MemoryStore()
+await migrateIfRequested()
+
+const store = await openStore()
 
 const registry   = createRegistry(config)
 const matchmaker = new Matchmaker(now)
@@ -50,41 +49,18 @@ const lobbies    = new Set<LobbySocket>()
 /** Abandoned lobbies and expired tickets, swept on the same cadence as rooms. */
 setInterval(() => matchmaker.sweep(10 * 60_000), 60_000).unref?.()
 
+// This process is served from a different origin than the client (Next on
+// :9002, this on :9003), so its remaining GETs carry CORS. The sockets do not
+// need it — browsers do not apply CORS to WebSockets, which is what
+// `originAllowed` covers instead.
+const corsHeaders = () => ({
+  'content-type':                 'application/json',
+  'access-control-allow-origin':  config.originAllowlist[0] ?? '*',
+  'access-control-allow-headers': 'content-type',
+})
+
 const json = (body: unknown, status = 200) =>
-  new Response(JSON.stringify(body), {
-    status,
-    headers: {
-      'content-type':                 'application/json',
-      // The client is served from a different origin (Next on :9002, this on
-      // :9003), so the auth endpoints need CORS. The socket does not — browsers
-      // do not apply CORS to WebSockets, which is what `originAllowed` covers.
-      'access-control-allow-origin':  config.originAllowlist[0] ?? '*',
-      'access-control-allow-headers': 'content-type',
-    },
-  })
-
-type Credentials = { username?: unknown; password?: unknown }
-
-async function handleAuth (request: Request, action: 'register' | 'login'): Promise<Response> {
-  let body: Credentials
-  try {
-    body = await request.json() as Credentials
-  }
-  catch {
-    return json({ error: 'expected a JSON body' }, 400)
-  }
-
-  const username = typeof body.username === 'string' ? body.username : ''
-  const password = typeof body.password === 'string' ? body.password : ''
-  const result   = action === 'register'
-    ? await register(store, username, password)
-    : await login(store, username, password)
-
-  if (!result.ok)
-    return json({ error: result.reason }, result.reason === 'taken' ? 409 : 401)
-
-  return json({ token: result.token, account: result.account })
-}
+  new Response(JSON.stringify(body), { status, headers: corsHeaders() })
 
 const server = Bun.serve<SocketData | LobbySocket, never>({
   hostname: config.host,
@@ -95,7 +71,9 @@ const server = Bun.serve<SocketData | LobbySocket, never>({
     const origin = request.headers.get('origin')
 
     if (request.method === 'OPTIONS')
-      return json({}, 204)
+      // 204 means no body, and `json()` would send one. Nothing preflights the
+      // two plain GETs left here, but a malformed response is worse than none.
+      return new Response(null, { status: 204, headers: corsHeaders() })
 
     if (url.pathname === '/health')
       return json({
@@ -115,12 +93,9 @@ const server = Bun.serve<SocketData | LobbySocket, never>({
         loop: registry.loop.stats,
       })
 
-    if (url.pathname === '/api/auth/register' && request.method === 'POST')
-      return handleAuth(request, 'register')
-
-    if (url.pathname === '/api/auth/login' && request.method === 'POST')
-      return handleAuth(request, 'login')
-
+    // Auth is not here any more; it is same-origin on the Next app. This is
+    // still the only place that can answer /api/matches, which is live
+    // matchmaker memory rather than anything in a database.
     if (url.pathname === '/api/matches')
       return json({ matches: matchmaker.list() })
 
@@ -232,9 +207,16 @@ function isLobby (data: SocketData | LobbySocket): data is LobbySocket {
 console.info(
   `[battle] listening on ${config.host}:${config.port} · ` +
   `${config.tickHz} Hz sim · ${config.snapshotHz} Hz snapshots · ` +
-  `store ${config.dbPath || 'in-memory'} · ` +
+  `store ${storeDescription()} · ` +
   `dev commands ${config.devCommands ? 'on' : 'off'}`
 )
+
+// Worth saying out loud: tokens are minted by the Next app's /api/auth, so if
+// the two processes are not looking at the same database, every sign-in still
+// *works* and every lobby connection still lands as a guest. That is a
+// confusing enough failure to deserve a line at boot.
+if (storeDescription() !== 'in-memory' && !process.env.DATABASE_URL)
+  console.info('[battle] no DATABASE_URL: sessions issued by the Next app are not in this store, so everyone joins as a guest')
 
 function shutdown (signal: string): void {
   console.info(`[battle] ${signal}, draining`)

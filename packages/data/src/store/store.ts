@@ -1,13 +1,19 @@
 /**
  * Persistence, behind an interface.
  *
- * Two implementations: `SqliteStore` for a running server and `MemoryStore` for
- * tests. The split is not ceremony — vitest's node runtime cannot import a
- * `bun:` builtin, so every test that is not specifically about SQL runs against
- * memory, and the sqlite implementation is covered by `bun test` instead.
+ * Three implementations, and the split is not ceremony:
  *
- * It also keeps the hosting promise honest: swapping this for Postgres is one
- * file, and nothing above it knows which is underneath.
+ * - `NeonStore` (here) — Neon Postgres over HTTP. The default, and the only one
+ *   both hosts can reach: accounts are written by Next route handlers on Vercel
+ *   and read by the battle server, which are different processes on different
+ *   machines running different runtimes.
+ * - `MemoryStore` (here) — tests, and a throwaway LAN session.
+ * - `SqliteStore` (`packages/server`) — a local file for offline development.
+ *   It lives over there rather than here because it imports `bun:sqlite`, and
+ *   this package has to typecheck and run under Node as well.
+ *
+ * Everything above this interface is written against it and knows nothing about
+ * which is underneath — which is what made moving off SQLite one new file.
  */
 
 export type Account = {
