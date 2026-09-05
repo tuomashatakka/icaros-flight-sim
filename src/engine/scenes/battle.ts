@@ -28,7 +28,7 @@ import {
 } from '../battle/visuals'
 import type { CaretMarker, Nameplate, ObjectiveVisual, ZoneVisual } from '../battle/visuals'
 import { BattleTransport } from '../battle/transport'
-import type { NetRemote } from '../battle/transport'
+import type { BattleFrame, NetRemote } from '../battle/transport'
 import type { ViewPlayer } from '../battle/transport'
 import { LocalPrediction } from '../net/prediction'
 import { createHovercraft, createHovercraftState } from '@crash-velocity/physics/vehicle-step'
@@ -86,6 +86,7 @@ type Opponent = {
   root:      THREE.Group;
   nameplate: Nameplate;
   caret:     CaretMarker;
+  seen:      number;
 }
 
 const _pose = new THREE.Vector3()
@@ -130,6 +131,13 @@ export async function mountBattle (
   const loadout: Loadout = { ...DEFAULT_LOADOUT, ...options.loadout }
 
   const transport = new BattleTransport()
+  let renderFrame: BattleFrame | null = null
+  let remoteGeneration                = 0
+  const missilePosition  = { x: 0, y: 0, z: 0 }
+  const missileVelocity  = { x: 0, y: 0, z: 0 }
+  const beamFrom         = { x: 0, y: 0, z: 0 }
+  const beamTo           = { x: 0, y: 0, z: 0 }
+  const projectilePoseOf = (id: string) => renderFrame?.playersById.get(id) ?? null
 
   useBattleStore.getState().resetSession()
 
@@ -193,7 +201,7 @@ export async function mountBattle (
     const team = store.myTeam
     if (team) {
       hitCandidates.length = 0
-      for (const remote of transport.remotes()) {
+      for (const remote of renderFrame?.remotes ?? transport.remotes()) {
         // The RENDERED pose, not the snapshot's: remote ships are drawn ~100 ms
         // in the past, and a reticle that marks where a ship is not is worse
         // than no reticle. The server resolves the actual shot by rewinding to
@@ -313,8 +321,6 @@ export async function mountBattle (
       }
     })
 
-  const nameOf = () => new Map((transport.latest()?.players ?? []).map(p => [ p.id, p.name ]))
-
   function ensureOpponent (remote: NetRemote): Opponent {
     let entry = opponents.get(remote.id)
     if (entry)
@@ -327,7 +333,7 @@ export async function mountBattle (
     shipRoot.add(root)
     overlays.add(caret.group)
 
-    entry = { root, nameplate, caret }
+    entry = { root, nameplate, caret, seen: 0 }
     opponents.set(remote.id, entry)
     return entry
   }
@@ -345,7 +351,7 @@ export async function mountBattle (
 
   /** The ship a snapshot id refers to, whoever owns it. */
   function playerIn (id: string): ViewPlayer | undefined {
-    return transport.latest()?.players.find(p => p.id === id)
+    return (renderFrame ?? transport.frame())?.playersById.get(id)
   }
 
   /**
@@ -422,9 +428,9 @@ export async function mountBattle (
    * cone test, and a client that decided its own would disagree with the
    * authority about who it was shooting.
    */
-  function publishHud (server: ViewPlayer, snapshot: NonNullable<ReturnType<BattleTransport['latest']>>): void {
+  function publishHud (server: ViewPlayer, snapshot: BattleFrame): void {
     const store  = useBattleStore.getState()
-    const target = server.lockTarget ? playerIn(server.lockTarget) : undefined
+    const target = server.lockTarget ? snapshot.playersById.get(server.lockTarget) : undefined
 
     if (target)
       store.setLockOn({
@@ -444,7 +450,7 @@ export async function mountBattle (
       boost:     server.boost,
       kills:     server.kills,
       deaths:    server.deaths,
-      carrying:  snapshot.flags.find(f => f.carrierId === server.id)?.team ?? null,
+      carrying:  snapshot.flagsByCarrierId.get(server.id)?.team ?? null,
     })
 
     const primarySpec   = WEAPONS[loadout.primary]
@@ -476,13 +482,14 @@ export async function mountBattle (
    * 30 Hz stream look like a stuttering one — a remote is only ever drawn from
    * the interpolator, never from a packet.
    */
-  function renderRemotes (elapsed: number): void {
-    const snapshot   = transport.latest()
-    const server     = transport.localState()
+  function renderRemotes (snapshot: BattleFrame, elapsed: number): void {
+    const server     = snapshot.local
     const renderTime = transport.renderTimeMs()
+    remoteGeneration++
 
-    for (const remote of transport.remotes()) {
+    for (const remote of snapshot.remotes) {
       const entry = ensureOpponent(remote)
+      entry.seen  = remoteGeneration
 
       if (!remote.interp.sampleAt(renderTime, _pose, _quat)) {
         // Nothing buffered yet. (0, 0, 0) is a real place on this map, so an
@@ -496,12 +503,12 @@ export async function mountBattle (
       entry.root.position.copy(_pose)
       entry.root.quaternion.copy(_quat)
 
-      const carrying = snapshot?.flags.some(f => f.carrierId === remote.id) ?? false
+      const carrying = snapshot.flagsByCarrierId.has(remote.id)
       entry.nameplate.set(remote.name, remote.state.health, remote.state.maxHealth, remote.team, carrying)
 
       // The caret only ever appears on the ONE ship the local player's lock is
       // working on — a bracket on every enemy is wallpaper, not a target.
-      const tracked = Boolean(server) && server?.lockTarget === remote.id && remote.team !== transport.localTeam()
+      const tracked = Boolean(server) && server?.lockTarget === remote.id && remote.team !== server?.team
       entry.caret.setVisible(tracked && server?.lockPhase !== 'idle')
       if (tracked && server) {
         entry.caret.group.position.set(_pose.x, _pose.y + 1.4, _pose.z)
@@ -510,17 +517,16 @@ export async function mountBattle (
       }
     }
 
-    const live = new Set(transport.remotes().map(r => r.id))
-    for (const id of [ ...opponents.keys() ])
-      if (!live.has(id))
+    for (const [ id, entry ] of opponents)
+      if (entry.seen !== remoteGeneration)
         dropOpponent(id)
   }
 
   /** Objectives, weapons and control points, all straight off the snapshot. */
-  function renderWorld (snapshot: NonNullable<ReturnType<BattleTransport['latest']>>, elapsed: number): void {
+  function renderWorld (snapshot: BattleFrame, elapsed: number): void {
     for (const team of BATTLE_TEAMS) {
       const visual = objectives[team]
-      const state  = snapshot.flags.find(f => f.team === team)
+      const state  = snapshot.flagsByTeam.get(team)
       if (!visual || !state)
         continue
       visual.group.position.set(state.x, state.y, state.z)
@@ -530,32 +536,46 @@ export async function mountBattle (
     // Beams are sub-100 ms flashes, drawn from the newest snapshot rather than
     // interpolated: one smoothed into the past would arrive after the impact it
     // belongs to.
-    snapshot.beams.forEach((b, i) => {
+    for (let i = 0; i < snapshot.beams.length; i++) {
+      const b    = snapshot.beams[i]
       const spec = WEAPONS[b.weapon]
+      beamFrom.x = b.from[0]
+      beamFrom.y = b.from[1]
+      beamFrom.z = b.from[2]
+      beamTo.x   = b.to[0]
+      beamTo.y   = b.to[1]
+      beamTo.z   = b.to[2]
       // Fade over the beam's remaining life so a hit reads as a flash, not a
       // rod that blinks out.
-      beamPool.show(i, { x: b.from[0], y: b.from[1], z: b.from[2] }, { x: b.to[0], y: b.to[1], z: b.to[2] },
+      beamPool.show(i, beamFrom, beamTo,
                     b.weapon, Math.max(0, Math.min(1, b.life / (spec.beamLife ?? 0.1))))
-    })
+    }
     beamPool.hideFrom(snapshot.beams.length)
 
     // Missiles are NOT in the snapshot any more — they are spawned from a fire
     // event and integrated locally, so this draws whatever the field stepped
     // this frame rather than dead-reckoning from a packet that is already old.
-    const live = projectiles.live
-    live.forEach((m, i) => {
+    for (let i = 0; i < projectiles.count; i++) {
+      const m           = projectiles.at(i)!
+      missilePosition.x = m.position[0]
+      missilePosition.y = m.position[1]
+      missilePosition.z = m.position[2]
+      missileVelocity.x = m.velocity[0]
+      missileVelocity.y = m.velocity[1]
+      missileVelocity.z = m.velocity[2]
       missilePool.show(i,
-                       { x: m.position[0], y: m.position[1], z: m.position[2] },
-                       { x: m.velocity[0], y: m.velocity[1], z: m.velocity[2] },
+                       missilePosition,
+                       missileVelocity,
                        m.weapon)
-    })
-    missilePool.hideFrom(live.length)
+    }
+    missilePool.hideFrom(projectiles.count)
 
-    zoneVisuals.forEach((visual, i) => {
-      const z = snapshot.zones[i]
+    for (let i = 0; i < zoneVisuals.length; i++) {
+      const visual = zoneVisuals[i]
+      const z      = snapshot.zonesById.get(arena.controlPoints[i].id)
       if (z)
         visual.update(z.owner, z.capturing, z.progress, z.contested, elapsed)
-    })
+    }
   }
 
   const app = await mountBaseScene<BattleState>({
@@ -692,7 +712,7 @@ export async function mountBattle (
           telemetry.grounded   = prediction?.grounded ?? false
           telemetry.airbrake   = prediction?.airbrake ?? 0
 
-          const snapshot = transport.latest()
+          const snapshot = transport.frame()
           const store    = useBattleStore.getState()
 
           reportNet()
@@ -713,7 +733,7 @@ export async function mountBattle (
           // idles and the rig is driven directly from the event stream.
           const events = transport.drainEvents()
           if (events.length) {
-            const names = nameOf()
+            const names = snapshot.namesById
             for (const event of events) {
               store.applyEvent(event, names)
               reactTo(event, rig)
@@ -752,23 +772,18 @@ export async function mountBattle (
       scenery?.update(elapsed)
       blastPool.update(frame.delta)
 
-      renderRemotes(elapsed)
+      renderFrame = transport.frame()
+      if (!renderFrame)
+        return
+
+      renderRemotes(renderFrame, elapsed)
 
       // Stepped on the RENDER delta, not the sim step: these are visuals whose
       // authoritative outcome the server already decided, and a missile that
       // stutters between physics ticks reads as a dropped frame.
-      projectiles.step(frame.delta, id => {
-        const remote = transport.remotes().find(r => r.id === id)
-        if (remote)
-          return { x: remote.state.x, y: remote.state.y, z: remote.state.z }
+      projectiles.step(frame.delta, projectilePoseOf)
 
-        const local = transport.localState()
-        return local && local.id === id ? { x: local.x, y: local.y, z: local.z } : null
-      })
-
-      const snapshot = transport.latest()
-      if (snapshot)
-        renderWorld(snapshot, elapsed)
+      renderWorld(renderFrame, elapsed)
     },
 
     onDispose: () => {

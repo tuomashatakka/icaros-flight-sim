@@ -34,7 +34,7 @@ import { mountBaseScene } from './base'
 import type { App, AppModule } from 'threejs-scene'
 import type { TrackId } from '@crash-velocity/race'
 import type { Nameplate } from '../battle/visuals'
-import type { NetRacer } from '../race/transport'
+import type { NetRacer, RaceFrame } from '../race/transport'
 import type { RaceState } from '../state'
 
 
@@ -53,6 +53,7 @@ const COMMIT_PERIOD = 1 / 15
 type Opponent = {
   root:      THREE.Group;
   nameplate: Nameplate;
+  seen:      number;
 }
 
 export async function mountRace (
@@ -72,6 +73,7 @@ export async function mountRace (
 
   const _pose = new THREE.Vector3()
   const _quat = new THREE.Quaternion()
+  let remoteGeneration = 0
 
   /**
    * A provisional grid slot.
@@ -95,7 +97,7 @@ export async function mountRace (
     root.add(nameplate.sprite)
     shipRoot.add(root)
 
-    entry = { root, nameplate }
+    entry = { root, nameplate, seen: 0 }
     opponents.set(racer.id, entry)
     return entry
   }
@@ -116,11 +118,13 @@ export async function mountRace (
    * Never apply a snapshot straight to a transform: that is what makes a clean
    * 30 Hz stream look like a stuttering one.
    */
-  function renderRemotes (): void {
+  function renderRemotes (frame: RaceFrame): void {
     const renderTime = transport.renderTimeMs()
+    remoteGeneration++
 
-    for (const racer of transport.remotes()) {
+    for (const racer of frame.remotes) {
       const entry = ensureOpponent(racer)
+      entry.seen  = remoteGeneration
 
       if (!racer.interp.sampleAt(renderTime, _pose, _quat)) {
         // Nothing buffered yet. The origin is a real place on a track, so an
@@ -132,12 +136,11 @@ export async function mountRace (
       entry.root.visible = true
       entry.root.position.copy(_pose)
       entry.root.quaternion.copy(_quat)
-      entry.nameplate.set(racer.name, racer.state.position, transport.latest()?.racers.length ?? 1, 'red', false)
+      entry.nameplate.set(racer.name, racer.state.position, frame.racers.length, 'red', false)
     }
 
-    const live = new Set(transport.remotes().map(r => r.id))
-    for (const id of [ ...opponents.keys() ])
-      if (!live.has(id))
+    for (const [ id, entry ] of opponents)
+      if (entry.seen !== remoteGeneration)
         dropOpponent(id)
   }
 
@@ -326,7 +329,10 @@ export async function mountRace (
 
     onFrame: () => {
       transport.drainEvents()
-      renderRemotes()
+
+      const frameView = transport.frame()
+      if (frameView)
+        renderRemotes(frameView)
     },
 
     onDispose: () => {

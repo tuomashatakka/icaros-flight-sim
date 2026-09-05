@@ -91,8 +91,8 @@ export class ProjectileField {
     }
   }
 
-  get live (): readonly Missile[] {
-    return this.tracked.map(t => t.missile)
+  at (index: number): Missile | undefined {
+    return this.tracked[index]?.missile
   }
 
   get count (): number {
