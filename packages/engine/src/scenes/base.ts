@@ -14,6 +14,7 @@ import { createTelemetry } from '../telemetry'
 import type { Telemetry } from '../telemetry'
 import { createControls, attachControls } from '../input'
 import { attachTapMove } from '../nav/tap-move'
+import type { TapMove } from '../nav/tap-move'
 import type { Controls } from '../input'
 import { createCameraRig } from '../camera/rig'
 import type { CameraRig } from '../camera/rig'
@@ -205,6 +206,14 @@ export async function mountBaseScene<TState extends object> (
 
   const publish: PublishType = { current: null }
 
+  type TapMoveType = { current: TapMove | null }
+
+  // Attached below, after the canvas has a camera to unproject through — but
+  // referenced from a module built before that, so it goes through a ref like
+  // every other late-bound handle here rather than a closed-over `const` that
+  // a first tick could reach inside its TDZ.
+  const tapMove: TapMoveType = { current: null }
+
   let composer: { render(delta: number): void } | null = null
 
   const seed = resolveSeed(config.seed ?? SEED)
@@ -264,6 +273,19 @@ export async function mountBaseScene<TState extends object> (
     modules.push(game.module)
 
   modules.push(
+    // Ahead of the physics step, because a destination is INPUT. Writing it in
+    // the render callback meant the sim only saw it on the following tick, and
+    // under `__dev.step()` — which runs every tick and renders once at the end
+    // — it was written after the whole batch had already run, so a tapped goal
+    // moved the ship not at all.
+    defineModule<TState>({
+      name: 'tap-to-move',
+      build () {},
+      update () {
+        tapMove.current?.drive()
+      },
+    }),
+
     physicsStepModule(physics) as unknown as AppModule<TState>,
     publishModule(telemetry, publish) as unknown as AppModule<TState>,
 
@@ -383,11 +405,6 @@ export async function mountBaseScene<TState extends object> (
       _view.drawHz = quality.settings().hudHz
       hud.current?.update(_view)
 
-      // After the HUD read the frame and before the next sim tick: a held key
-      // or a thumb on a stick is a live intent and outranks a standing
-      // destination, so the tap path writes last only when it still has one.
-      tapMove.drive()
-
       onFrame?.(frame, _shipPosition, _shipQuaternion, rig, controls)
       devFrame?.(_shipPosition, frame.delta)
     }
@@ -413,7 +430,7 @@ export async function mountBaseScene<TState extends object> (
   // to a mouse so it can be driven from `dev-cli` without a touchscreen.
   const tapEverywhere = typeof window !== 'undefined' &&
     new URLSearchParams(window.location.search).get('tap') === '1'
-  const tapMove = attachTapMove({
+  tapMove.current = attachTapMove({
     canvas,
     controls,
     scene:          app.ctx.scene,
@@ -422,8 +439,9 @@ export async function mountBaseScene<TState extends object> (
     hullQuaternion: () => _shipQuaternion,
     accepts:        pointerType => tapEverywhere || pointerType === 'touch',
   })
+
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const detachBridge   = attachBridge(app as any)
+  const detachBridge = attachBridge(app as any)
 
   let detachDev: (() => void) | null = null
 
@@ -476,7 +494,7 @@ export async function mountBaseScene<TState extends object> (
     onDispose?.()
     detachDev?.()
     detachControls()
-    tapMove.dispose()
+    tapMove.current?.dispose()
     detachBridge()
     quality.dispose()
     composer = null
