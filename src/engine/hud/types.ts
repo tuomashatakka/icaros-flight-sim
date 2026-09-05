@@ -42,6 +42,33 @@ export type HudSource = {
 }
 
 /**
+ * What the scene shell hands the HUD each render frame.
+ *
+ * A record rather than a positional argument list: the HUD needs a growing set
+ * of poses (anchor, lead, aim ray, impact point) and a ten-argument call was
+ * already one transposition away from a silent bug. The shell owns one instance
+ * and mutates it, so this stays allocation-free.
+ */
+export type HudViewFrame = {
+  elapsed:        number;
+  shipPosition:   THREE.Vector3;
+  hullQuaternion: THREE.Quaternion;
+  throttle:       number;
+  cameraBlend:    number;
+  camera:         THREE.Camera;
+
+  /** Cockpit anchor: the camera station with the look-around lead applied. */
+  hudQuaternion: THREE.Quaternion;
+
+  /** The look-around lead alone, for the hull-framed chase anchor. */
+  hudLead: THREE.Quaternion;
+
+  panX:     number;
+  panY:     number;
+  aimPitch: number;
+}
+
+/**
  * Render-phase data supplied by the scene shell.
  *
  * The HUD owns presentation and input, but it does not own the camera, vehicle
@@ -58,6 +85,7 @@ export type HudFrame = {
   cameraBlend:      number;
   camera:           THREE.Camera;
   hudQuaternion:    THREE.Quaternion;
+  hudLead:          THREE.Quaternion;
   panX:             number;
   panY:             number;
   aimPitch:         number;

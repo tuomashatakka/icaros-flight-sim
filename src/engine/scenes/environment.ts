@@ -51,12 +51,12 @@ export type EnvironmentSpec = {
 export const DEFAULT_ENVIRONMENT: EnvironmentSpec = {
   background:   '#0a0c14',
   fog:          [ '#0a0c14', 150, 500 ],
-  hemi:         { sky: '#8a9bff', ground: '#0a0c14', intensity: 0.26 },
-  envIntensity: 0.18,
+  hemi:         { sky: '#8a9bff', ground: '#0a0c14', intensity: 0.38 },
+  envIntensity: 0.22,
   sun:          {
     offset:    [ 40, 60, 25 ],
     color:     '#ffffff',
-    intensity: 2.8,
+    intensity: 3.2,
     frustum:   45,
     mapSize:   2048,
   },
@@ -114,10 +114,12 @@ export function environmentModules<TState extends object> (
       name: 'environment',
 
       build (ctx) {
-        // PCF is the three default and stair-steps the hull's shadow at the
-        // frustum density `sunModule` runs; the soft variant costs one extra
-        // tap set and is the difference between a shadow and a grey rectangle.
-        ctx.renderer.shadowMap.type = THREE.PCFSoftShadowMap
+        // Set explicitly so it is a decision rather than a default. NOT
+        // `PCFSoftShadowMap`: three deprecated it in r18x and silently
+        // downgrades it to this, with a console warning on the first shadow
+        // render. Softness comes from the frustum staying tight around the ship
+        // instead — see `sunModule`.
+        ctx.renderer.shadowMap.type = THREE.PCFShadowMap
         ctx.scene.fog               = new THREE.Fog(spec.fog[0], spec.fog[1], spec.fog[2])
       },
 

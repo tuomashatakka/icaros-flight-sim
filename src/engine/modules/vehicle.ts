@@ -8,9 +8,14 @@ import type { Physics } from '../physics/world'
 import { BodyInterpolator } from '../interpolation'
 import { stepHovercraft, createHovercraft, createHovercraftState } from '@crash-velocity/physics/vehicle-step'
 import type { HovercraftState, HovercraftStepResult } from '@crash-velocity/physics/vehicle-step'
+import { MAIN_THRUST_CAPACITY } from '@crash-velocity/physics/thrusters'
+import { vehicleConfig } from '@crash-velocity/physics/config'
 import type { ForceSample } from '@crash-velocity/physics/thrusters'
 import type { Telemetry } from '../telemetry'
 
+
+/** Per-tick blend for the g meter. ~0.35 s to settle at 60 Hz. */
+const G_SMOOTHING = 0.05
 
 export type VehicleDebug = {
   racing:       boolean;
@@ -195,11 +200,19 @@ export function vehicleModule (
   })
 
   function writeTelemetry (result: HovercraftStepResult) {
-    telemetry.speed      = result.speed
-    telemetry.boostMeter = result.boostMeter
-    telemetry.grounded   = result.grounded
-    telemetry.airbrake   = result.airbrake
-    telemetry.boosting   = result.boosting
+    telemetry.speed         = result.speed
+    telemetry.boostMeter    = result.boostMeter
+    telemetry.grounded      = result.grounded
+    telemetry.airbrake      = result.airbrake
+    telemetry.boosting      = result.boosting
+    telemetry.thrustCommand = Math.min(1, result.engineForce / MAIN_THRUST_CAPACITY)
+
+    // Applied force over weight — the load the airframe is actually carrying,
+    // which is the number a g meter shows. Smoothed because a contact impulse
+    // spikes it for one tick and an unfiltered needle reads as noise.
+    const [ fx, fy, fz ] = result.netForce
+    const g              = Math.hypot(fx, fy, fz) / (vehicleConfig.mass * 9.81)
+    telemetry.gLoad     += (g - telemetry.gLoad) * G_SMOOTHING
 
     if (result.crashDelta > 0) {
       telemetry.crashSeq++

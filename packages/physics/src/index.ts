@@ -26,6 +26,7 @@ export {
   LIFT_INDICES,
   MAIN_L,
   MAIN_R,
+  MAIN_THRUST_CAPACITY,
   RCS_L,
   RCS_R,
   RETRO_L,

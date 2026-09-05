@@ -1,6 +1,7 @@
 import * as THREE from 'three'
 import type { Controls } from '../input'
 import { setTouchOverlayActive } from '../input'
+import { createHudStation, hudStation } from './anchor'
 import { createHudPanelMesh, createHudPanels, disposeHudPanelMesh, drawHudPanels, tickHudPanelMesh } from './facets'
 import { HUD_AXIS_GATE, hudSliderValue, shapeHudAxis } from './interaction'
 import { drawHudOverlay, isHudBlockingOverlay } from './overlay'
@@ -39,6 +40,7 @@ type ActivePointer = {
  * frame-rate value or pointer move, and every allocation has a paired dispose.
  */
 export function createSpatialHud ({ canvas, controls, source }: SpatialHudOptions): SpatialHud {
+  const station   = createHudStation()
   const panels    = createHudPanels()
   const panelMesh = createHudPanelMesh(panels)
   const visorRoot = new THREE.Group()
@@ -94,16 +96,17 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
   object.visible = !hidden
 
   function syncPose (frame: HudFrame): void {
-    const camera   = frame.camera
-    const aspect   = camera instanceof THREE.PerspectiveCamera ? camera.aspect : canvas.clientWidth / Math.max(canvas.clientHeight, 1)
-    const fov      = camera instanceof THREE.PerspectiveCamera ? camera.fov : HUD_REFERENCE_FOV
-    const fovScale = Math.tan(THREE.MathUtils.degToRad(fov * 0.5)) /
-      Math.tan(THREE.MathUtils.degToRad(HUD_REFERENCE_FOV * 0.5))
-    const squeeze = Math.min(1, aspect / (16 / 9))
+    const camera = frame.camera
+    const aspect = camera instanceof THREE.PerspectiveCamera ? camera.aspect : canvas.clientWidth / Math.max(canvas.clientHeight, 1)
+    const fov    = camera instanceof THREE.PerspectiveCamera ? camera.fov : HUD_REFERENCE_FOV
 
-    visorRoot.position.copy(camera.position)
-    visorRoot.quaternion.copy(frame.hudQuaternion)
-    visorRoot.scale.set(fovScale * squeeze, fovScale, 1)
+    // Seated the visor is worn; in chase it is a hologram the ship carries.
+    // `hudStation` is the single continuous function between the two, so the
+    // pinch blend moves the anchor as well as the depth.
+    hudStation(station, frame)
+    visorRoot.position.copy(station.position)
+    visorRoot.quaternion.copy(station.quaternion)
+    visorRoot.scale.set(station.scale.x, station.scale.y, 1)
     visorRoot.updateMatrixWorld(true)
 
     const distance   = 4.35

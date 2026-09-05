@@ -12,24 +12,13 @@ import type { Controls } from '../input'
 import type { LevelSpec } from '../levels/types'
 import type { Telemetry } from '../telemetry'
 import { createSpatialHud } from './spatial-hud'
-import type { HudData, HudFrame, HudSource } from './types'
+import type { HudData, HudFrame, HudSource, HudViewFrame } from './types'
 
 
-export type { HudFrame } from './types'
+export type { HudFrame, HudViewFrame } from './types'
 
 export type HudHandle = {
-  update(
-    elapsed: number,
-    shipPosition: THREE.Vector3,
-    hullQuaternion: THREE.Quaternion,
-    throttle: number,
-    cameraBlend: number,
-    camera: THREE.Camera,
-    hudQuaternion: THREE.Quaternion,
-    panX: number,
-    panY: number,
-    aimPitch: number
-  ): void;
+  update(view: HudViewFrame): void;
 }
 
 type HandleType = { current: HudHandle | null }
@@ -77,6 +66,7 @@ function sharedHudModule<TState extends object> ({
     cameraBlend:      0,
     camera:           new THREE.PerspectiveCamera(),
     hudQuaternion:    new THREE.Quaternion(),
+    hudLead:          new THREE.Quaternion(),
     panX:             0,
     panY:             0,
     aimPitch:         0,
@@ -96,28 +86,18 @@ function sharedHudModule<TState extends object> ({
     build (context) {
       context.scene.add(spatial.object)
       handle.current = {
-        update (
-          elapsed,
-          shipPosition,
-          hullQuaternion,
-          throttle,
-          cameraBlend,
-          camera,
-          hudQuaternion,
-          panX,
-          panY,
-          aimPitch
-        ) {
-          frame.elapsed        = elapsed
-          frame.shipPosition   = shipPosition
-          frame.hullQuaternion = hullQuaternion
-          frame.throttle       = throttle
-          frame.cameraBlend    = cameraBlend
-          frame.camera         = camera
-          frame.hudQuaternion.copy(hudQuaternion)
-          frame.panX     = panX
-          frame.panY     = panY
-          frame.aimPitch = aimPitch
+        update (view) {
+          frame.elapsed        = view.elapsed
+          frame.shipPosition   = view.shipPosition
+          frame.hullQuaternion = view.hullQuaternion
+          frame.throttle       = view.throttle
+          frame.cameraBlend    = view.cameraBlend
+          frame.camera         = view.camera
+          frame.hudQuaternion.copy(view.hudQuaternion)
+          frame.hudLead.copy(view.hudLead)
+          frame.panX     = view.panX
+          frame.panY     = view.panY
+          frame.aimPitch = view.aimPitch
           frame.steer    = controls.steer
           frame.strafe   = controls.strafe
           frame.brake    = controls.brake

@@ -16,7 +16,7 @@ import { createControls, attachControls } from '../input'
 import type { Controls } from '../input'
 import { createCameraRig } from '../camera/rig'
 import type { CameraRig } from '../camera/rig'
-import type { HudHandle } from '../hud'
+import type { HudHandle, HudViewFrame } from '../hud'
 import { vehicleModule } from '../modules/vehicle'
 import type { VehicleHandle } from '../modules/vehicle'
 import { physicsStepModule } from '../modules/physics-step'
@@ -46,6 +46,22 @@ const _pan            = { panX: 0, panY: 0, pitch: 0 }
 const _shipPosition   = new THREE.Vector3()
 const _shipQuaternion = new THREE.Quaternion()
 const _hudQuaternion  = new THREE.Quaternion()
+const _hudLead        = new THREE.Quaternion()
+
+/** The HUD's per-frame record, mutated in place so the render phase allocates nothing. */
+const _view: HudViewFrame = {
+  elapsed:        0,
+  shipPosition:   _shipPosition,
+  hullQuaternion: _shipQuaternion,
+  throttle:       0,
+  cameraBlend:    0,
+  camera:         null as unknown as THREE.Camera,
+  hudQuaternion:  _hudQuaternion,
+  hudLead:        _hudLead,
+  panX:           0,
+  panY:           0,
+  aimPitch:       0,
+}
 
 /**
  * Visual nose swing from the R/F aim axis, radians (~18 deg).
@@ -187,8 +203,10 @@ export async function mountBaseScene<TState extends object> (
   let devFrame: ((position: THREE.Vector3, delta: number) => void) | null = null
   let hullAimPitch                                                        = 0
   let lastViewSeq                                                         = controls.viewSeq
+  let lastViewBlendSeq                                                    = controls.viewBlendSeq
+  let lastView                                                            = rig.view()
 
-  useCameraView.getState().setView(rig.view())
+  useCameraView.getState().setView(lastView)
 
   const shipRoot = new THREE.Group()
 
@@ -300,7 +318,20 @@ export async function mountBaseScene<TState extends object> (
     if (controls.viewSeq !== lastViewSeq) {
       lastViewSeq = controls.viewSeq
       rig.toggleView()
-      useCameraView.getState().setView(rig.view())
+    }
+
+    if (controls.viewBlendSeq !== lastViewBlendSeq) {
+      lastViewBlendSeq = controls.viewBlendSeq
+      rig.setBlend(controls.viewBlend, true)
+    }
+
+    // `useCameraView` is a mirror for DOM chrome, not the source of truth, and a
+    // pinch moves the blend every frame. Write it only when the discrete view
+    // actually flips or React commits at thumb rate.
+    const view = rig.view()
+    if (view !== lastView) {
+      lastView = view
+      useCameraView.getState().setView(view)
     }
 
     const interpolator = vehicle.current?.interpolator
@@ -321,24 +352,20 @@ export async function mountBaseScene<TState extends object> (
       _pan.pitch = aimNorm
       rig.drive(frame.delta, _shipPosition, _shipQuaternion, _pan)
       rig.hudQuaternion(_hudQuaternion)
+      rig.hudLead(_hudLead)
       sun.current?.follow(_shipPosition)
 
       const blend = rig.blend()
       shipVisual.current?.setHullVisible(blend < 0.85)
 
-      const throttle = controls.throttle ? controls.boost ? 1 : 0.72 : 0
-      hud.current?.update(
-        frame.elapsed,
-        _shipPosition,
-        _shipQuaternion,
-        throttle,
-        blend,
-        rig.camera,
-        _hudQuaternion,
-        controls.panX,
-        controls.panY,
-        aimNorm
-      )
+      _view.elapsed     = frame.elapsed
+      _view.throttle    = telemetry.thrustCommand
+      _view.cameraBlend = blend
+      _view.camera      = rig.camera
+      _view.panX        = controls.panX
+      _view.panY        = controls.panY
+      _view.aimPitch    = aimNorm
+      hud.current?.update(_view)
 
       onFrame?.(frame, _shipPosition, _shipQuaternion, rig, controls)
       devFrame?.(_shipPosition, frame.delta)

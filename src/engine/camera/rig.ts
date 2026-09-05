@@ -20,6 +20,18 @@ const TRANSITION_S = 0.55
 /** Half-life for easing the look-around pan toward its target. */
 const PAN_HALF_LIFE = 0.18
 
+/**
+ * How much of the look-around swing the HUD anchor inherits, 0..1.
+ *
+ * The visor used to be frozen to the pre-pan station, so looking around slid
+ * the camera across a stationary cockpit and the panels walked off the edge of
+ * the screen. Carrying the full swing instead would bolt the HUD to the
+ * sightline and put a panel over whatever you were looking at. At 0.6 the visor
+ * leads the look — it drifts the way a helmet display does — while the target
+ * still opens up between the panels.
+ */
+const HUD_LEAD = 0.6
+
 export type CameraView = 'chase' | 'cockpit'
 
 /**
@@ -110,6 +122,7 @@ const _nextUp    = new THREE.Vector3()
 const _shake     = new THREE.Vector3()
 const _panEuler  = new THREE.Euler(0, 0, 0, 'YXZ')
 const _panQuat   = new THREE.Quaternion()
+const _leadEuler = new THREE.Euler(0, 0, 0, 'YXZ')
 const WORLD_UP   = new THREE.Vector3(0, 1, 0)
 
 // Mutated in place and handed to `rig.aim` each frame — `aim` spreads them into
@@ -132,8 +145,22 @@ export type CameraPan = { panX: number; panY: number; pitch?: number }
 export type CameraRig = {
   camera: THREE.PerspectiveCamera;
 
-  /** Camera orientation before pointer-look; the ship-space cockpit/HUD anchor. */
+  /**
+   * The HUD's anchor orientation: the ship-following station plus `HUD_LEAD` of
+   * the look-around swing. Not the camera's own orientation — the visor leads
+   * the look rather than tracking it, so the sightline stays clear.
+   */
   hudQuaternion(target: THREE.Quaternion): THREE.Quaternion;
+
+  /**
+   * The look-around lead on its own, as a delta rotation.
+   *
+   * `hudQuaternion` is the cockpit anchor: the camera station with this already
+   * applied. The chase anchor is framed on the HULL instead, and still wants the
+   * same lead — so the delta is published rather than recomputed, and the two
+   * anchors cannot disagree about how far a look-around swings.
+   */
+  hudLead(target: THREE.Quaternion): THREE.Quaternion;
 
   /** Advance the rig. Call from the RENDER phase with the real delta and the interpolated pose. */
   drive(realDelta: number, position: THREE.Vector3, quaternion: THREE.Quaternion, pan: CameraPan): void;
@@ -147,6 +174,16 @@ export type CameraRig = {
   setView(view: CameraView): void;
   toggleView(): void;
   view(): CameraView;
+
+  /**
+   * Drive the chase <-> cockpit blend directly, 0 = chase, 1 = seated.
+   *
+   * The two views were always a lerp over one station record rather than a
+   * branch, so any value between them is a real camera. `immediate` skips the
+   * `TRANSITION_S` ramp, which is what lets a pinch track the fingers instead
+   * of chasing them 0.55 s behind.
+   */
+  setBlend(value: number, immediate?: boolean): void;
 
   /** 0 = fully chase, 1 = fully seated. Drives HUD cross-fade and hull visibility. */
   blend(): number;
@@ -191,6 +228,7 @@ export function createCameraRig (rng: SeededRng, far = 400): CameraRig {
   /** Last applied shake, subtracted before the next update so it never feeds back. */
   const lastShake     = new THREE.Vector3()
   const hudQuaternion = new THREE.Quaternion()
+  const hudLead       = new THREE.Quaternion()
   let shakeAmount = 0
 
   return {
@@ -198,6 +236,10 @@ export function createCameraRig (rng: SeededRng, far = 400): CameraRig {
 
     hudQuaternion (target) {
       return target.copy(hudQuaternion)
+    },
+
+    hudLead (target) {
+      return target.copy(hudLead)
     },
 
     requestSnap () {
@@ -215,6 +257,12 @@ export function createCameraRig (rng: SeededRng, far = 400): CameraRig {
 
     toggleView () {
       target = target > 0.5 ? 0 : 1
+    },
+
+    setBlend (value, immediate = false) {
+      target = Math.max(0, Math.min(1, value))
+      if (immediate)
+        raw = target
     },
 
     view () {
@@ -339,6 +387,14 @@ export function createCameraRig (rng: SeededRng, far = 400): CameraRig {
       _panEuler.set(-panY * panPitch + aim * aimSwing, -panX * panYaw, 0)
       _panQuat.setFromEuler(_panEuler)
       rig.camera.quaternion.multiply(_panQuat)
+
+      // The visor's share of the same swing, from the same eased inputs and the
+      // same blended limits. Scaling the euler rather than slerping toward the
+      // camera keeps one source of truth: if the two ever disagreed about how
+      // far a look-around goes, the HUD would drift off the sightline.
+      _leadEuler.set(_panEuler.x * HUD_LEAD, _panEuler.y * HUD_LEAD, 0)
+      hudLead.setFromEuler(_leadEuler)
+      hudQuaternion.multiply(hudLead)
     },
   }
 }

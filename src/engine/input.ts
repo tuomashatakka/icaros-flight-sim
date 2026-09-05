@@ -14,6 +14,18 @@ export type Controls = {
   /** W / Up arrow. The ship does not accelerate on its own. */
   throttle: boolean;
 
+  /**
+   * Commanded thrust, 0..1. Display and touch only — the sim reads `throttle`.
+   *
+   * A key is on or off, so for the keyboard this is just `throttle` as a number
+   * and the HUD reads the same thing it always did. A thumb on a stick is not,
+   * and the propulsion gauge was showing a hardcoded 0 / 0.72 / 1 because there
+   * was nowhere for an analog command to live. Deliberately NOT fed to
+   * `stepHovercraft`: that would change how the ship accelerates, and handling
+   * authority is `packages/physics`, not the input layer.
+   */
+  throttleAxis: number;
+
   /** S / Down arrow. Brakes the ship. */
   brake:   boolean;
   boost:   boolean;
@@ -54,6 +66,16 @@ export type Controls = {
   viewSeq: number;
 
   /**
+   * Absolute chase <-> cockpit blend, 0..1, applied when `viewBlendSeq` moves.
+   *
+   * A pinch names a position, not a direction, so it cannot go through
+   * `viewSeq`. The counter is still what makes it edge-correct across the sim's
+   * variable substep count.
+   */
+  viewBlend:    number;
+  viewBlendSeq: number;
+
+  /**
    * Look-around pan, -1..1 on each axis, from pointer HOVER — not drag, which
    * already steers. Consumed by the camera rig, which eases toward it.
    */
@@ -65,6 +87,7 @@ export function createControls (): Controls {
   return {
     steer:         0,
     throttle:      false,
+    throttleAxis:  0,
     brake:         false,
     boost:         false,
     reverse:       false,
@@ -74,6 +97,8 @@ export function createControls (): Controls {
     fireSecondary: false,
     resetSeq:      0,
     viewSeq:       0,
+    viewBlend:     0,
+    viewBlendSeq:  0,
     panX:          0,
     panY:          0,
   }
@@ -208,8 +233,10 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
     else if (k === 'x')
       controls.fireSecondary = true
 
-    if (isThrottle(event.key))
-      controls.throttle = true
+    if (isThrottle(event.key)) {
+      controls.throttle     = true
+      controls.throttleAxis = 1
+    }
     else if (isBrake(event.key)) {
       controls.brake   = true
       controls.reverse = true
@@ -263,8 +290,10 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
     else if (k === 'x')
       controls.fireSecondary = false
 
-    if (isThrottle(event.key))
-      controls.throttle = false
+    if (isThrottle(event.key)) {
+      controls.throttle     = false
+      controls.throttleAxis = 0
+    }
     else if (isBrake(event.key)) {
       controls.brake   = false
       controls.reverse = false
@@ -281,6 +310,7 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
     keyboardSteer = 0
     pointerSteer = 0
     controls.throttle      = false
+    controls.throttleAxis  = 0
     controls.brake         = false
     controls.boost         = false
     controls.reverse       = false

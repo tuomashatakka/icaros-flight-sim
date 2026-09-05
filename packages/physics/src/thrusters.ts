@@ -130,6 +130,19 @@ export const THRUSTER_RIG: readonly Thruster[] = [
   { id: 'lift.RR', group: 'lift', pos: [ HALF_W, PAD_Y, back ], dir: [ 0, 1, 0 ], maxForce: LIFT },
 ]
 
+/**
+ * Combined main-nozzle force at full throttle, newtons.
+ *
+ * The normaliser for `HovercraftStepResult.engineForce`, so a gauge can show
+ * commanded thrust as a fraction without knowing the rig. Derived from the rig
+ * rather than written down twice: adding a main nozzle must not silently peg
+ * every readout at 100 %.
+ */
+export const MAIN_THRUST_CAPACITY = THRUSTER_RIG.reduce(
+  (total, t) => t.group === 'main' ? total + t.maxForce : total,
+  0
+)
+
 /** Index of the four hover pads, in rig order. Hot path — resolved once. */
 export const LIFT_INDICES = THRUSTER_RIG.reduce<number[]>((acc, t, i) => {
   if (t.group === 'lift')
