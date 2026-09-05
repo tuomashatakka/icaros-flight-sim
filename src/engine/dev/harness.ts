@@ -32,6 +32,7 @@ const API_VERSION = 1
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
 const _up      = new THREE.Vector3()
+const _delta   = new THREE.Vector3()
 const _quat    = new THREE.Quaternion()
 const _euler   = new THREE.Euler()
 
@@ -48,7 +49,7 @@ const vec3  = (v: VType): [number, number, number] =>
  */
 export type DevHarness = {
   api: DevApi;
-  onFrame (shipPosition: THREE.Vector3, frameDelta: number): void;
+  onFrame (shipPosition: THREE.Vector3, shipQuaternion: THREE.Quaternion, frameDelta: number): void;
   detach (): void;
 }
 
@@ -114,6 +115,11 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
     detachers.push(watchContextLoss(canvas))
 
   let ready = false
+  const previousPosition = new THREE.Vector3()
+  const previousRotation = new THREE.Quaternion()
+  let previousReady                  = false
+  let previousRespawn: number | null = null
+  let previousSnap                   = rig.snapIndex()
 
   /** A synthetic frame for on-demand renders (step, screenshots). */
   const syntheticFrame = () => ({ delta: STEP, elapsed: clock.elapsed(), frame: 0 })
@@ -405,16 +411,78 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
   return {
     api,
 
-    onFrame (shipPosition, frameDelta) {
+    onFrame (shipPosition, shipQuaternion, frameDelta) {
       markReady()
       overlays.update(shipPosition)
       legend.render(overlays.flags())
-      recordFrame({
-        ms:        +(frameDelta * 1000).toFixed(2),
-        speed:     telemetry.speed,
-        grounded:  telemetry.grounded,
-        drawCalls: app.ctx.renderer.info.render.calls,
+
+      const body       = vehicle.current?.body
+      const network    = deps.networkDiagnostics?.() ?? null
+      const longFrame  = frameDelta > STEP * 1.5
+      const snapIndex  = rig.snapIndex()
+      const cameraSnap = snapIndex !== previousSnap
+      const respawn    = network?.respawnIndex !== null && previousRespawn !== null &&
+        network?.respawnIndex !== previousRespawn
+
+      let positionJerk = 0
+      let angularJerk  = 0
+      if (previousReady && body) {
+        const velocity = body.linvel()
+        const expected = _up.set(velocity.x, velocity.y, velocity.z).multiplyScalar(frameDelta)
+        positionJerk = _delta.copy(shipPosition).sub(previousPosition)
+          .sub(expected)
+          .length()
+
+        const observedAngle = 2 * Math.acos(Math.min(1, Math.abs(previousRotation.dot(shipQuaternion))))
+        const angularSpeed  = body.angvel()
+        angularJerk = Math.abs(observedAngle - Math.hypot(angularSpeed.x, angularSpeed.y, angularSpeed.z) * frameDelta)
+      }
+
+      const discontinuity   = positionJerk > 0.5 || angularJerk > 0.15
+      const hitch: string[] = []
+      if (longFrame)
+        hitch.push('long-frame')
+      if (network?.bufferDepth === 0)
+        hitch.push('snapshot-starvation')
+      if (network?.interpolationMode === 'clamped')
+        hitch.push('extrapolation-clamp')
+      if ((network?.correctionM ?? 0) > 0)
+        hitch.push('correction')
+      if (respawn)
+        hitch.push('respawn-index')
+      if (cameraSnap)
+        hitch.push('camera-snap')
+
+      type QuaternionType = { x: number; y: number; z: number; w: number }
+
+      const pose = (position: VType, quaternion: QuaternionType) => ({
+        position:   vec3(position),
+        quaternion: [ round(quaternion.x), round(quaternion.y), round(quaternion.z), round(quaternion.w) ] as [number, number, number, number],
       })
+      const rotation = body?.rotation()
+      recordFrame({
+        ms:                 +(frameDelta * 1000).toFixed(2),
+        speed:              telemetry.speed,
+        grounded:           telemetry.grounded,
+        drawCalls:          app.ctx.renderer.info.render.calls,
+        localPose:          pose(shipPosition, shipQuaternion),
+        simulationPose:     body && rotation ? pose(body.translation(), rotation) : null,
+        cameraPose:         pose(rig.camera.position, rig.camera.quaternion),
+        remotePose:         network?.remotePose ?? null,
+        clockAlpha:         round(clock.alpha(), 4),
+        serverRenderTimeMs: network ? round(network.serverRenderTimeMs, 2) : null,
+        interpolation:      network ? { bufferDepth: network.bufferDepth, mode: network.interpolationMode } : null,
+        correctionM:        round(network?.correctionM ?? 0),
+        positionJerk:       round(positionJerk),
+        angularJerk:        round(angularJerk),
+        discontinuity,
+        hitch,
+      })
+      previousPosition.copy(shipPosition)
+      previousRotation.copy(shipQuaternion)
+      previousReady   = true
+      previousRespawn = network?.respawnIndex ?? null
+      previousSnap    = snapIndex
     },
 
     detach () {

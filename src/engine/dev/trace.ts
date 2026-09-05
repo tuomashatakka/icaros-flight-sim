@@ -131,11 +131,13 @@ export function readTrace () {
       p95: at(0.95),
       max: times.length ? +times[times.length - 1].toFixed(2) : null,
     },
-    fps:        times.length ? +(1000 / (at(0.5) ?? 1)).toFixed(1) : null,
-    drawCalls:  frames.length ? frames[frames.length - 1].drawCalls : null,
-    errorCount: errors.length,
-    errors:     errors.slice(-20),
-    logs:       logs.slice(-40),
+    fps:             times.length ? +(1000 / (at(0.5) ?? 1)).toFixed(1) : null,
+    drawCalls:       frames.length ? frames[frames.length - 1].drawCalls : null,
+    discontinuities: frames.filter(frame => frame.discontinuity),
+    recentFrames:    frames.slice(-120),
+    errorCount:      errors.length,
+    errors:          errors.slice(-20),
+    logs:            logs.slice(-40),
   }
 }
 

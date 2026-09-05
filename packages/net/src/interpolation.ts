@@ -24,6 +24,12 @@ const HISTORY = 8
  */
 const EXTRAPOLATE_MAX_MS = 250
 
+export type InterpolationSample = {
+  mode:        'empty' | 'hold' | 'interpolate' | 'extrapolate' | 'clamped';
+  bufferDepth: number;
+  aheadMs:     number;
+}
+
 /** `[x, y, z, qx, qy, qz, qw]`. */
 const STRIDE = 7
 
@@ -45,6 +51,11 @@ export class NetBodyInterpolator {
   /** Ring write cursor, and how many slots are live. */
   private head = 0
   private count = 0
+  private lastSample: InterpolationSample = { mode: 'empty', bufferDepth: 0, aheadMs: 0 }
+
+  diagnostics (): Readonly<InterpolationSample> {
+    return this.lastSample
+  }
 
   /** Newest pose wins ties; a snapshot that repeats a timestamp replaces it. */
   commit (serverTimeMs: number, pose: ArrayLike<number>): void {
@@ -96,10 +107,13 @@ export class NetBodyInterpolator {
    * has no position, and (0, 0, 0) is a real place on this map.
    */
   sampleAt (serverTimeMs: number, outPosition: THREE.Vector3, outQuaternion: THREE.Quaternion): boolean {
-    if (this.count === 0)
+    if (this.count === 0) {
+      this.lastSample = { mode: 'empty', bufferDepth: 0, aheadMs: 0 }
       return false
+    }
 
     if (this.count === 1) {
+      this.lastSample = { mode: 'hold', bufferDepth: 1, aheadMs: Math.max(0, serverTimeMs - this.times[this.head]) }
       this.readPose(this.head, outPosition, outQuaternion)
       return true
     }
@@ -110,6 +124,8 @@ export class NetBodyInterpolator {
       const older = (newer - 1 + HISTORY) % HISTORY
 
       if (this.times[older] <= serverTimeMs && serverTimeMs <= this.times[newer]) {
+        this.lastSample = { mode: 'interpolate', bufferDepth: this.count, aheadMs: 0 }
+
         const span  = this.times[newer] - this.times[older]
         const alpha = span > 0 ? (serverTimeMs - this.times[older]) / span : 1
 
@@ -124,13 +140,16 @@ export class NetBodyInterpolator {
 
     const newestAt = this.times[this.head]
     if (serverTimeMs > newestAt) {
-      this.extrapolate(serverTimeMs - newestAt, outPosition, outQuaternion)
+      const aheadMs   = serverTimeMs - newestAt
+      this.lastSample = { mode: aheadMs > EXTRAPOLATE_MAX_MS ? 'clamped' : 'extrapolate', bufferDepth: this.count, aheadMs }
+      this.extrapolate(aheadMs, outPosition, outQuaternion)
       return true
     }
 
     // Older than anything held — the renderer is further behind than the
     // history covers. Hold the oldest pose rather than extrapolating backwards.
-    const oldest = this.count < HISTORY ? 0 : (this.head + 1) % HISTORY
+    const oldest    = this.count < HISTORY ? 0 : (this.head + 1) % HISTORY
+    this.lastSample = { mode: 'hold', bufferDepth: this.count, aheadMs: 0 }
     this.readPose(oldest, outPosition, outQuaternion)
     return true
   }

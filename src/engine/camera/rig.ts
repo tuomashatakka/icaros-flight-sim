@@ -168,6 +168,9 @@ export type CameraRig = {
   /** Cut to the target immediately — spawn, respawn, teleport. */
   requestSnap(): void;
 
+  /** Monotonic marker used by the dev trace to attribute an intentional cut. */
+  snapIndex(): number;
+
   /** Kick a decaying impact shake. */
   shake(amount: number): void;
 
@@ -216,6 +219,7 @@ export function createCameraRig (rng: SeededRng, far = 400): CameraRig {
 
   let camYaw: number | null = null
   let snapRequested         = true
+  let snapIndex             = 0
 
   let target = 0 // 0 = chase, 1 = cockpit
   let raw    = 0 // linear transition parameter, eased on read
@@ -244,8 +248,11 @@ export function createCameraRig (rng: SeededRng, far = 400): CameraRig {
 
     requestSnap () {
       snapRequested = true
+      snapIndex++
       shakeAmount = 0
     },
+
+    snapIndex: () => snapIndex,
 
     shake (amount) {
       shakeAmount = Math.max(shakeAmount, amount)

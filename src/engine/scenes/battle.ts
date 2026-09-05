@@ -742,6 +742,26 @@ export async function mountBattle (
       }),
     ],
 
+    networkDiagnostics: () => {
+      const remote = transport.remotes()[0]
+      const root   = remote ? opponents.get(remote.id)?.root : null
+      const sample = remote?.interp.diagnostics()
+      const local  = transport.localState()
+      return {
+        serverRenderTimeMs: transport.renderTimeMs(),
+        remotePose:         root?.visible
+          ? {
+            position:   [ root.position.x, root.position.y, root.position.z ],
+            quaternion: [ root.quaternion.x, root.quaternion.y, root.quaternion.z, root.quaternion.w ],
+          }
+          : null,
+        bufferDepth:       sample?.bufferDepth ?? 0,
+        interpolationMode: sample?.mode ?? 'empty',
+        correctionM:       transport.stats().correctionM,
+        respawnIndex:      local?.respawnIndex ?? null,
+      }
+    },
+
     onFrame: frame => {
       const elapsed = frame.elapsed
 
