@@ -4,9 +4,9 @@
  * disagreeing about a bitfield is a desync nobody would look for.
  */
 
-import { InputButton } from '@crash-velocity/net'
+import { InputButton } from 'Ξ'
 
-import type { InputFrame } from '@crash-velocity/net'
+import type { InputFrame } from 'Ξ'
 import type { RaceInput } from './types'
 
 

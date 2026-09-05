@@ -30,7 +30,7 @@ export interface TrackGeometry {
   curve: THREE.CatmullRomCurve3;
 }
 
-import type { BoxCollider } from '@crash-velocity/physics/colliders'
+import type { BoxCollider } from 'Φcolliders'
 
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0)

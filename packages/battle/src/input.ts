@@ -7,9 +7,9 @@
  * player was shooting, which is the worst possible time to find out.
  */
 
-import { InputButton } from '@crash-velocity/net'
+import { InputButton } from 'Ξ'
 
-import type { InputFrame } from '@crash-velocity/net'
+import type { InputFrame } from 'Ξ'
 import type { BattleInput } from './types'
 
 

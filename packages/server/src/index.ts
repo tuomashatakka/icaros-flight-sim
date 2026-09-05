@@ -18,10 +18,10 @@
 
 import { Server, matchMaker } from '@colyseus/core'
 import { BunWebSockets } from '@colyseus/bun-websockets'
-import { BattleRoom } from '@crash-velocity/battle/room'
-import { RaceRoom } from '@crash-velocity/race/room'
-import { TRACK_IDS } from '@crash-velocity/race'
-import { describeDatabase, openDatabase, setDatabase } from '@crash-velocity/data'
+import { BattleRoom } from 'Ψroom'
+import { RaceRoom } from 'Λroom'
+import { TRACK_IDS } from 'Λ'
+import { describeDatabase, openDatabase, setDatabase } from 'Ð'
 
 import { loadConfig } from './config'
 

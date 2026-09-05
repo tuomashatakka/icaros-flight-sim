@@ -1,4 +1,4 @@
-import { CrashLab } from '@/components/crash-lab'
+import { CrashLab } from 'Ʊcrash-lab'
 
 
 export const metadata = {

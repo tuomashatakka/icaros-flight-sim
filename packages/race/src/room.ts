@@ -16,10 +16,10 @@
  */
 
 import { Room } from '@colyseus/core'
-import { STEP, TICK_HZ, acceptPacket, createSeat, decodeInputPacket, drainInput, encodeFor, snapshotHistory, ticksPerSnapshot } from '@crash-velocity/net'
-import { createSimClock } from '@crash-velocity/physics/clock'
-import { verifyTicket } from '@crash-velocity/data/auth/ticket'
-import { recordMatchEnd, recordMatchStart, recordRaceResults, withDatabase } from '@crash-velocity/data'
+import { STEP, TICK_HZ, acceptPacket, createSeat, decodeInputPacket, drainInput, encodeFor, snapshotHistory, ticksPerSnapshot } from 'Ξ'
+import { createSimClock } from 'Φclock'
+import { verifyTicket } from 'Ðauth/ticket'
+import { recordMatchEnd, recordMatchStart, recordRaceResults, withDatabase } from 'Ð'
 
 import { RaceSim } from './sim'
 import { standings } from './rules'
@@ -29,8 +29,8 @@ import { raceSnapshotOf } from './snapshot'
 import { toRaceInput } from './input'
 
 import type { Client } from '@colyseus/core'
-import type { InputFrame, InputPacket, Seat } from '@crash-velocity/net'
-import type { ShipId } from '@crash-velocity/physics/ships'
+import type { InputFrame, InputPacket, Seat } from 'Ξ'
+import type { ShipId } from 'Φships'
 import type { TrackId } from './levels'
 import type { RaceStateType } from './state'
 import type { RaceInput } from './types'

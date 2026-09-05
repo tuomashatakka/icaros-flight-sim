@@ -1,4 +1,4 @@
-import { MapEditor } from '@/components/editor/map-editor'
+import { MapEditor } from 'Ʊeditor/map-editor'
 
 
 export default function EditorPage () {

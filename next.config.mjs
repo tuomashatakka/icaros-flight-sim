@@ -13,6 +13,11 @@ const nextConfig = {
     '@crash-velocity/race',
     '@crash-velocity/battle',
     '@crash-velocity/data',
+    '@crash-velocity/core',
+    '@crash-velocity/state',
+    '@crash-velocity/engine',
+    '@crash-velocity/game',
+    '@crash-velocity/ui',
   ],
 }
 

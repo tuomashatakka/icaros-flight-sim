@@ -8,9 +8,9 @@
  * second for the life of every match.
  */
 
-import { RewindBuffer } from '@crash-velocity/net'
+import { RewindBuffer } from 'Ξ'
 
-import type { Vec3 } from '@crash-velocity/net'
+import type { Vec3 } from 'Ξ'
 import type { BattlePlayer } from './sim'
 
 

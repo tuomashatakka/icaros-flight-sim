@@ -9,10 +9,15 @@
         "@colyseus/schema": "^5.0.8",
         "@colyseus/sdk": "^0.18.2",
         "@crash-velocity/battle": "workspace:*",
+        "@crash-velocity/core": "workspace:*",
         "@crash-velocity/data": "workspace:*",
+        "@crash-velocity/engine": "workspace:*",
+        "@crash-velocity/game": "workspace:*",
         "@crash-velocity/net": "workspace:*",
         "@crash-velocity/physics": "workspace:*",
         "@crash-velocity/race": "workspace:*",
+        "@crash-velocity/state": "workspace:*",
+        "@crash-velocity/ui": "workspace:*",
         "@dimforge/rapier3d-deterministic-compat": "0.19.2",
         "drizzle-orm": "^0.45.2",
         "jose": "^6.2.11",
@@ -56,6 +61,15 @@
         "three": "^0.185.1",
       },
     },
+    "packages/core": {
+      "name": "@crash-velocity/core",
+      "version": "0.1.0",
+      "dependencies": {
+        "@crash-velocity/battle": "workspace:*",
+        "@crash-velocity/physics": "workspace:*",
+        "three": "^0.185.1",
+      },
+    },
     "packages/data": {
       "name": "@crash-velocity/data",
       "version": "0.1.0",
@@ -71,6 +85,39 @@
       "devDependencies": {
         "drizzle-kit": "^0.31.10",
         "vitest": "^4.1.11",
+      },
+    },
+    "packages/engine": {
+      "name": "@crash-velocity/engine",
+      "version": "0.1.0",
+      "dependencies": {
+        "@colyseus/schema": "^5.0.8",
+        "@colyseus/sdk": "^0.18.2",
+        "@crash-velocity/battle": "workspace:*",
+        "@crash-velocity/core": "workspace:*",
+        "@crash-velocity/net": "workspace:*",
+        "@crash-velocity/physics": "workspace:*",
+        "@crash-velocity/race": "workspace:*",
+        "@crash-velocity/state": "workspace:*",
+        "@dimforge/rapier3d-deterministic-compat": "0.19.2",
+        "three": "^0.185.1",
+        "threejs-scene": "^0.6.2",
+      },
+    },
+    "packages/game": {
+      "name": "@crash-velocity/game",
+      "version": "0.1.0",
+      "dependencies": {
+        "@crash-velocity/battle": "workspace:*",
+        "@crash-velocity/core": "workspace:*",
+        "@crash-velocity/engine": "workspace:*",
+        "@crash-velocity/net": "workspace:*",
+        "@crash-velocity/physics": "workspace:*",
+        "@crash-velocity/race": "workspace:*",
+        "@crash-velocity/state": "workspace:*",
+        "@dimforge/rapier3d-deterministic-compat": "0.19.2",
+        "three": "^0.185.1",
+        "threejs-scene": "^0.6.2",
       },
     },
     "packages/net": {
@@ -137,6 +184,36 @@
         "vitest": "^4.1.11",
       },
     },
+    "packages/state": {
+      "name": "@crash-velocity/state",
+      "version": "0.1.0",
+      "dependencies": {
+        "@crash-velocity/battle": "workspace:*",
+        "@crash-velocity/core": "workspace:*",
+        "@crash-velocity/physics": "workspace:*",
+        "@crash-velocity/race": "workspace:*",
+        "react": "^19.2.7",
+        "threejs-scene": "^0.6.2",
+      },
+    },
+    "packages/ui": {
+      "name": "@crash-velocity/ui",
+      "version": "0.1.0",
+      "dependencies": {
+        "@crash-velocity/battle": "workspace:*",
+        "@crash-velocity/core": "workspace:*",
+        "@crash-velocity/engine": "workspace:*",
+        "@crash-velocity/game": "workspace:*",
+        "@crash-velocity/physics": "workspace:*",
+        "@crash-velocity/race": "workspace:*",
+        "@crash-velocity/state": "workspace:*",
+        "next": "16.2.9",
+        "react": "^19.2.7",
+        "react-dom": "^19.2.7",
+        "three": "^0.185.1",
+        "threejs-scene": "^0.6.2",
+      },
+    },
   },
   "packages": {
     "@auth/core": ["@auth/core@0.41.3", "", { "dependencies": { "@panva/hkdf": "^1.2.1", "jose": "^6.0.6", "oauth4webapi": "^3.3.0", "preact": "10.24.3", "preact-render-to-string": "6.5.11" }, "peerDependencies": { "@simplewebauthn/browser": "^9.0.1", "@simplewebauthn/server": "^9.0.2", "nodemailer": "^7.0.7 || ^8.0.5" }, "optionalPeers": ["@simplewebauthn/browser", "@simplewebauthn/server", "nodemailer"] }, "sha512-sJ3JMHHkXMD3aOjopv7mOBTO1Ocw4b0fAEXJBz6k7YHLpYQI6C40jCUPc5fNvUKxXRXNE1/sRISA15UrwWJBTw=="],
@@ -179,7 +256,13 @@
 
     "@crash-velocity/battle": ["@crash-velocity/battle@workspace:packages/battle"],
 
+    "@crash-velocity/core": ["@crash-velocity/core@workspace:packages/core"],
+
     "@crash-velocity/data": ["@crash-velocity/data@workspace:packages/data"],
+
+    "@crash-velocity/engine": ["@crash-velocity/engine@workspace:packages/engine"],
+
+    "@crash-velocity/game": ["@crash-velocity/game@workspace:packages/game"],
 
     "@crash-velocity/net": ["@crash-velocity/net@workspace:packages/net"],
 
@@ -188,6 +271,10 @@
     "@crash-velocity/race": ["@crash-velocity/race@workspace:packages/race"],
 
     "@crash-velocity/server": ["@crash-velocity/server@workspace:packages/server"],
+
+    "@crash-velocity/state": ["@crash-velocity/state@workspace:packages/state"],
+
+    "@crash-velocity/ui": ["@crash-velocity/ui@workspace:packages/ui"],
 
     "@dimforge/rapier3d-compat": ["@dimforge/rapier3d-compat@0.12.0", "", {}, "sha512-uekIGetywIgopfD97oDL5PfeezkFpNhwlzlaEYNOA0N6ghdsOvh/HYjSMek5Q2O1PYvRSDFcqFVJl4r4ZBwOow=="],
 

@@ -13,16 +13,16 @@
 import { afterAll, beforeAll, describe, expect, it } from 'vitest'
 import { Server } from '@colyseus/core'
 import { boot } from '@colyseus/testing'
-import { createPilot, openDatabase, setDatabase, statsFor } from '@crash-velocity/data'
+import { createPilot, openDatabase, setDatabase, statsFor } from 'Ð'
 // Not from the barrel: `migrate` reads the generated SQL from disk at import,
 // and the barrel is imported by Next route handlers that must not touch a
 // filesystem. See the note at the top of packages/data/src/index.ts.
-import { migratePglite } from '@crash-velocity/data/migrate'
+import { migratePglite } from 'Ðmigrate'
 
-import { RaceRoom } from '../src/room'
+import { RaceRoom } from 'Λroom'
 
 import type { ColyseusTestServer } from '@colyseus/testing'
-import type { Database } from '@crash-velocity/data'
+import type { Database } from 'Ð'
 
 
 let colyseus: ColyseusTestServer

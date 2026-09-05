@@ -16,13 +16,13 @@
  * milliseconds and two runs are byte-identical.
  */
 
-import { STEP } from '@crash-velocity/physics/clock'
+import { STEP } from 'Φclock'
 
 import { RaceSim } from '../sim'
 import { trackBundle } from '../levels'
 import { NEUTRAL_RACE_INPUT } from '../types'
 
-import type { ShipId } from '@crash-velocity/physics/ships'
+import type { ShipId } from 'Φships'
 import type { TrackId } from '../levels'
 import type { RaceEvent, RaceInput } from '../types'
 

@@ -41,6 +41,10 @@ jobs:
       # Typecheck covers the app AND all six packages. Their tsconfigs set
       # `paths: {}`, so this is also what enforces the package boundaries — an
       # `@/…` import inside a package fails here rather than at boot.
+      # Every tsconfig `paths` table is generated from scripts/aliases.mjs; a
+      # hand-edited one would silently widen a package boundary.
+      - run: bun run aliases:check
+
       - run: bun run typecheck
 
       - run: bun run lint

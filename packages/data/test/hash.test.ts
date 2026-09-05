@@ -7,7 +7,7 @@
  * 500 on a public endpoint.
  */
 import { describe, expect, it } from 'vitest'
-import { dummyHash, hashPassword, verifyPassword } from '../src/auth/hash'
+import { dummyHash, hashPassword, verifyPassword } from 'Ðauth/hash'
 
 
 const GOOD = 'correct-horse'

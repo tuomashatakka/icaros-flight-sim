@@ -7,9 +7,9 @@
  * fighting.
  */
 
-import { ShipFlags } from '@crash-velocity/net'
+import { ShipFlags } from 'Ξ'
 
-import type { ShipState, Snapshot } from '@crash-velocity/net'
+import type { ShipState, Snapshot } from 'Ξ'
 import type { BattleSim } from './sim'
 
 

@@ -1,0 +1,18 @@
+{
+  "name": "@crash-velocity/core",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Domain configuration shared by every layer: ship registry and palettes, vehicle config, tuning helpers, track metadata.",
+  "exports": {
+    "./*": "./src/*.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@crash-velocity/battle": "workspace:*",
+    "@crash-velocity/physics": "workspace:*",
+    "three": "^0.185.1"
+  }
+}

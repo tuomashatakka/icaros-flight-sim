@@ -9,7 +9,7 @@
  */
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
-import { NetBodyInterpolator } from '../src/interpolation'
+import { NetBodyInterpolator } from 'Ξinterpolation'
 
 
 const IDENTITY = [ 0, 0, 0, 1 ]

@@ -2,10 +2,10 @@
 
 import { Suspense, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
-import { SceneCanvas } from '@/components/scene-canvas'
-import { mountBattle } from '@/engine/scenes/battle'
-import { shipStore } from 'Δstate'
-import type { ShipId } from '@/lib/ship/registry'
+import { SceneCanvas } from 'Ʊscene-canvas'
+import { mountBattle } from 'Ɠbattle'
+import { shipStore } from 'Ƨ'
+import type { ShipId } from 'Ȼship/registry'
 import styles from './battle.module.css'
 
 

@@ -6,7 +6,7 @@
  * one of these, or shadowed by this catch-all.
  */
 
-import { handlers } from 'Δlib/auth'
+import { handlers } from '../../../../lib/auth'
 
 
 export const runtime = 'nodejs'

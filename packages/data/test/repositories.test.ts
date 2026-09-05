@@ -10,14 +10,14 @@
 
 import { beforeAll, describe, expect, it } from 'vitest'
 
-import { authenticatePilot, registerPilot } from '../src/auth/credentials'
-import { openDatabase } from '../src/client'
-import { migratePglite } from '../src/migrate'
-import { createPilot, findPilot, pilotById } from '../src/repositories/pilots'
-import { recordMatchEnd, recordMatchPlayers, recordMatchStart, recordRaceResults } from '../src/repositories/matches'
-import { statsFor } from '../src/repositories/stats'
+import { authenticatePilot, registerPilot } from 'Ðauth/credentials'
+import { openDatabase } from 'Ðclient'
+import { migratePglite } from 'Ðmigrate'
+import { createPilot, findPilot, pilotById } from 'Ðrepositories/pilots'
+import { recordMatchEnd, recordMatchPlayers, recordMatchStart, recordRaceResults } from 'Ðrepositories/matches'
+import { statsFor } from 'Ðrepositories/stats'
 
-import type { Database } from '../src/client'
+import type { Database } from 'Ðclient'
 
 
 let db: Database

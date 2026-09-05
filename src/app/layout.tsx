@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from 'next'
 import './globals.css'
 import { PropsWithChildren } from 'react'
-import Session from '@/components/session-provider'
+import Session from 'Ʊsession-provider'
 
 
 export const metadata: Metadata = {
