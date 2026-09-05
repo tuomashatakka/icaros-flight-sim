@@ -26,6 +26,7 @@ import {
   buildZoneVisual,
   buildExplosionPool
 } from '../battle/visuals'
+import { updateZoneEffects } from '../battle/visuals'
 import type { CaretMarker, Nameplate, ObjectiveVisual, ZoneVisual } from '../battle/visuals'
 import { BattleTransport } from '../battle/transport'
 import type { NetRemote } from '../battle/transport'
@@ -48,6 +49,7 @@ import type { CameraRig } from '../camera/rig'
 import { battleHudModule } from '../hud'
 import type { HudSight } from '../hud'
 import type { ShipVisualHandle } from '../modules/ship-visual'
+import { BATTLE_EFFECT_BUDGETS, BattleRenderView, withinBudget } from '../battle/render-view'
 
 
 export type BattleState = {
@@ -67,13 +69,6 @@ export const initialBattleState = (): BattleState => ({
 })
 
 /** Beams and missiles both cap out well under these; the pools never grow. */
-const BEAM_POOL    = 48
-const MISSILE_POOL = 64
-
-// Smaller than the beam pool on purpose: bursts last under a second, so even a
-// four-on-four scrap never has more than a handful alive at once.
-const BLAST_POOL   = 24
-
 /**
  * Opponent hull.
  *
@@ -128,6 +123,11 @@ export async function mountBattle (
   const name             = options.name ?? 'Pilot'
   const shipId           = options.shipId ?? 'icaras'
   const loadout: Loadout = { ...DEFAULT_LOADOUT, ...options.loadout }
+  const quality          = typeof window === 'undefined' || new URLSearchParams(window.location.search).get('post') !== 'low'
+    ? 'high'
+    : 'low'
+  const effectBudget = BATTLE_EFFECT_BUDGETS[quality]
+  const renderView   = new BattleRenderView()
 
   const transport = new BattleTransport()
 
@@ -171,18 +171,33 @@ export async function mountBattle (
   const sightRotation                    = new THREE.Quaternion()
   const sightHardpoints: THREE.Vector3[] = []
   const hitCandidates: HitCandidate[]    = []
+  let sightKey = ''
 
   function readSight (): HudSight | null {
     const chassis = prediction?.rig.chassis
     if (!chassis || !world || !sightRay)
       return null
 
-    const q = chassis.rotation()
+    const q            = chassis.rotation()
+    const p            = chassis.translation()
+    const remotes      = transport.remotes()
+    const store        = useBattleStore.getState()
+    const nextSightKey = [ p.x, p.y, p.z, q.x, q.y, q.z, q.w, prediction?.aimNormalised,
+      store.primary?.id,
+      ...remotes.flatMap(remote => {
+        const drawn = opponents.get(remote.id)?.root.position
+        return [ remote.id, drawn?.x, drawn?.y, drawn?.z, remote.state.health ]
+      }) ].join('|')
+    // HUD rendering can ask more than once per display frame. Rapier traversal
+    // is pointless until the aim, hull or an eligible target actually moved.
+    if (nextSightKey === sightKey)
+      return sight
+    sightKey = nextSightKey
+
     sightRotation.set(q.x, q.y, q.z, q.w)
-    muzzleFrom(sight.origin, chassis.translation(), sightRotation)
+    muzzleFrom(sight.origin, p, sightRotation)
     aimFrom(sight.direction, sightRotation, prediction!.aimNormalised * AIM_MAX)
 
-    const store  = useBattleStore.getState()
     const weapon = store.primary ? WEAPONS[store.primary.id] : WEAPONS[DEFAULT_LOADOUT.primary]
     const reach  = weapon.range
 
@@ -193,7 +208,7 @@ export async function mountBattle (
     const team = store.myTeam
     if (team) {
       hitCandidates.length = 0
-      for (const remote of transport.remotes()) {
+      for (const remote of remotes) {
         // The RENDERED pose, not the snapshot's: remote ships are drawn ~100 ms
         // in the past, and a reticle that marks where a ship is not is worse
         // than no reticle. The server resolves the actual shot by rewinding to
@@ -279,9 +294,9 @@ export async function mountBattle (
   for (const team of BATTLE_TEAMS)
     objectives[team] = buildObjective(team)
 
-  const beamPool    = buildBeamPool(BEAM_POOL)
-  const missilePool = buildMissilePool(MISSILE_POOL)
-  const blastPool   = buildExplosionPool(BLAST_POOL)
+  const beamPool    = buildBeamPool(effectBudget.beams)
+  const missilePool = buildMissilePool(effectBudget.missiles)
+  const blastPool   = buildExplosionPool(effectBudget.explosions)
 
   const opponents = new Map<string, Opponent>()
   const shipRoot  = new THREE.Group()
@@ -360,7 +375,9 @@ export async function mountBattle (
     if (!player)
       return
 
-    blastPool.spawn({ x: player.x, y: player.y + 0.6, z: player.z }, colour, scale)
+    const position   = { x: player.x, y: player.y + 0.6, z: player.z }
+    const importance = renderView.sample({ position, radius: scale, kind: 'explosion' }).importance
+    blastPool.spawn(position, colour, scale, importance)
   }
 
   /**
@@ -496,12 +513,21 @@ export async function mountBattle (
       entry.root.position.copy(_pose)
       entry.root.quaternion.copy(_quat)
 
+      const tracked                  = Boolean(server) && server?.lockTarget === remote.id && remote.team !== transport.localTeam()
+      const view                     = renderView.sample({ position: entry.root.position, radius: 3, kind: 'remote', target: tracked })
+      entry.root.visible             = view.tier !== 'hidden'
+      entry.nameplate.sprite.visible = view.tier === 'full' || view.tier === 'reduced'
+      if (view.tier === 'hidden') {
+        entry.caret.setVisible(false)
+        continue
+      }
+
       const carrying = snapshot?.flags.some(f => f.carrierId === remote.id) ?? false
-      entry.nameplate.set(remote.name, remote.state.health, remote.state.maxHealth, remote.team, carrying)
+      if (view.update && view.tier !== 'transform')
+        entry.nameplate.set(remote.name, remote.state.health, remote.state.maxHealth, remote.team, carrying)
 
       // The caret only ever appears on the ONE ship the local player's lock is
       // working on — a bracket on every enemy is wallpaper, not a target.
-      const tracked = Boolean(server) && server?.lockTarget === remote.id && remote.team !== transport.localTeam()
       entry.caret.setVisible(tracked && server?.lockPhase !== 'idle')
       if (tracked && server) {
         entry.caret.group.position.set(_pose.x, _pose.y + 1.4, _pose.z)
@@ -518,31 +544,45 @@ export async function mountBattle (
 
   /** Objectives, weapons and control points, all straight off the snapshot. */
   function renderWorld (snapshot: NonNullable<ReturnType<BattleTransport['latest']>>, elapsed: number): void {
+    updateZoneEffects(elapsed)
     for (const team of BATTLE_TEAMS) {
       const visual = objectives[team]
       const state  = snapshot.flags.find(f => f.team === team)
       if (!visual || !state)
         continue
       visual.group.position.set(state.x, state.y, state.z)
-      visual.update(elapsed, state.state === 'carried')
+
+      const view           = renderView.sample({ position: visual.group.position, radius: 3, kind: 'objective' })
+      visual.group.visible = view.tier !== 'hidden'
+      if (view.update)
+        visual.update(elapsed, state.state === 'carried')
     }
 
     // Beams are sub-100 ms flashes, drawn from the newest snapshot rather than
     // interpolated: one smoothed into the past would arrive after the impact it
     // belongs to.
-    snapshot.beams.forEach((b, i) => {
+    const beams = withinBudget(snapshot.beams.filter(b => renderView.sample({
+      position: { x: b.to[0], y: b.to[1], z: b.to[2] }, radius: 1, kind: 'projectile',
+    }).tier !== 'hidden'), effectBudget.beams, b => renderView.sample({
+      position: { x: b.to[0], y: b.to[1], z: b.to[2] }, radius: 1, kind: 'projectile',
+    }).importance)
+    beams.forEach((b, i) => {
       const spec = WEAPONS[b.weapon]
       // Fade over the beam's remaining life so a hit reads as a flash, not a
       // rod that blinks out.
       beamPool.show(i, { x: b.from[0], y: b.from[1], z: b.from[2] }, { x: b.to[0], y: b.to[1], z: b.to[2] },
                     b.weapon, Math.max(0, Math.min(1, b.life / (spec.beamLife ?? 0.1))))
     })
-    beamPool.hideFrom(snapshot.beams.length)
+    beamPool.hideFrom(beams.length)
 
     // Missiles are NOT in the snapshot any more — they are spawned from a fire
     // event and integrated locally, so this draws whatever the field stepped
     // this frame rather than dead-reckoning from a packet that is already old.
-    const live = projectiles.live
+    const live = withinBudget(projectiles.live.filter(m => renderView.sample({
+      position: { x: m.position[0], y: m.position[1], z: m.position[2] }, radius: 1, kind: 'projectile',
+    }).tier !== 'hidden'), effectBudget.missiles, m => renderView.sample({
+      position: { x: m.position[0], y: m.position[1], z: m.position[2] }, radius: 1, kind: 'projectile',
+    }).importance)
     live.forEach((m, i) => {
       missilePool.show(i,
                        { x: m.position[0], y: m.position[1], z: m.position[2] },
@@ -553,8 +593,12 @@ export async function mountBattle (
 
     zoneVisuals.forEach((visual, i) => {
       const z = snapshot.zones[i]
-      if (z)
-        visual.update(z.owner, z.capturing, z.progress, z.contested, elapsed)
+      if (z) {
+        const view           = renderView.sample({ position: visual.group.position, radius: 24, kind: 'zone' })
+        visual.group.visible = view.tier !== 'hidden'
+        if (view.update)
+          visual.update(z.owner, z.capturing, z.progress, z.contested, elapsed)
+      }
     })
   }
 
@@ -744,13 +788,18 @@ export async function mountBattle (
 
     onFrame: frame => {
       const elapsed = frame.elapsed
+      renderView.beginFrame(app.ctx.camera as THREE.PerspectiveCamera, canvas.clientHeight || canvas.height)
 
       // Motion blur rides ground speed rather than the boost flag, so coasting
       // fast still streaks and tapping boost from a standstill does not.
       const lv = prediction?.rig.chassis.linvel()
       post.setSpeed(lv ? Math.hypot(lv.x, lv.z) / vehicleConfig.maxSpeed : 0)
-      scenery?.update(elapsed)
-      blastPool.update(frame.delta)
+
+      const sceneryView = renderView.sample({ position: { x: 0, y: 0, z: 0 }, radius: 900, kind: 'scenery' })
+      if (sceneryView.update)
+        scenery?.update(elapsed)
+      blastPool.update(frame.delta, (position, radius) =>
+        renderView.sample({ position, radius, kind: 'explosion' }).tier !== 'hidden')
 
       renderRemotes(elapsed)
 

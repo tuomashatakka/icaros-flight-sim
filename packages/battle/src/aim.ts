@@ -1,5 +1,6 @@
 import * as THREE from 'three'
 import type RAPIER from '@dimforge/rapier3d-deterministic-compat'
+import { COLLISION_GROUPS } from '@crash-velocity/physics'
 
 
 /**
@@ -99,6 +100,6 @@ export function castArenaRay (
   ray.dir.y    = dir.y
   ray.dir.z    = dir.z
 
-  const hit = world.castRay(ray, maxToi, true, undefined, undefined, undefined, undefined, isArenaCollider)
+  const hit = world.castRay(ray, maxToi, true, undefined, COLLISION_GROUPS.sightQuery, undefined, undefined, isArenaCollider)
   return hit ? hit.timeOfImpact : Number.POSITIVE_INFINITY
 }

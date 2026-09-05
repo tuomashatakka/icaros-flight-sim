@@ -1,6 +1,7 @@
 import { MathUtils, Quaternion, Vector3 } from 'three'
 import RAPIER from '@dimforge/rapier3d-deterministic-compat'
 import { vehicleConfig } from './config'
+import { COLLISION_GROUPS } from './colliders'
 import type { ShipTuning, Transform } from './types'
 import {
   AIRBRAKE_PANELS,
@@ -245,7 +246,9 @@ export function createHovercraft (
   chassis.userData = { isVehicle: true }
 
   world.createCollider(
-    RAPIER.ColliderDesc.cuboid(width / 2, height / 2, front).setMass(vehicleConfig.mass),
+    RAPIER.ColliderDesc.cuboid(width / 2, height / 2, front)
+      .setMass(vehicleConfig.mass)
+      .setCollisionGroups(COLLISION_GROUPS.vehicle),
     chassis
   )
 

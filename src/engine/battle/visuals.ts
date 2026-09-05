@@ -459,6 +459,27 @@ export type ZoneVisual = {
   dispose(): void;
 }
 
+const ZONE_PULSE = { value: 1 }
+
+/** One shared clock value drives every control-zone shader. */
+export function updateZoneEffects (elapsed: number): void {
+  ZONE_PULSE.value = 0.5 + Math.abs(Math.sin(elapsed * 5)) * 0.5
+}
+
+type AddZonePulseReturnType = { value: number }
+
+function addZonePulse (material: THREE.MeshBasicMaterial): AddZonePulseReturnType {
+  const contested          = { value: 0 }
+  material.onBeforeCompile = shader => {
+    shader.uniforms.uZonePulse = ZONE_PULSE
+    shader.uniforms.uContested = contested
+    shader.fragmentShader      = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform float uZonePulse;\nuniform float uContested;')
+      .replace('#include <opaque_fragment>', 'diffuseColor.a *= mix(1.0, uZonePulse, uContested);\n#include <opaque_fragment>')
+  }
+  return contested
+}
+
 /**
  * A control point, drawn as a ring plus a light column.
  *
@@ -517,6 +538,9 @@ export function buildZoneVisual (radius: number): ZoneVisual {
   column.position.y = 55
   group.add(column)
 
+  const ringContested   = addZonePulse(ringMat)
+  const columnContested = addZonePulse(columnMat)
+
   return {
     group,
 
@@ -533,9 +557,10 @@ export function buildZoneVisual (radius: number): ZoneVisual {
 
       // Contested points strobe: it is the one zone state a player must notice
       // from the other side of the arena.
-      const pulse       = contested ? 0.5 + Math.abs(Math.sin(elapsed * 5)) * 0.5 : 1
-      ringMat.opacity   = (owner ? 0.85 : 0.5) * pulse
-      columnMat.opacity = (owner ? 0.4 : 0.22) * pulse
+      ringContested.value   = contested ? 1 : 0
+      columnContested.value = contested ? 1 : 0
+      ringMat.opacity       = owner ? 0.85 : 0.5
+      columnMat.opacity     = owner ? 0.4 : 0.22
     },
 
     dispose () {
@@ -623,8 +648,8 @@ export function buildNameplate (): Nameplate {
 /** A pooled burst. `spawn` starts one; `update` ages every live burst. */
 export type ExplosionPool = {
   group: THREE.Group;
-  spawn(position: { x: number; y: number; z: number }, colour: THREE.ColorRepresentation, scale: number): void;
-  update(delta: number): void;
+  spawn(position: { x: number; y: number; z: number }, colour: THREE.ColorRepresentation, scale: number, importance?: number): void;
+  update(delta: number, visible?: (position: THREE.Vector3, radius: number) => boolean): void;
   dispose(): void;
 }
 
@@ -643,14 +668,16 @@ export type ExplosionPool = {
 export function buildExplosionPool (size: number): ExplosionPool {
   const group = new THREE.Group()
   const items: Array<{
-    root:      THREE.Group;
-    core:      THREE.Mesh;
-    ring:      THREE.Mesh;
-    coreMat:   THREE.MeshBasicMaterial;
-    ringMat:   THREE.MeshBasicMaterial;
-    life:      number;
-    span:      number;
-    baseScale: number;
+    root:       THREE.Group;
+    core:       THREE.Mesh;
+    ring:       THREE.Mesh;
+    coreMat:    THREE.MeshBasicMaterial;
+    ringMat:    THREE.MeshBasicMaterial;
+    life:       number;
+    span:       number;
+    baseScale:  number;
+    importance: number;
+    active:     boolean;
   }> = []
 
   const coreGeo = new THREE.IcosahedronGeometry(1, 1)
@@ -669,19 +696,17 @@ export function buildExplosionPool (size: number): ExplosionPool {
     root.renderOrder = 850
     group.add(root)
 
-    items.push({ root, core, ring, coreMat, ringMat, life: 0, span: 1, baseScale: 1 })
+    items.push({ root, core, ring, coreMat, ringMat, life: 0, span: 1, baseScale: 1, importance: -Infinity, active: false })
   }
-
-  let next = 0
 
   return {
     group,
 
-    spawn (position, colour, scale) {
-      // Round-robin rather than first-free: the oldest burst is the one worth
-      // stealing, and scanning for a free slot is the only per-event cost here.
-      const item = items[next]
-      next = (next + 1) % items.length
+    spawn (position, colour, scale, importance = scale) {
+      // A saturated pool steals the least useful burst, not whichever happened
+      // to be born first. No overflow object is ever allocated or rendered.
+      const item = items.find(candidate => !candidate.active) ??
+        items.reduce((least, candidate) => candidate.importance < least.importance ? candidate : least)
 
       item.coreMat.color.set(colour)
       item.ringMat.color.set(colour)
@@ -690,18 +715,22 @@ export function buildExplosionPool (size: number): ExplosionPool {
       item.life         = 0
       item.span         = 0.45 + scale * 0.25
       item.baseScale    = scale
+      item.importance   = importance
+      item.active       = true
     },
 
-    update (delta) {
+    update (delta, visible = () => true) {
       for (const item of items) {
-        if (!item.root.visible)
+        if (!item.active)
           continue
 
         item.life += delta
+        item.root.visible = visible(item.root.position, item.baseScale * 6)
 
         const t = item.life / item.span
         if (t >= 1) {
           item.root.visible = false
+          item.active       = false
           continue
         }
 

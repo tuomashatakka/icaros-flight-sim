@@ -21,6 +21,13 @@ export interface BoxCollider {
 const _euler = new THREE.Euler()
 const _quat  = new THREE.Quaternion()
 
+/** Rapier interaction groups: arena, vehicle, and arena-only sight queries. */
+export const COLLISION_GROUPS = {
+  arena:      0x00010006,
+  vehicle:    0x00020003,
+  sightQuery: 0x00040001,
+} as const
+
 /**
  * Attach a strip of oriented boxes to one fixed body.
  *
@@ -52,7 +59,8 @@ export function attachBoxColliders (
     world.createCollider(
       RAPIER.ColliderDesc.cuboid(box.args[0], box.args[1], box.args[2])
         .setTranslation(box.position[0], box.position[1], box.position[2])
-        .setRotation({ x: _quat.x, y: _quat.y, z: _quat.z, w: _quat.w }),
+        .setRotation({ x: _quat.x, y: _quat.y, z: _quat.z, w: _quat.w })
+        .setCollisionGroups(COLLISION_GROUPS.arena),
       body
     )
   }
@@ -69,11 +77,9 @@ export function attachBox (
 ): RAPIER.Collider {
   const { RAPIER, world } = physics
   return world.createCollider(
-    RAPIER.ColliderDesc.cuboid(halfExtents[0], halfExtents[1], halfExtents[2]).setTranslation(
-      position[0],
-      position[1],
-      position[2]
-    ),
+    RAPIER.ColliderDesc.cuboid(halfExtents[0], halfExtents[1], halfExtents[2])
+      .setTranslation(position[0], position[1], position[2])
+      .setCollisionGroups(COLLISION_GROUPS.arena),
     body
   )
 }
