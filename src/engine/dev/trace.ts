@@ -119,7 +119,9 @@ export function recordFrame (record: FrameRecord): void {
  * a lot of context to spend on a distribution that three values describe.
  */
 export function readTrace () {
-  const times  = frames.map(f => f.ms).sort((a, b) => a - b)
+  const times       = frames.map(f => f.ms).sort((a, b) => a - b)
+  const shadowTimes = frames.map(f => f.shadowMs).filter(Boolean)
+    .sort((a, b) => a - b)
   const at     = (q: number) => times.length ? +times[Math.min(times.length - 1, Math.floor(times.length * q))].toFixed(2) : null
   const errors = logs.filter(l => l.level === 'error')
 
@@ -131,8 +133,13 @@ export function readTrace () {
       p95: at(0.95),
       max: times.length ? +times[times.length - 1].toFixed(2) : null,
     },
-    fps:        times.length ? +(1000 / (at(0.5) ?? 1)).toFixed(1) : null,
-    drawCalls:  frames.length ? frames[frames.length - 1].drawCalls : null,
+    fps:       times.length ? +(1000 / (at(0.5) ?? 1)).toFixed(1) : null,
+    drawCalls: frames.length ? frames[frames.length - 1].drawCalls : null,
+    shadow:    {
+      drawCalls: frames.length ? frames[frames.length - 1].shadowDrawCalls : null,
+      p50Ms:     shadowTimes.length ? +shadowTimes[Math.floor(shadowTimes.length * 0.5)].toFixed(2) : null,
+      p95Ms:     shadowTimes.length ? +shadowTimes[Math.min(shadowTimes.length - 1, Math.floor(shadowTimes.length * 0.95))].toFixed(2) : null,
+    },
     errorCount: errors.length,
     errors:     errors.slice(-20),
     logs:       logs.slice(-40),

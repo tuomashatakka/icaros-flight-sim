@@ -35,7 +35,11 @@ const CRASH_LAB_ENVIRONMENT = resolveEnvironment({
   background: '#080a12',
   fog:        [ '#080a12', 2200, 6000 ],
   hemi:       { sky: '#8a9bff', ground: '#0a0c14', intensity: 0.45 },
-  sun:        { offset: [ 300, 500, 220 ], intensity: 2.2, frustum: 900, mapSize: 4096 },
+  sun:        {
+    offset:    [ 300, 500, 220 ],
+    intensity: 2.2,
+    shadow:    { frustum: 900, mapSize: 4096 },
+  },
 })
 
 /**

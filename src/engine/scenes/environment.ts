@@ -4,6 +4,7 @@ import type { AppModule } from 'threejs-scene'
 import { standardLighting } from 'threejs-scene/modules/lighting'
 import { sunModule } from '../modules/sun'
 import type { SunHandle } from '../modules/sun'
+import type { ShadowQuality } from '../render-quality'
 
 
 /**
@@ -35,9 +36,7 @@ export type EnvironmentSpec = {
     color:     string;
     intensity: number;
 
-    /** Half-extent of the ortho shadow box, in world units. */
-    frustum: number;
-    mapSize: number;
+    shadow: ShadowQuality;
   };
 }
 
@@ -57,8 +56,7 @@ export const DEFAULT_ENVIRONMENT: EnvironmentSpec = {
     offset:    [ 40, 60, 25 ],
     color:     '#ffffff',
     intensity: 3.2,
-    frustum:   45,
-    mapSize:   2048,
+    shadow:    { enabled: true, blobShadow: false, mapSize: 2048, updateEveryFrames: 1, frustum: 45, maxCasterDistance: 68 },
   },
 }
 
@@ -71,7 +69,9 @@ export const DEFAULT_ENVIRONMENT: EnvironmentSpec = {
  */
 export type EnvironmentOverrides = Partial<Omit<EnvironmentSpec, 'hemi' | 'sun'>> & {
   hemi?: Partial<EnvironmentSpec['hemi']>;
-  sun?:  Partial<EnvironmentSpec['sun']>;
+  sun?:  Partial<Omit<EnvironmentSpec['sun'], 'shadow'>> & {
+    shadow?: Partial<ShadowQuality>;
+  };
 }
 
 /** Merge a scene's deltas over the shared base. One level deep per group, by design. */
@@ -80,7 +80,11 @@ export function resolveEnvironment (overrides: EnvironmentOverrides = {}): Envir
     ...DEFAULT_ENVIRONMENT,
     ...overrides,
     hemi: { ...DEFAULT_ENVIRONMENT.hemi, ...overrides.hemi },
-    sun:  { ...DEFAULT_ENVIRONMENT.sun, ...overrides.sun },
+    sun:  {
+      ...DEFAULT_ENVIRONMENT.sun,
+      ...overrides.sun,
+      shadow: { ...DEFAULT_ENVIRONMENT.sun.shadow, ...overrides.sun?.shadow },
+    },
   }
 }
 
@@ -119,8 +123,12 @@ export function environmentModules<TState extends object> (
         // downgrades it to this, with a console warning on the first shadow
         // render. Softness comes from the frustum staying tight around the ship
         // instead — see `sunModule`.
-        ctx.renderer.shadowMap.type = THREE.PCFShadowMap
-        ctx.scene.fog               = new THREE.Fog(spec.fog[0], spec.fog[1], spec.fog[2])
+        ctx.renderer.shadowMap.type    = THREE.PCFShadowMap
+        ctx.renderer.shadowMap.enabled = spec.sun.shadow.enabled
+        // The first map is explicitly requested by sunModule. From then on the
+        // snapped anchor and caster cadence own every expensive shadow pass.
+        ctx.renderer.shadowMap.autoUpdate = false
+        ctx.scene.fog                     = new THREE.Fog(spec.fog[0], spec.fog[1], spec.fog[2])
       },
 
       dispose () {},

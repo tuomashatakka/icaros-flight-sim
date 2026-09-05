@@ -16,6 +16,7 @@ import type { BattleArena, PlateauDef } from '@crash-velocity/battle/arena'
 import type { SceneContext } from 'threejs-scene'
 import type { Scenery } from './scenery'
 import type { EnvironmentOverrides } from '../scenes/environment'
+import { localShadowCaster } from '../render-quality'
 
 
 // Dimensions the meshes need. They mirror the arena data rather than importing
@@ -41,7 +42,7 @@ export function arenaEnvironment (arena: BattleArena): EnvironmentOverrides {
 
     // The deck is 600 across and the sun follows the local ship, so a race-sized
     // frustum leaves every other hull outside the shadow box, casting nothing.
-    sun: { frustum: 110 },
+    sun: { shadow: { frustum: 72, maxCasterDistance: 92 }},
   }
 }
 
@@ -143,7 +144,6 @@ function buildApexVisual (
         new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.35 })
       )
       pylon.position.set(position[0] + dx, 6, position[2])
-      pylon.castShadow = true
       scene.add(pylon)
     }
   }
@@ -176,7 +176,7 @@ function buildPlateauMeshes (scene: THREE.Object3D, plateaus: PlateauDef[]): voi
 
     const body = new THREE.Mesh(new THREE.BoxGeometry(hx * 2, h, hz * 2), rockMat)
     body.position.set(cx, h / 2, cz)
-    body.castShadow    = true
+    localShadowCaster(body, Math.hypot(hx, hz))
     body.receiveShadow = true
     scene.add(body)
 
@@ -206,7 +206,7 @@ function buildPlateauMeshes (scene: THREE.Object3D, plateaus: PlateauDef[]): voi
       const ramp           = new THREE.Mesh(new THREE.BoxGeometry(ax * 2, ay * 2, az * 2), rampMat)
       ramp.position.set(collider.position[0], collider.position[1], collider.position[2])
       ramp.rotation.set(collider.rotation[0], collider.rotation[1], collider.rotation[2])
-      ramp.castShadow    = true
+      localShadowCaster(ramp, Math.hypot(ax, az))
       ramp.receiveShadow = true
       scene.add(ramp)
 
@@ -241,7 +241,6 @@ function buildPerimeter (scene: THREE.Object3D, rng: () => number): void {
   ] as Array<[number, number, number, number]>) {
     const wall = new THREE.Mesh(new THREE.BoxGeometry(w * 2, wallH, d * 2), cliffMat)
     wall.position.set(x, WALL_H, z)
-    wall.castShadow    = true
     wall.receiveShadow = true
     scene.add(wall)
   }

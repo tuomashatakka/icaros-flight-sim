@@ -11,6 +11,7 @@
  */
 
 import * as THREE from 'three'
+import { localShadowCaster } from '../render-quality'
 
 
 export function buildRemoteHull (tint: THREE.ColorRepresentation): THREE.Group {
@@ -67,8 +68,9 @@ export function buildRemoteHull (tint: THREE.ColorRepresentation): THREE.Group {
   root.add(glow)
 
   root.traverse(o => {
-    o.castShadow    = true
     o.receiveShadow = true
+    if (o instanceof THREE.Mesh && !(o.material instanceof THREE.MeshBasicMaterial))
+      localShadowCaster(o, 2)
   })
   return root
 }

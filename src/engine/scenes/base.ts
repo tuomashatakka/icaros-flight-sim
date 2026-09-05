@@ -27,6 +27,7 @@ import type { EnvironmentOverrides } from './environment'
 import { publishModule } from '../modules/publish'
 import type { PublishHandle } from '../modules/publish'
 import { attachBridge } from '../bridge'
+import { RENDERER_QUALITY, resolveRendererQuality } from '../render-quality'
 
 
 const SEED = 7
@@ -173,7 +174,14 @@ export async function mountBaseScene<TState extends object> (
     onDispose,
   } = config
 
-  const environment = resolveEnvironment(config.environment)
+  const quality     = RENDERER_QUALITY[resolveRendererQuality()]
+  const environment = resolveEnvironment({
+    ...config.environment,
+    sun: {
+      ...config.environment?.sun,
+      shadow: { ...quality.shadow, ...config.environment?.sun?.shadow },
+    },
+  })
 
   const RAPIER    = await initRapier()
   const physics   = createPhysics(RAPIER)
@@ -217,6 +225,16 @@ export async function mountBaseScene<TState extends object> (
   useCameraView.getState().setView(lastView)
 
   const shipRoot = new THREE.Group()
+
+  if (quality.shadow.blobShadow) {
+    const blob = new THREE.Mesh(
+      new THREE.CircleGeometry(2.4, 24),
+      new THREE.MeshBasicMaterial({ color: '#000000', transparent: true, opacity: 0.32, depthWrite: false })
+    )
+    blob.rotation.x = -Math.PI / 2
+    blob.position.y = -0.72
+    shipRoot.add(blob)
+  }
 
   const isVehicleCollider = (handle: number) => {
     const body = vehicle.current?.body
@@ -356,7 +374,7 @@ export async function mountBaseScene<TState extends object> (
       rig.drive(frame.delta, _shipPosition, _shipQuaternion, _pan)
       rig.hudQuaternion(_hudQuaternion)
       rig.hudLead(_hudLead)
-      sun.current?.follow(_shipPosition)
+      sun.current?.follow(_shipPosition, _shipQuaternion)
 
       const blend = rig.blend()
       shipVisual.current?.setHullVisible(blend < 0.85)

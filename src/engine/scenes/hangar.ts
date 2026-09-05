@@ -37,7 +37,7 @@ const HANGAR_ENVIRONMENT = resolveEnvironment({
   fog:          [ '#171720', 20, 100 ],
   hemi:         { sky: '#ff69b4', ground: '#4a90e2', intensity: 0.8 },
   envIntensity: 0.4,
-  sun:          { offset: [ 10, 10, 5 ], intensity: 2.2, frustum: 8 },
+  sun:          { offset: [ 10, 10, 5 ], intensity: 2.2, shadow: { frustum: 8 }},
 })
 
 type HangarState = {

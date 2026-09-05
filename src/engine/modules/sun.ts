@@ -2,6 +2,8 @@ import * as THREE from 'three'
 import { defineModule } from 'threejs-scene'
 import type { AppModule } from 'threejs-scene'
 import type { RaceState } from '../state'
+import { updateLocalShadowCasters } from '../render-quality'
+import type { ShadowQuality } from '../render-quality'
 
 
 const _target = new THREE.Vector3()
@@ -9,10 +11,13 @@ const _target = new THREE.Vector3()
 export type SunHandle = {
 
   /** Re-centre the shadow camera on the ship. Called from the render phase. */
-  follow(position: THREE.Vector3): void;
+  follow(position: THREE.Vector3, casterRotation?: THREE.Quaternion): void;
 
   /** The key light itself — the dev overlay draws a helper on its shadow camera. */
   readonly light: THREE.DirectionalLight | null;
+
+  /** Last shadow-only cost, kept separate from the main renderer counters. */
+  readonly shadowStats: { drawCalls: number; renderMs: number };
 }
 
 /**
@@ -26,25 +31,35 @@ export type SunHandle = {
  */
 type HandleType = { current: SunHandle | null }
 
+type OptionsType = {
+
+  /** Direction from the ship to the light. */
+  offset?:    [number, number, number];
+  intensity?: number;
+  color?:     string;
+
+  /** Half-extent of the ortho shadow box, in world units. */
+  shadow: ShadowQuality;
+}
+
 export function sunModule (
   handle: HandleType,
-  options: {
-
-    /** Direction from the ship to the light. */
-    offset?:    [number, number, number];
-    intensity?: number;
-    color?:     string;
-
-    /** Half-extent of the ortho shadow box, in world units. */
-    frustum?: number;
-    mapSize?: number;
-  } = {}
+  options: OptionsType
 ): AppModule<RaceState> {
   const offset  = options.offset ?? [ 40, 60, 25 ]
-  const frustum = options.frustum ?? 45
-  const mapSize = options.mapSize ?? 2048
+  const shadow  = options.shadow
+  const frustum = shadow.frustum
+  const mapSize = shadow.mapSize
 
   let light: THREE.DirectionalLight | null = null
+  let scene: THREE.Scene | null            = null
+  let frame                                = 0
+  let lastRefreshFrame                     = -shadow.updateEveryFrames
+  const lastAnchor         = new THREE.Vector3(Number.POSITIVE_INFINITY, 0, 0)
+  const lastCasterPosition = new THREE.Vector3(Number.POSITIVE_INFINITY, 0, 0)
+  const lastCasterRotation = new THREE.Quaternion()
+  const shadowStats        = { drawCalls: 0, renderMs: 0 }
+  let restoreProfiler: (() => void) | null   = null
 
   /** World units per shadow texel — used to quantise movement. */
   const texelSize = frustum * 2 / mapSize
@@ -53,9 +68,24 @@ export function sunModule (
     name: 'sun',
 
     build (ctx) {
+      scene = ctx.scene
+
+      const shadowMap    = ctx.renderer.shadowMap
+      const renderShadow = shadowMap.render.bind(shadowMap)
+      shadowMap.render   = (...args: Parameters<typeof shadowMap.render>) => {
+        const callsBefore = ctx.renderer.info.render.calls
+        const started     = performance.now()
+        renderShadow(...args)
+        shadowStats.renderMs  = performance.now() - started
+        shadowStats.drawCalls = ctx.renderer.info.render.calls - callsBefore
+      }
+      restoreProfiler = () => {
+        shadowMap.render = renderShadow
+      }
       light = new THREE.DirectionalLight(options.color ?? '#ffffff', options.intensity ?? 1.6)
-      light.castShadow = true
+      light.castShadow = shadow.enabled
       light.shadow.mapSize.set(mapSize, mapSize)
+      light.shadow.needsUpdate = shadow.enabled
 
       const cam  = light.shadow.camera
       cam.left   = -frustum
@@ -87,9 +117,14 @@ export function sunModule (
           return light
         },
 
-        follow (position) {
+        shadowStats,
+
+        follow (position, casterRotation) {
           if (!light)
             return
+          frame++
+          shadowStats.drawCalls = 0
+          shadowStats.renderMs  = 0
           // Quantise to whole shadow texels. Without this the shadow map
           // resamples every frame as the camera slides, and the edges crawl —
           // which reads as the whole scene shimmering.
@@ -98,6 +133,14 @@ export function sunModule (
             Math.round(position.y / texelSize) * texelSize,
             Math.round(position.z / texelSize) * texelSize
           )
+
+          const anchorChanged = !_target.equals(lastAnchor)
+          const casterMoved   = lastCasterPosition.distanceToSquared(position) > 0.04 ||
+            (casterRotation ? 1 - Math.abs(lastCasterRotation.dot(casterRotation)) > 0.00005 : false)
+
+          if (!anchorChanged && (!casterMoved || frame - lastRefreshFrame < shadow.updateEveryFrames))
+            return
+
           light.target.position.copy(_target)
           light.target.updateMatrixWorld()
           light.position.set(
@@ -105,16 +148,28 @@ export function sunModule (
             _target.y + offset[1],
             _target.z + offset[2]
           )
+          lastAnchor.copy(_target)
+          lastCasterPosition.copy(position)
+          if (casterRotation)
+            lastCasterRotation.copy(casterRotation)
+          lastRefreshFrame = frame
+          if (scene)
+            updateLocalShadowCasters(scene, _target, shadow.maxCasterDistance)
+          if (shadow.enabled)
+            light.shadow.needsUpdate = true
         },
       }
     },
 
     dispose () {
+      restoreProfiler?.()
+      restoreProfiler = null
       if (light) {
         light.target.removeFromParent()
         light.removeFromParent()
         light.dispose()
         light = null
+        scene = null
       }
       handle.current = null
     },
