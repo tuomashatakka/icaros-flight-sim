@@ -10,6 +10,7 @@ import type { Telemetry } from '../telemetry'
 import type { VehicleHandle } from '../vehicle'
 import type { SunHandle } from '../modules/sun'
 import type { PublishHandle } from '../modules/publish'
+import type { RendererQuality } from '../quality/runtime'
 
 
 /**
@@ -28,6 +29,7 @@ export type DevDeps = {
   vehicle:   { current: VehicleHandle | null };
   sun:       { current: SunHandle | null };
   publish:   { current: PublishHandle | null };
+  quality:   RendererQuality;
   rig:       CameraRig;
   level:     TrackSpec;
   seed:      number;
@@ -131,6 +133,8 @@ export type DevApi = {
   setStatus (status: RaceState['status']): string;
   overlay (flags: OverlayFlags): OverlayFlags;
   trace (): Record<string, unknown>;
+  quality (): ReturnType<RendererQuality['snapshot']>;
+  setQuality (preference: import('../quality/controller').QualityPreference): ReturnType<RendererQuality['snapshot']>;
 
   /** Raw handles — the escape hatch for `dev-cli eval`. Not JSON-safe. */
   raw: DevDeps;

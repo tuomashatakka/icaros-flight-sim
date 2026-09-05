@@ -28,7 +28,7 @@ import type { DevApi, DevDeps, OverlayFlags, TeleportArgs } from './types'
  * anything already typed into a devtools console keeps working.
  */
 
-const API_VERSION = 1
+const API_VERSION = 2
 
 const WORLD_UP = new THREE.Vector3(0, 1, 0)
 const _up      = new THREE.Vector3()
@@ -221,6 +221,8 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
           geometries: info.memory.geometries,
         },
 
+        quality: deps.quality.snapshot(),
+
         tuning:  useTuningStore.getState().tuning,
         overlay: overlays.flags(),
       }
@@ -358,6 +360,15 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
         status: useRaceStore.getState().status,
         ship:   shipPose(),
       }
+    },
+
+    quality () {
+      return deps.quality.snapshot()
+    },
+
+    setQuality (preference) {
+      deps.quality.setPreference(preference)
+      return deps.quality.snapshot()
     },
   }
 

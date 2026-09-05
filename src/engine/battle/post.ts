@@ -79,6 +79,9 @@ export type BattlePostHandle = {
 
   /** 0..1 — how hard the frame streaks outward. Ramped from ground speed. */
   setSpeed(speed: number): void;
+
+  /** Runtime budget, independent of the safe startup choice. */
+  setQuality(level: 0 | 1 | 2): void;
 }
 
 const BASE_TINT     = new THREE.Color('#e8eeff')
@@ -86,11 +89,12 @@ const BASE_CONTRAST = 1.02
 const _tint         = new THREE.Color()
 
 export function createBattlePost (quality: PostQuality = resolveQuality()): BattlePostHandle {
-  const heavy = quality === 'high'
+  let level = quality === 'high' ? 2 : 1
 
   let grade:     GradePass | null  = null
   let radial:    ShaderPass | null = null
   let chromatic: ShaderPass | null = null
+  let anamorphic: Pass | null      = null
 
   // Decays toward 0 every frame; `pulse` only ever raises it, so overlapping
   // hits reinforce instead of cutting each other off.
@@ -109,8 +113,9 @@ export function createBattlePost (quality: PostQuality = resolveQuality()): Batt
 
         // Horizontal streaks off the beams and engine glow — the single effect
         // that most reads as "lens". Multi-tap, so it is what `low` drops.
-        if (heavy)
-          passes.push(createAnamorphic({ threshold: 0.72, scale: 2.4, tint: new THREE.Color('#8fb4ff') }))
+        anamorphic = createAnamorphic({ threshold: 0.72, scale: 2.4, tint: new THREE.Color('#8fb4ff') })
+        anamorphic.enabled = level === 2
+        passes.push(anamorphic)
 
         // Speed cue, toggled rather than dialled to zero: the shader normalises
         // by its accumulated weight, so `uWeight: 0` divides into a black frame
@@ -147,7 +152,7 @@ export function createBattlePost (quality: PostQuality = resolveQuality()): Batt
           // Nothing below 60% of top speed streaks — otherwise the arena is
           // permanently smeared just from crossing the deck.
           const ramp                   = Math.max(0, (speed - 0.6) / 0.4)
-          radial.enabled               = ramp > 0.01
+          radial.enabled               = level > 0 && ramp > 0.01
           radial.uniforms.uDecay.value = 0.25 + ramp * 0.55
         }
 
@@ -157,8 +162,10 @@ export function createBattlePost (quality: PostQuality = resolveQuality()): Batt
           grade.uniforms.uContrast.value = BASE_CONTRAST + flash * 0.2
         }
 
-        if (chromatic)
+        if (chromatic) {
+          chromatic.enabled                  = level > 0
           chromatic.uniforms.uStrength.value = 0.4 + flash * 3.4
+        }
       },
     },
 
@@ -170,6 +177,16 @@ export function createBattlePost (quality: PostQuality = resolveQuality()): Batt
 
     setSpeed (value) {
       speed = Math.max(0, Math.min(1, value))
+    },
+
+    setQuality (value) {
+      level = value
+      if (anamorphic)
+        anamorphic.enabled = level === 2
+      if (chromatic)
+        chromatic.enabled = level > 0
+      if (radial && level === 0)
+        radial.enabled = false
     },
   }
 }
