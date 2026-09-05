@@ -42,6 +42,9 @@ import type { RaceState } from '../state'
 export type RaceMountOptions = {
   name?:   string;
   server?: string;
+
+  /** The route's `touch` parameter, read by the page with `useSearchParams`. */
+  forcedTouch?: string | null;
 }
 
 /** Grid colours, by finishing position rather than by team. */
@@ -307,7 +310,7 @@ export async function mountRace (
     },
 
     hudModuleFactory: (_shipRoot, telemetry, hudRef, hudControls) =>
-      raceHudModule(canvas, track, telemetry, hudControls, hudRef),
+      raceHudModule(canvas, track, telemetry, hudControls, hudRef, options.forcedTouch),
 
     extraModules: [
       defineModule<RaceState>({

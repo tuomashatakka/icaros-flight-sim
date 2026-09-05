@@ -56,6 +56,16 @@ type SpatialHudOptions = {
   canvas:   HTMLCanvasElement;
   controls: Controls;
   source:   HudSource;
+
+  /**
+   * The `touch` query parameter: `'1'` forces the rail on, `'0'` off.
+   *
+   * Passed in rather than read off `window.location` here. The engine mounts
+   * outside the router, so reading the URL from this depth means reading it at
+   * a moment the router does not guarantee — the page owns routing state and
+   * hands it down, which is also what makes this testable without a URL.
+   */
+  forcedTouch?: string | null;
 }
 
 export type SpatialHud = {
@@ -101,7 +111,7 @@ const PINCH_RANGE = 0.42
  * plane handles full-screen moments and touch controls. React never sees a
  * frame-rate value or pointer move, and every allocation has a paired dispose.
  */
-export function createSpatialHud ({ canvas, controls, source }: SpatialHudOptions): SpatialHud {
+export function createSpatialHud ({ canvas, controls, source, forcedTouch = null }: SpatialHudOptions): SpatialHud {
   const station   = createHudStation()
   const panels    = createHudPanels()
   const panelMesh = createHudPanelMesh(panels)
@@ -139,9 +149,14 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
   let insets: SafeAreaInsets = NO_INSETS
 
   // `?touch=1` forces the rail on and `?touch=0` forces it off, in EVERY build.
-  //  It used to be dev-only, which meant a tablet the sniff got wrong had no way
+  //  It used to be dev-only, which meant a device the sniff got wrong had no way
   //  back and nobody had a way to tell the two halves apart from a bug report.
-  const forced = new URLSearchParams(window.location.search).get('touch')
+  //
+  //  It arrives as a prop from the page's `useSearchParams`. It was read off
+  //  `window.location.search` here, which is a layer that knows nothing about
+  //  the router: the engine mounts on its own schedule, so the value it saw was
+  //  whatever the URL happened to be at that instant rather than the route's.
+  const forced = forcedTouch
   const coarse = window.matchMedia('(pointer: coarse)')
   let isTouch = wantsTouchControls(forced, coarse.matches, navigator.maxTouchPoints)
   const hidden = process.env.NODE_ENV !== 'production' &&

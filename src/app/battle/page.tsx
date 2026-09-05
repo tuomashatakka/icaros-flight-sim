@@ -29,6 +29,10 @@ function BattleContent () {
       // transport documented but never implemented.
       match:  params.get('match') ?? undefined,
       server: params.get('sv') ?? undefined,
+
+      // Read here rather than in the HUD, for the same reason as the rest of
+      // this block: the engine mounts outside the router and cannot see it.
+      forcedTouch: params.get('touch'),
     })
   }, [ params ])
 

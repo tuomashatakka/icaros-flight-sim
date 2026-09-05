@@ -30,6 +30,9 @@ type SharedHudOptions<TState extends object> = {
   controls:  Controls;
   handle:    HandleType;
   source:    HudSource;
+
+  /** The route's `touch` parameter, from the page's `useSearchParams`. */
+  forcedTouch?: string | null;
   target(frame: HudFrame): void;
 }
 
@@ -79,9 +82,10 @@ function sharedHudModule<TState extends object> ({
   controls,
   handle,
   source,
+  forcedTouch,
   target,
 }: SharedHudOptions<TState>): AppModule<TState> {
-  const spatial         = createSpatialHud({ canvas, controls, source })
+  const spatial         = createSpatialHud({ canvas, controls, source, forcedTouch })
   const frame: HudFrame = {
     elapsed:          0,
     telemetry,
@@ -141,7 +145,8 @@ export function raceHudModule<TState extends object> (
   track: TrackSpec,
   telemetry: Telemetry,
   controls: Controls,
-  handle: HandleType
+  handle: HandleType,
+  forcedTouch?: string | null
 ): AppModule<TState> {
   const source: HudSource = {
     mode: 'race',
@@ -188,6 +193,7 @@ export function raceHudModule<TState extends object> (
     controls,
     handle,
     source,
+    forcedTouch,
     target (frame) {
       const race      = useRaceStore.getState()
       const waypoints = track.waypoints
@@ -218,7 +224,8 @@ export function battleHudModule<TState extends object> (
   telemetry: Telemetry,
   controls: Controls,
   handle: HandleType,
-  readSight: () => HudSight | null
+  readSight: () => HudSight | null,
+  forcedTouch?: string | null
 ): AppModule<TState> {
   const source: HudSource = {
     mode:    'battle',
@@ -240,6 +247,7 @@ export function battleHudModule<TState extends object> (
     controls,
     handle,
     source,
+    forcedTouch,
     target (frame) {
       const battle = useBattleStore.getState()
       const locked = battle.lockOn.targetId !== null

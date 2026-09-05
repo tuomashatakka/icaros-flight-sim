@@ -102,6 +102,9 @@ export type BattleMountOptions = {
 
   /** `?sv=` dev override: a full ws:// URL or a bare port. */
   server?: string;
+
+  /** The route's `touch` parameter, read by the page with `useSearchParams`. */
+  forcedTouch?: string | null;
 }
 
 /**
@@ -722,7 +725,7 @@ export async function mountBattle (
     },
 
     hudModuleFactory: (_shipRoot, telemetry, hudRef, controls) =>
-      battleHudModule(canvas, telemetry, controls, hudRef, readSight),
+      battleHudModule(canvas, telemetry, controls, hudRef, readSight, options.forcedTouch),
 
     extraModules: [
       defineModule<BattleState>({
