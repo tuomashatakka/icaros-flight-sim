@@ -1,5 +1,6 @@
-import { HUD_COLORS as COLORS } from './tokens'
+import { glowStroke } from './chrome'
 import type { Rect } from './chrome'
+import { HUD_THEME as THEME } from './tokens'
 
 
 /**
@@ -102,7 +103,7 @@ export function clipReveal (
   context: CanvasRenderingContext2D,
   rect: Rect,
   phase: number,
-  accent: string = COLORS.cyan
+  accent: string = THEME.amber
 ): void {
   if (phase >= 0.999)
     return
@@ -121,17 +122,10 @@ export function clipReveal (
   context.closePath()
   context.clip()
 
-  context.save()
-  context.globalAlpha = 0.9
-  context.strokeStyle = accent
-  context.lineWidth   = 2
-  context.shadowColor = accent
-  context.shadowBlur  = 12
-  context.beginPath()
-  context.moveTo(rect.x, edgeY + shear * 0.5)
-  context.lineTo(rect.x + rect.width, edgeY)
-  context.stroke()
-  context.restore()
+  glowStroke(context, ctx => {
+    ctx.moveTo(rect.x, edgeY + shear * 0.5)
+    ctx.lineTo(rect.x + rect.width, edgeY)
+  }, accent, 2, 0.9)
 }
 
 /** Global alpha for a surface mid-transition, so a wipe also fades. */

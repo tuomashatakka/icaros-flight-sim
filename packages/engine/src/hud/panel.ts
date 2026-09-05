@@ -1,6 +1,20 @@
 import * as THREE from 'three'
 import type { HudPanelTrace, HudPanelUv } from './layout'
-import { HUD_FONT as FONT } from './tokens'
+import {
+  buildHudGrid,
+  drawCornerBrackets,
+  drawHeaderRule,
+  drawPlate,
+  drawPlateLabel,
+  drawTickBar,
+  glowStroke,
+} from './chrome'
+import {
+  HUD_FONT_MONO as FONT,
+  HUD_GRID_ALPHA,
+  HUD_GRID_CELL,
+  HUD_THEME as THEME,
+} from './tokens'
 import type { HudActionId, HudRegion } from './types'
 
 
@@ -47,14 +61,13 @@ type TextOptions = {
 }
 
 type BarOptions = {
-  x:       number;
-  y:       number;
-  width:   number;
-  height:  number;
-  value:   number;
-  label?:  string;
-  color?:  string;
-  color2?: string;
+  x:      number;
+  y:      number;
+  width:  number;
+  height: number;
+  value:  number;
+  label?: string;
+  color?: string;
 }
 
 type ButtonOptions = {
@@ -70,24 +83,6 @@ type ButtonOptions = {
   disabled?: boolean;
   color?:    string;
   size?:     number;
-}
-
-function roundedRect (
-  context: CanvasRenderingContext2D,
-  x: number,
-  y: number,
-  width: number,
-  height: number,
-  radius: number
-): void {
-  const r = Math.min(radius, width * 0.5, height * 0.5)
-  context.beginPath()
-  context.moveTo(x + r, y)
-  context.arcTo(x + width, y, x + width, y + height, r)
-  context.arcTo(x + width, y + height, x, y + height, r)
-  context.arcTo(x, y + height, x, y, r)
-  context.arcTo(x, y, x + width, y, r)
-  context.closePath()
 }
 
 function tracedLine (
@@ -113,16 +108,6 @@ function tracedLine (
     context.closePath()
 }
 
-function tracedPath (
-  context: CanvasRenderingContext2D,
-  trace: HudPanelTrace,
-  width: number,
-  height: number,
-  inset = 1
-): void {
-  tracedLine(context, trace.contour, width, height, inset, true)
-}
-
 /**
  * One reference-style HUD facet.
  *
@@ -145,10 +130,13 @@ export class HudPanel {
   private contentTransformActive = false
   private renderKey: string | null = null
 
+  /** The glass fill, cached: it depends only on canvas size, never on a frame. */
+  private glassFill: CanvasGradient | null = null
+
   constructor ({
     name,
     title = '',
-    accent = '#58f7ef',
+    accent = THEME.amber,
     width = 640,
     height = 320,
     center = false,
@@ -193,6 +181,16 @@ export class HudPanel {
     return true
   }
 
+  /**
+   * The dot-grid texture behind this panel's data area.
+   *
+   * Built once per panel size and memoised in `chrome.ts`'s cache — a repeat
+   * call with the same dimensions costs a map lookup, not a redraw.
+   */
+  private grid (): HTMLCanvasElement {
+    return buildHudGrid(this.canvas.width, this.canvas.height, this.accent, HUD_GRID_CELL, HUD_GRID_ALPHA, 'dot')
+  }
+
   begin (): void {
     const { context, canvas } = this
     const width               = canvas.width
@@ -207,103 +205,67 @@ export class HudPanel {
     context.clearRect(0, 0, width, height)
 
     if (this.center) {
-      const glow = context.createRadialGradient(
-        width * 0.5,
-        height * 0.5,
-        18,
-        width * 0.5,
-        height * 0.5,
-        width * 0.48
-      )
-      glow.addColorStop(0, 'rgba(2, 12, 18, .02)')
-      glow.addColorStop(0.62, 'rgba(2, 10, 17, .08)')
-      glow.addColorStop(1, 'rgba(4, 6, 14, .18)')
+      // A ring instrument, not a screen: brackets and a faint vignette only —
+      // no filled rectangle standing in for a background.
+      const glow = context.createRadialGradient(width * 0.5, height * 0.5, width * 0.32, width * 0.5, height * 0.5, width * 0.5)
+      glow.addColorStop(0, 'rgba(18, 9, 3, 0)')
+      glow.addColorStop(1, THEME.ink)
       context.fillStyle = glow
       context.fillRect(0, 0, width, height)
 
-      const corner        = 52
-      context.strokeStyle = this.accent
-      context.globalAlpha = 0.25
-      context.lineWidth   = 2
-      context.beginPath()
-      context.moveTo(12, corner)
-      context.lineTo(12, 12)
-      context.lineTo(corner, 12)
-      context.moveTo(width - corner, 12)
-      context.lineTo(width - 12, 12)
-      context.lineTo(width - 12, corner)
-      context.moveTo(12, height - corner)
-      context.lineTo(12, height - 12)
-      context.lineTo(corner, height - 12)
-      context.moveTo(width - corner, height - 12)
-      context.lineTo(width - 12, height - 12)
-      context.lineTo(width - 12, height - corner)
-      context.stroke()
-      context.globalAlpha = 1
+      drawCornerBrackets(context, { x: 0, y: 0, width, height }, this.accent, { len: 44, inset: 14, width: 2, alpha: 0.55 })
       return
     }
 
-    const background = context.createLinearGradient(0, 0, width, height)
-    background.addColorStop(0, 'rgba(2, 14, 20, .58)')
-    background.addColorStop(0.56, 'rgba(2, 8, 16, .48)')
-    background.addColorStop(1, 'rgba(8, 3, 18, .52)')
-    context.fillStyle = background
     if (this.trace) {
-      context.strokeStyle = this.accent
-      context.shadowColor = this.accent
+      if (!this.glassFill) {
+        const fill = context.createLinearGradient(0, 0, width, height)
+        fill.addColorStop(0, 'rgba(24, 13, 4, .58)')
+        fill.addColorStop(0.56, 'rgba(16, 8, 3, .46)')
+        fill.addColorStop(1, 'rgba(10, 5, 2, .52)')
+        this.glassFill = fill
+      }
+
+      const drawContour = (inset: number) => tracedLine(context, this.trace!.contour, width, height, inset, true)
 
       if (this.trace.variant === 'screen') {
-        tracedPath(context, this.trace, width, height)
-        context.globalAlpha = 0.72
+        drawContour(1)
+        context.fillStyle = this.glassFill
         context.fill()
-        context.lineWidth  = 2
-        context.shadowBlur = 3
-        context.stroke()
-        tracedPath(context, this.trace, width, height, 0.965)
-        context.globalAlpha = 0.2
-        context.lineWidth   = 1.3
-        context.shadowBlur  = 0
-        context.stroke()
+        glowStroke(context, () => drawContour(1), this.accent, 2, 0.68)
+        glowStroke(context, ctx => tracedLine(ctx, this.trace!.contour, width, height, 0.965, true), this.accent, 1, 0.22)
       }
-      else {
-        context.globalAlpha = 0.64
-        context.lineWidth   = 2
-        context.shadowBlur  = 3
-        for (const stroke of this.trace.frame ?? []) {
-          tracedLine(context, stroke, width, height)
-          context.stroke()
-        }
-        context.shadowBlur = 0
-      }
+      else
+        for (const stroke of this.trace.frame ?? [])
+          glowStroke(context, ctx => tracedLine(ctx, stroke, width, height), this.accent, 1.8, 0.6)
 
-      const content = this.trace.content
+      const content     = this.trace.content
+      const contentRect = {
+        x:      content.x * width,
+        y:      content.y * height,
+        width:  content.width * width,
+        height: content.height * height,
+      }
+      context.save()
+      context.drawImage(this.grid(), contentRect.x, contentRect.y, contentRect.width, contentRect.height,
+                        contentRect.x, contentRect.y, contentRect.width, contentRect.height)
+      context.restore()
+
+      drawCornerBrackets(context, contentRect, this.accent, { len: 16, inset: 2 })
+      if (this.title)
+        drawHeaderRule(context, contentRect, this.title, this.accent)
+
       context.save()
       context.translate(content.x * width, content.y * height)
       context.scale(content.width, content.height)
       this.contentTransformActive = true
     }
     else {
-      context.fillRect(0, 0, width, height)
-      context.strokeStyle = this.accent
-      context.globalAlpha = 0.62
-      context.lineWidth   = 2
-      context.strokeRect(10, 10, width - 20, height - 20)
-      context.globalAlpha = 0.23
-      context.strokeRect(20, 20, width - 40, height - 40)
+      drawCornerBrackets(context, { x: 0, y: 0, width, height }, this.accent)
+      context.drawImage(this.grid(), 0, 0)
+      if (this.title)
+        drawHeaderRule(context, { x: 0, y: 0, width, height }, this.title, this.accent)
     }
-
-    context.globalAlpha  = 0.95
-    context.fillStyle    = this.accent
-    context.font         = `600 18px ${FONT}`
-    context.textBaseline = 'middle'
-    context.textAlign    = 'left'
-    context.shadowColor  = this.accent
-    context.shadowBlur   = 5
-    context.fillText(this.title.toUpperCase(), 34, 36)
-    context.shadowBlur  = 0
-    context.globalAlpha = 0.25
-    context.fillRect(34, 55, Math.min(width * 0.36, 210), 2)
-    context.globalAlpha = 1
   }
 
   finish (_elapsed: number): void {
@@ -320,7 +282,7 @@ export class HudPanel {
     y,
     value,
     size = 18,
-    color = '#d8ffff',
+    color = THEME.pale,
     alpha = 0.92,
     align = 'left',
     weight = 500,
@@ -331,13 +293,11 @@ export class HudPanel {
     context.textBaseline = 'middle'
     context.globalAlpha  = alpha
     context.fillStyle    = color
-    context.shadowColor  = color
-    context.shadowBlur   = Math.max(2, size * 0.16)
     context.fillText(value, x, y)
-    context.shadowBlur  = 0
     context.globalAlpha = 1
   }
 
+  /** A tick-marked instrument bar — see `chrome.ts#drawTickBar`. */
   bar ({
     x,
     y,
@@ -346,41 +306,13 @@ export class HudPanel {
     value,
     label,
     color = this.accent,
-    color2 = '#a58bff',
   }: BarOptions): void {
-    const { context } = this
-    const fillValue   = THREE.MathUtils.clamp(value, 0, 1)
-
-    if (label) {
-      context.font         = `500 15px ${FONT}`
-      context.textAlign    = 'left'
-      context.textBaseline = 'middle'
-      context.fillStyle    = 'rgba(215, 248, 255, .68)'
-      context.fillText(label.toUpperCase(), x, y - 12)
-      context.textAlign = 'right'
-      context.fillStyle = color
-      context.fillText(`${Math.round(fillValue * 100)}%`, x + width, y - 12)
-    }
-
-    context.fillStyle = 'rgba(126, 168, 190, .14)'
-    context.fillRect(x, y, width, height)
-
-    const fill = context.createLinearGradient(x, 0, x + width, 0)
-    fill.addColorStop(0, color)
-    fill.addColorStop(1, color2)
-    context.fillStyle   = fill
-    context.shadowColor = color
-    context.shadowBlur  = 5
-    context.fillRect(x, y, width * fillValue, height)
-    context.shadowBlur  = 0
-    context.strokeStyle = 'rgba(210, 250, 255, .20)'
-    context.strokeRect(x, y, width, height)
-
-    for (let i = 1; i < 10; i++) {
-      const px          = x + width * i / 10
-      context.fillStyle = 'rgba(1, 5, 10, .35)'
-      context.fillRect(px, y, 2, height)
-    }
+    const fillValue = THREE.MathUtils.clamp(value, 0, 1)
+    drawTickBar(this.context, { x, y, width, height }, fillValue, {
+      color,
+      label,
+      valueLabel: label ? `${Math.round(fillValue * 100)}%` : undefined,
+    })
   }
 
   button ({
@@ -399,36 +331,15 @@ export class HudPanel {
   }: ButtonOptions): void {
     const { context } = this
     const hovered     = this.hovered === id
+    const rect        = { x, y, width, height }
 
-    roundedRect(context, x, y, width, height, 7)
-    context.fillStyle = disabled
-      ? 'rgba(8, 18, 28, .38)'
-      : active
-        ? `${color}33`
-        : hovered
-          ? 'rgba(180, 225, 255, .15)'
-          : 'rgba(8, 18, 28, .74)'
-    context.fill()
-    context.lineWidth   = hovered ? 3 : 2
-    context.strokeStyle = disabled
-      ? 'rgba(150, 220, 235, .12)'
-      : active
-        ? color
-        : hovered
-          ? '#d9ffff'
-          : 'rgba(150, 220, 235, .30)'
-    context.stroke()
-    if (active || hovered) {
-      context.shadowColor = color
-      context.shadowBlur  = 7
-      context.stroke()
-      context.shadowBlur = 0
-    }
-    context.font         = `${active ? 700 : 500} ${size}px ${FONT}`
-    context.textAlign    = 'center'
-    context.textBaseline = 'middle'
-    context.fillStyle    = disabled ? 'rgba(220, 247, 250, .28)' : active ? color : 'rgba(220, 247, 250, .78)'
-    context.fillText(label.toUpperCase(), x + width * 0.5, y + height * 0.5 + 1)
+    drawPlate(context, rect, { accent: color, active, hovered, disabled, chamfer: 0.16 })
+    drawPlateLabel(context, label, x + width * 0.5, y + height * 0.5 + 1, {
+      size,
+      weight: active ? 700 : 500,
+      color:  disabled ? THEME.dimmer : active ? color : THEME.pale,
+      alpha:  disabled ? 0.4 : active ? 1 : 0.85,
+    })
 
     if (!disabled)
       this.region({ id, kind, x, y, width, height, action })
@@ -470,4 +381,5 @@ export class HudPanel {
   }
 }
 
-// perf: seven small canvas textures redraw at 12 hz; no allocations in the scene render path.
+// perf: seven small canvas textures redraw at 12 hz; the glass gradient and grid
+// texture are built once per panel and reused every subsequent redraw.
