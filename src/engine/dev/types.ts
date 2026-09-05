@@ -42,6 +42,9 @@ export type DevDeps = {
 
   /** Draw one frame on demand, bypassing the skip flag (step, screenshots). */
   renderOnce (frame?: Partial<FrameContext>): void;
+
+  /** Scene-owned network state, sampled only by the dynamically loaded harness. */
+  networkDiagnostics?: () => NetworkFrameDiagnostics | null;
 }
 
 
@@ -99,10 +102,36 @@ export type TeleportArgs = {
 
 /** Rolling per-frame record kept by the trace buffer. */
 export type FrameRecord = {
-  ms:        number;
-  speed:     number;
-  grounded:  boolean;
-  drawCalls: number;
+  ms:                 number;
+  speed:              number;
+  grounded:           boolean;
+  drawCalls:          number;
+  localPose:          PoseRecord | null;
+  simulationPose:     PoseRecord | null;
+  cameraPose:         PoseRecord;
+  remotePose:         PoseRecord | null;
+  clockAlpha:         number;
+  serverRenderTimeMs: number | null;
+  interpolation:      { bufferDepth: number; mode: string } | null;
+  correctionM:        number;
+  positionJerk:       number;
+  angularJerk:        number;
+  discontinuity:      boolean;
+  hitch:              string[];
+}
+
+export type PoseRecord = {
+  position:   [number, number, number];
+  quaternion: [number, number, number, number];
+}
+
+export type NetworkFrameDiagnostics = {
+  serverRenderTimeMs: number;
+  remotePose:         PoseRecord | null;
+  bufferDepth:        number;
+  interpolationMode:  string;
+  correctionM:        number;
+  respawnIndex:       number | null;
 }
 
 export type CapturedLog = {

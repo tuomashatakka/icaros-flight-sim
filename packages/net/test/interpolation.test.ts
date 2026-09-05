@@ -10,6 +10,7 @@
 import * as THREE from 'three'
 import { describe, expect, it } from 'vitest'
 import { NetBodyInterpolator } from '../src/interpolation'
+import { NetClock } from '../src/clock'
 
 
 const IDENTITY = [ 0, 0, 0, 1 ]
@@ -156,5 +157,90 @@ describe('NetBodyInterpolator', () => {
 
     expect(interp.newestTimeMs()).toBe(1_000 + 39 * 100)
     expect(sample(interp, 1_000 + 38 * 100 + 50).position.x).toBeCloseTo(385)
+  })
+
+  it('preserves velocity through irregular snapshot cadence and packet gaps', () => {
+    const interp = new NetBodyInterpolator()
+    for (const time of [ 0, 31, 69, 101, 168, 201, 302 ])
+      interp.commit(time, at(time * 0.02))
+
+    for (const time of [ 50, 135, 250, 400 ])
+      expect(sample(interp, time).position.x).toBeCloseTo(time * 0.02, 8)
+    expect(interp.diagnostics().mode).toBe('extrapolate')
+  })
+
+  it('reports extrapolation entry, clamp, and exit when a new packet arrives', () => {
+    const interp = new NetBodyInterpolator()
+    interp.commit(0, at(0))
+    interp.commit(100, at(10))
+    sample(interp, 101)
+    expect(interp.diagnostics().mode).toBe('extrapolate')
+    sample(interp, 351)
+    expect(interp.diagnostics().mode).toBe('clamped')
+    interp.commit(400, at(40))
+    sample(interp, 350)
+    expect(interp.diagnostics().mode).toBe('interpolate')
+  })
+
+  it('keeps teleport boundaries atomic after duplicates and delayed packets', () => {
+    const interp = new NetBodyInterpolator()
+    interp.commit(0, at(0))
+    interp.commit(100, at(10))
+    interp.teleport(200, at(500))
+    interp.commit(200, at(-1))
+    interp.commit(150, at(-2))
+    expect(sample(interp, 150).position.x).toBe(500)
+    expect(interp.diagnostics().bufferDepth).toBe(1)
+  })
+})
+
+describe('client render cadence', () => {
+
+  /** A deterministic 20 m/s stream with jitter and every fifth packet lost. */
+  function trajectory (renderHz: number): number[] {
+    const interp                                              = new NetBodyInterpolator()
+    const jitter                                              = [ 0, 5, -4, 8, -2, 3 ]
+    const packets: Array<{ arrival: number; server: number }> = []
+    for (let i = 0; i < 90; i++)
+      if (i % 5 !== 4)
+        packets.push({ arrival: i * 1000 / 30 + jitter[i % jitter.length], server: i * 1000 / 30 })
+
+    const positions: number[] = []
+    let packet = 0
+    for (let local = 0; local <= 2_500; local += 1000 / renderHz) {
+      while (packet < packets.length && packets[packet].arrival <= local) {
+        const { server } = packets[packet++]
+        interp.commit(server, at(server * 0.02))
+      }
+      if (interp.hasPose())
+        positions.push(sample(interp, Math.max(0, local - 100)).position.x)
+    }
+    return positions
+  }
+
+  it.each([ 60, 90, 120 ])('keeps a continuous trajectory at %i hz', renderHz => {
+    const first = trajectory(renderHz)
+    const again = trajectory(renderHz)
+    expect(again).toEqual(first)
+
+    const expectedStep = 20 / renderHz
+    const residuals    = first.slice(1).map((position, i) => Math.abs(position - first[i] - expectedStep))
+    expect(Math.max(...residuals.slice(8))).toBeLessThan(0.35)
+  })
+
+  it('does not turn clock slew into a transform discontinuity', () => {
+    const clock = new NetClock()
+    for (let i = 0; i < 5; i++)
+      clock.accept(i * 100, i * 100 + 20, i * 100 + 20)
+    clock.now(500)
+    clock.accept(500, 570, 520)
+
+    let previous = clock.now(520)
+    for (let local = 530; local <= 1_000; local += 10) {
+      const current = clock.now(local)
+      expect(current - previous).toBeGreaterThanOrEqual(10)
+      expect(current - previous).toBeLessThanOrEqual(10.5)
+      previous = current
+    }
   })
 })

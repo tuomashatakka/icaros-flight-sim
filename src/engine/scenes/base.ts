@@ -26,6 +26,7 @@ import { environmentModules, resolveEnvironment } from './environment'
 import type { EnvironmentOverrides } from './environment'
 import { publishModule } from '../modules/publish'
 import type { PublishHandle } from '../modules/publish'
+import type { NetworkFrameDiagnostics } from '../dev/types'
 import { attachBridge } from '../bridge'
 
 
@@ -151,7 +152,8 @@ export type BaseSceneConfig<TState extends object> = {
     rig: CameraRig,
     controls: Controls
   ) => void;
-  onDispose?: () => void;
+  onDispose?:          () => void;
+  networkDiagnostics?: () => NetworkFrameDiagnostics | null;
 }
 
 export async function mountBaseScene<TState extends object> (
@@ -207,12 +209,12 @@ export async function mountBaseScene<TState extends object> (
   const rng  = createSeededRng(seed)
   const rig  = createCameraRig(rng, config.cameraFar)
 
-  let skipRender                                                          = false
-  let devFrame: ((position: THREE.Vector3, delta: number) => void) | null = null
-  let hullAimPitch                                                        = 0
-  let lastViewSeq                                                         = controls.viewSeq
-  let lastViewBlendSeq                                                    = controls.viewBlendSeq
-  let lastView                                                            = rig.view()
+  let skipRender                                                                                        = false
+  let devFrame: ((position: THREE.Vector3, quaternion: THREE.Quaternion, delta: number) => void) | null = null
+  let hullAimPitch                                                                                      = 0
+  let lastViewSeq                                                                                       = controls.viewSeq
+  let lastViewBlendSeq                                                                                  = controls.viewBlendSeq
+  let lastView                                                                                          = rig.view()
 
   useCameraView.getState().setView(lastView)
 
@@ -371,7 +373,7 @@ export async function mountBaseScene<TState extends object> (
       hud.current?.update(_view)
 
       onFrame?.(frame, _shipPosition, _shipQuaternion, rig, controls)
-      devFrame?.(_shipPosition, frame.delta)
+      devFrame?.(_shipPosition, _shipQuaternion, frame.delta)
     }
     else
       onFrame?.(frame, _shipPosition, _shipQuaternion, rig, controls)
@@ -412,6 +414,7 @@ export async function mountBaseScene<TState extends object> (
         elapsed: partial?.elapsed ?? clock.elapsed(),
         frame:   partial?.frame ?? 0,
       }),
+      networkDiagnostics: config.networkDiagnostics,
     })
     devFrame  = harness.onFrame
     detachDev = harness.detach
