@@ -447,6 +447,14 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
     if (hidden || !lastFrame)
       return null
 
+    // `canvasPoint` maps the pointer through the overlay's raster, and the
+    // raster is reconciled on repaint frames — so between a window resize and
+    // the next repaint (up to 66 ms on the lowest quality tier) a tap would be
+    // scaled by the OLD aspect and land somewhere else. Reconciling here costs
+    // one more `getBoundingClientRect` on a path that already takes one, and
+    // the safe-area probe behind it still only runs when the size really moved.
+    syncSurface(lastFrame)
+
     const point      = canvasPoint(clientX, clientY)
     const overlayHit = overlay.hitTest(point.x, point.y)
     if (overlayHit)
