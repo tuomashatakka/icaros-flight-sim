@@ -209,6 +209,8 @@ export async function mountBaseScene<TState extends object> (
 
   let skipRender                                                          = false
   let devFrame: ((position: THREE.Vector3, delta: number) => void) | null = null
+  let devBeginRender: (() => void) | null                                 = null
+  let devEndRender: (() => void) | null                                   = null
   let hullAimPitch                                                        = 0
   let lastViewSeq                                                         = controls.viewSeq
   let lastViewBlendSeq                                                    = controls.viewBlendSeq
@@ -376,10 +378,12 @@ export async function mountBaseScene<TState extends object> (
     else
       onFrame?.(frame, _shipPosition, _shipQuaternion, rig, controls)
 
+    devBeginRender?.()
     if (composer)
       composer.render(frame.delta)
     else
       app.ctx.renderer.render(app.ctx.scene, rig.camera)
+    devEndRender?.()
   }
 
   const detachControls = attachControls(canvas, controls)
@@ -414,6 +418,8 @@ export async function mountBaseScene<TState extends object> (
       }),
     })
     devFrame  = harness.onFrame
+    devBeginRender = harness.beginRender
+    devEndRender = harness.endRender
     detachDev = harness.detach
   }
 

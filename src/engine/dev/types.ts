@@ -10,6 +10,7 @@ import type { Telemetry } from '../telemetry'
 import type { VehicleHandle } from '../vehicle'
 import type { SunHandle } from '../modules/sun'
 import type { PublishHandle } from '../modules/publish'
+import type { PerformanceCapture } from '../../components/webgl-report'
 
 
 /**
@@ -131,6 +132,7 @@ export type DevApi = {
   setStatus (status: RaceState['status']): string;
   overlay (flags: OverlayFlags): OverlayFlags;
   trace (): Record<string, unknown>;
+  capturePerformance (options?: { seconds?: number; longFrameMs?: number }): Promise<PerformanceCapture>;
 
   /** Raw handles — the escape hatch for `dev-cli eval`. Not JSON-safe. */
   raw: DevDeps;

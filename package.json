@@ -16,6 +16,7 @@
     "dev:probe": "node scripts/dev-cli.mjs probe",
     "dev:shot": "node scripts/dev-cli.mjs shot",
     "dev:console": "node scripts/dev-cli.mjs console",
+    "dev:benchmark": "node scripts/dev-cli.mjs benchmark",
     "dev:eval": "node scripts/dev-cli.mjs eval",
     "dev:server": "bun --watch packages/server/src/index.ts",
     "dev:all": "node scripts/dev-all.mjs",

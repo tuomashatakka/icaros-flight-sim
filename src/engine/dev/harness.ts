@@ -10,6 +10,7 @@ import { createOverlays } from './overlay'
 import { readDevParams } from './params'
 import { installTrace, readTrace, recordFrame, watchContextLoss } from './trace'
 import type { DevApi, DevDeps, OverlayFlags, TeleportArgs } from './types'
+import { createPerformanceCapture } from '../../components/webgl-report'
 
 
 /**
@@ -49,6 +50,8 @@ const vec3  = (v: VType): [number, number, number] =>
 export type DevHarness = {
   api: DevApi;
   onFrame (shipPosition: THREE.Vector3, frameDelta: number): void;
+  beginRender (): void;
+  endRender (): void;
   detach (): void;
 }
 
@@ -113,7 +116,8 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
   if (canvas)
     detachers.push(watchContextLoss(canvas))
 
-  let ready = false
+  let ready                                                                  = false
+  let performanceCapture: ReturnType<typeof createPerformanceCapture> | null = null
 
   /** A synthetic frame for on-demand renders (step, screenshots). */
   const syntheticFrame = () => ({ delta: STEP, elapsed: clock.elapsed(), frame: 0 })
@@ -359,6 +363,20 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
         ship:   shipPose(),
       }
     },
+
+    async capturePerformance (options = {}) {
+      if (performanceCapture)
+        throw new Error('[dev] a performance capture is already running')
+
+      const seconds = Math.max(1, Math.min(300, options.seconds ?? 10))
+      performanceCapture = createPerformanceCapture(app)
+      performanceCapture.setLongFrameThreshold(options.longFrameMs ?? 16.67)
+      await new Promise(resolve => window.setTimeout(resolve, seconds * 1000))
+
+      const capture = performanceCapture.finish(seconds)
+      performanceCapture = null
+      return capture
+    },
   }
 
   // --- boot-time URL overrides -------------------------------------------
@@ -415,6 +433,15 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
         grounded:  telemetry.grounded,
         drawCalls: app.ctx.renderer.info.render.calls,
       })
+      performanceCapture?.frame(frameDelta * 1000)
+    },
+
+    beginRender () {
+      performanceCapture?.beginGpu()
+    },
+
+    endRender () {
+      performanceCapture?.endGpu()
     },
 
     detach () {
