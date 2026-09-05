@@ -1,5 +1,5 @@
 import * as THREE from 'three'
-import { HUD_THEME } from './tokens'
+import { HUD_HOLO, HUD_THEME } from './tokens'
 
 
 export type HoloUniforms = {
@@ -83,13 +83,9 @@ export function createHoloMaterial (options: HoloMaterialOptions = {}): HoloMate
   }) as HoloMaterial
 }
 
-export const HOLO = {
-  cyan:    '#79f7ff',
-  magenta: '#ff63b4',
-  amber:   '#ffb347',
-  violet:  '#be63ff',
-  white:   '#dff6ff',
-} as const
+const HOLO = HUD_HOLO
+
+export { HOLO }
 
 export function tickHolo (materials: Iterable<HoloMaterial>, elapsed: number): void {
   for (const material of materials)

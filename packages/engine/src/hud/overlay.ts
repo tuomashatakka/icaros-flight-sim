@@ -641,7 +641,7 @@ export function drawHudOverlay ({
 
     context.fillStyle = 'rgba(0, 0, 0, .78)'
     context.fillRect(0, 0, width, size * 1.8)
-    context.fillStyle = '#7dffe0'
+    context.fillStyle = THEME.green
     context.fillText(touchDebug, 12, size * 0.4)
     context.restore()
   }

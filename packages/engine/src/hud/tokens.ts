@@ -103,3 +103,16 @@ export const HUD_TUNING_SPECS: readonly HudTuningSpec[] = [
   { key: 'uprightStrength', label: 'upright', min: 1, max: 20, step: 0.5 },
   { key: 'maxBank', label: 'bank', min: 0, max: 1.2, step: 0.05 },
 ]
+
+/**
+ * Holographic material tints for scenery holograms (beacons, objective
+ * markers, the visor glass). Kept apart from HUD_THEME because they are lit
+ * by the shader, not painted, and read at a different exposure.
+ */
+export const HUD_HOLO = {
+  cyan:    '#79f7ff',
+  magenta: '#ff63b4',
+  amber:   '#ffb347',
+  violet:  '#be63ff',
+  white:   '#dff6ff',
+} as const
