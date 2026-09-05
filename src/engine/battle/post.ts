@@ -43,6 +43,7 @@ import type { EffectContext, GradePass } from 'threejs-scene/modules/post'
 import { createCinematicLUT, createGradePass } from 'threejs-scene/modules/post'
 import { createAnamorphic, createChromaticAberration, createLUT, createRadialBlur } from 'threejs-scene/modules/post/webgl'
 import type { ScenePost } from '../scenes/base'
+import { reducedMotion } from '../lifecycle'
 
 
 export type PostQuality = 'high' | 'low'
@@ -152,7 +153,7 @@ export function createBattlePost (quality: PostQuality = resolveQuality()): Batt
           // Nothing below 60% of top speed streaks — otherwise the arena is
           // permanently smeared just from crossing the deck.
           const ramp                   = Math.max(0, (speed - 0.6) / 0.4)
-          radial.enabled               = level > 0 && ramp > 0.01
+          radial.enabled               = level > 0 && !reducedMotion() && ramp > 0.01
           radial.uniforms.uDecay.value = 0.25 + ramp * 0.55
         }
 
@@ -164,7 +165,7 @@ export function createBattlePost (quality: PostQuality = resolveQuality()): Batt
 
         if (chromatic) {
           chromatic.enabled                  = level > 0
-          chromatic.uniforms.uStrength.value = 0.4 + flash * 3.4
+          chromatic.uniforms.uStrength.value = reducedMotion() ? 0 : 0.4 + flash * 3.4
         }
       },
     },
