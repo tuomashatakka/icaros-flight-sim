@@ -6,11 +6,48 @@ import { createHudPanelMesh, createHudPanels, disposeHudPanelMesh, drawHudPanels
 import { HUD_AXIS_GATE, hudSliderValue, shapeHudAxis } from './interaction'
 import { drawHudOverlay, isHudBlockingOverlay } from './overlay'
 import { HudPanel } from './panel'
+import { createTouchGestures } from './pointers'
+import { createHudReveal } from './transition'
 import { HUD_OVERLAY_PERIOD, HUD_PANEL_PERIOD, HUD_REFERENCE_FOV } from './tokens'
+import { NO_INSETS, touchLayout } from './touch-layout'
+import type { SafeAreaInsets } from './touch-layout'
 import type { HudActionId, HudData, HudFrame, HudPanelKey, HudRegion, HudSource } from './types'
 
 
 const _ndc = new THREE.Vector2()
+
+/**
+ * The device's safe-area insets, in CSS pixels.
+ *
+ * Nothing in the app read these before, and `src/app/layout.tsx` had no
+ * `viewport-fit=cover`, so on a phone the bottom row of controls sat under the
+ * home indicator and the top under the URL bar. Measured off a throwaway
+ * element because `env()` is only resolvable by the style engine.
+ */
+function readSafeAreaInsets (): SafeAreaInsets {
+  if (typeof document === 'undefined')
+    return NO_INSETS
+
+  const probe         = document.createElement('div')
+  probe.style.cssText = 'position:fixed;visibility:hidden;pointer-events:none;' +
+    'top:env(safe-area-inset-top,0px);right:env(safe-area-inset-right,0px);' +
+    'bottom:env(safe-area-inset-bottom,0px);left:env(safe-area-inset-left,0px)'
+  document.body.appendChild(probe)
+
+  const style = getComputedStyle(probe)
+  const read  = (value: string) => {
+    const parsed = Number.parseFloat(value)
+    return Number.isFinite(parsed) ? parsed : 0
+  }
+  const result: SafeAreaInsets = {
+    top:    read(style.top),
+    right:  read(style.right),
+    bottom: read(style.bottom),
+    left:   read(style.left),
+  }
+  probe.remove()
+  return result
+}
 
 type SpatialHudOptions = {
   canvas:   HTMLCanvasElement;
@@ -26,11 +63,33 @@ export type SpatialHud = {
 
 type ActivePointer = {
   region: HudRegion;
+
+  /**
+   * Where the finger landed. For a stick this is also its ORIGIN: the pad
+   * floats to the press point, so landing near the gate does not peg the axis
+   * before the thumb has moved.
+   */
   startX: number;
   startY: number;
   lastX:  number;
   lastY:  number;
 }
+
+/**
+ * Overlay canvas pixel budget.
+ *
+ * Sized as an AREA rather than a fixed height so the canvas can match the
+ * viewport's aspect exactly. The old `max(420, 720 * aspect) x 720` floored the
+ * width, so a 0.46-aspect phone got a 0.58-aspect canvas stretched over it and
+ * every control came out 21 % too wide.
+ */
+const OVERLAY_PIXELS = 1280 * 720
+
+/** Look-around deflection for a dragged finger, CSS px. */
+const TOUCH_PAN_RADIUS = 0.22
+
+/** Pinch travel for a full chase-to-cockpit sweep, as a fraction of the short edge. */
+const PINCH_RANGE = 0.42
 
 /**
  * The shared, canvas-owned race and battle HUD.
@@ -71,9 +130,12 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
   const activePointers = new Map<number, ActivePointer>()
   const stickX         = { move: 0, aim: 0 }
   const stickY         = { move: 0, aim: 0 }
+  const heldActions    = new Set<HudActionId>()
   const toastBorn      = new Map<string, number>()
+  const cssSize        = { width: 1, height: 1 }
+  let insets: SafeAreaInsets = NO_INSETS
 
-  const isTouch = window.matchMedia('(pointer: coarse)').matches ||
+  let isTouch = window.matchMedia('(pointer: coarse)').matches ||
     navigator.maxTouchPoints > 0 ||
     process.env.NODE_ENV !== 'production' && new URLSearchParams(window.location.search).get('touch') === '1'
   const hidden = process.env.NODE_ENV !== 'production' &&
@@ -81,6 +143,33 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
 
   if (isTouch)
     setTouchOverlayActive(true)
+
+  const shortEdge = () => Math.min(cssSize.width, cssSize.height)
+
+  const gestures = createTouchGestures({
+    panRadius:    () => shortEdge() * TOUCH_PAN_RADIUS,
+    pinchRange:   () => shortEdge() * PINCH_RANGE,
+    currentBlend: () => lastFrame?.cameraBlend ?? 0,
+  })
+
+  // The visor scans itself in on mount. `mountedAt` is the first frame's clock
+  // reading rather than 0, because a scene mounted mid-session inherits an
+  // elapsed time that is already well past the transition window.
+  const visorReveal              = createHudReveal(false)
+
+  /**
+   * Blocking layers and the touch controls each carry their own arrival.
+   *
+   * Separately, because they open and close for unrelated reasons — a finish
+   * screen must not restart the touch rail's wipe, and the rail must stay put
+   * while a popover comes and goes over it.
+   */
+  const modalReveal = createHudReveal(false)
+  const touchReveal = createHudReveal(false)
+  let mountedAt: number | null   = null
+
+  /** The data a closing modal was drawn from — see `DrawHudOverlayOptions.modalData`. */
+  let modalData: HudData | null = null
 
   let lastFrame: HudFrame | null = null
   let lastData: HudData          = source.read()
@@ -117,17 +206,25 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
     overlayMesh.scale.set(halfHeight * aspect, halfHeight, 1)
     overlayRoot.updateMatrixWorld(true)
 
-    const targetHeight = 720
-    let targetWidth = Math.max(420, Math.round(targetHeight * aspect))
-    let height      = targetHeight
-    if (targetWidth > 1600) {
-      height      = Math.round(targetHeight * 1600 / targetWidth)
-      targetWidth = 1600
-    }
+    // Match the viewport's aspect EXACTLY. The plane above is scaled to
+    // `aspect`; a canvas of any other shape is stretched non-uniformly across
+    // it, which is what made the sticks ellipses and every `canvas.width * k`
+    // size mean something different on each axis.
+    const height      = Math.round(Math.sqrt(OVERLAY_PIXELS / Math.max(aspect, 0.01)))
+    const targetWidth = Math.max(1, Math.round(height * aspect))
     if (overlay.canvas.width !== targetWidth || overlay.canvas.height !== height) {
       overlay.canvas.width  = targetWidth
       overlay.canvas.height = height
-      overlayDirty = true
+      overlayDirty          = true
+    }
+
+    const rect = canvas.getBoundingClientRect()
+    if (rect.width > 0 && rect.height > 0 &&
+        (cssSize.width !== rect.width || cssSize.height !== rect.height)) {
+      cssSize.width  = rect.width
+      cssSize.height = rect.height
+      insets         = readSafeAreaInsets()
+      overlayDirty   = true
     }
   }
 
@@ -167,6 +264,13 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
       controls,
       stickX,
       stickY,
+      insets,
+      cssSize,
+      held:         heldActions,
+      modalPhase:   modalReveal.value(frame.elapsed),
+      modalData,
+      modalClosing: modalReveal.closing(),
+      touchPhase:   touchReveal.value(frame.elapsed),
     })
     overlayDirty = false
   }
@@ -177,7 +281,18 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
 
     lastFrame = frame
     syncPose(frame)
-    tickHudPanelMesh(panelMesh, frame.elapsed)
+
+    if (mountedAt === null) {
+      mountedAt = frame.elapsed
+      visorReveal.set(true, frame.elapsed)
+    }
+
+    const revealPhase = visorReveal.value(frame.elapsed)
+    tickHudPanelMesh(panelMesh, frame.elapsed, revealPhase)
+    // The visor is still assembling, so it needs a frame every frame — the
+    // panel cadence would draw the wipe in four steps.
+    if (revealPhase < 1)
+      overlayDirty = true
 
     if (frame.telemetry.crashSeq !== lastCrashSeq) {
       lastCrashSeq = frame.telemetry.crashSeq
@@ -193,7 +308,26 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
       overlayDirty = true
     }
 
-    const overlayLive = activePointers.size > 0 || isTouch || isHudBlockingOverlay(lastData) ||
+    const blocking = isHudBlockingOverlay(lastData)
+    modalReveal.set(blocking, frame.elapsed)
+    if (blocking)
+      modalData = lastData
+    else if (!modalReveal.live(frame.elapsed))
+      modalData = null
+    // The touch rail waits for the visor: both arriving at once is a wall of
+    // motion, and the controls are the thing you look at last anyway.
+    touchReveal.set(isTouch && revealPhase > 0.5 && !blocking, frame.elapsed)
+
+    // A layer mid-transition needs every frame. `isHudBlockingOverlay` alone
+    // would stop redrawing the moment a modal closed and freeze its exit wipe
+    // on screen.
+    const transitioning = modalReveal.live(frame.elapsed) && modalReveal.value(frame.elapsed) < 0.999 ||
+      touchReveal.value(frame.elapsed) < 0.999 && touchReveal.live(frame.elapsed)
+    if (transitioning)
+      overlayDirty = true
+
+    const overlayLive = activePointers.size > 0 || isTouch || transitioning ||
+      modalReveal.live(frame.elapsed) ||
       frame.elapsed < crashUntil ||
       lastData.mode === 'race' && lastData.race.status === 'countdown' ||
       lastData.mode === 'battle' && lastData.battle.toasts.length > 0
@@ -257,6 +391,14 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
   }
 
   function hold (action: HudActionId | undefined, down: boolean): void {
+    if (!action)
+      return
+
+    if (down)
+      heldActions.add(action)
+    else
+      heldActions.delete(action)
+
     switch (action) {
       case 'boost':
         controls.boost = down
@@ -267,9 +409,48 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
       case 'fire-secondary':
         controls.fireSecondary = down
         break
+      case 'strafe-left':
+      case 'strafe-right':
+      case 'airbrake':
+        // Shared with the left stick's axes — composed, never assigned.
+        syncTouchAxes()
+        break
       default:
         break
     }
+  }
+
+  /**
+   * Fold the sticks and the shoulder rail into the shared control surface.
+   *
+   * Both write the same two axes: the left stick's X is lateral thrust and its
+   * Y gates throttle and brake, and the rail's buttons are the same lateral
+   * thrust and the air brake. Either one assigning directly means whichever
+   * fires last wins, and letting go of a button zeroes an axis a thumb is still
+   * holding. One place composes them, and it is the only writer.
+   *
+   * The air brake is brake WITHOUT reverse. `S` on the keyboard sets both, but
+   * that is reverse thrust: the panels deploy off `brake` alone
+   * (`vehicle-step.ts`), which is what a drag device does.
+   */
+  function syncTouchAxes (): void {
+    const railStrafe = (heldActions.has('strafe-right') ? -1 : 0) +
+      (heldActions.has('strafe-left') ? 1 : 0)
+    const stickStrafe = shapeHudAxis(stickX.move)
+    const forward     = shapeHudAxis(-stickY.move)
+
+    controls.strafe   = Math.max(-1, Math.min(1, stickStrafe + railStrafe))
+    controls.throttle = forward > HUD_AXIS_GATE
+    // Commanded thrust is the stick's own deflection past the gate, remapped so
+    // the gauge starts at the point the ship actually starts pushing.
+    controls.throttleAxis = controls.throttle
+      ? (forward - HUD_AXIS_GATE) / (1 - HUD_AXIS_GATE)
+      : 0
+
+    const stickBrake = forward < -HUD_AXIS_GATE
+    controls.reverse = stickBrake
+    controls.brake   = stickBrake || heldActions.has('airbrake')
+    overlayDirty     = true
   }
 
   function activate (region: HudRegion): void {
@@ -317,20 +498,37 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
     stickX[stick] = x
     stickY[stick] = y
 
-    const shapedX = shapeHudAxis(x)
-    const shapedY = shapeHudAxis(-y)
-
     if (stick === 'move') {
-      controls.strafe   = shapedX
-      controls.throttle = shapedY > HUD_AXIS_GATE
-      controls.brake    = shapedY < -HUD_AXIS_GATE
-      controls.reverse  = shapedY < -HUD_AXIS_GATE
+      syncTouchAxes()
+      return
     }
-    else {
-      controls.steer = shapedX
-      controls.pitch = shapedY
-    }
-    overlayDirty = true
+
+    controls.steer = shapeHudAxis(x)
+    controls.pitch = shapeHudAxis(-y)
+    overlayDirty   = true
+  }
+
+  /**
+   * Full-deflection distance for a stick, CSS pixels.
+   *
+   * Taken from the SAME layout that drew the ring, converted back to CSS. It
+   * used to be an independent `max(42, min(w, h) * 0.12)`, so on a tablet the
+   * knob pinned at 92 px inside a 112 px ring — the thumb ran out of gain
+   * before it ran out of pad.
+   */
+  function stickTravelCss (): number {
+    if (!lastData)
+      return 60
+
+    const layout = touchLayout({
+      width:     overlay.canvas.width,
+      height:    overlay.canvas.height,
+      cssWidth:  cssSize.width,
+      cssHeight: cssSize.height,
+      insets,
+      mode:      lastData.mode,
+    })
+    return Math.max(24, layout.stickTravel / Math.max(layout.pixelScale, 1e-3))
   }
 
   function applySlider (region: HudRegion, clientX: number): void {
@@ -360,10 +558,34 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
     }
   }
 
-  const onPointerDown = (event: PointerEvent) => {
-    const region = hitAt(event.clientX, event.clientY)
-    if (!region)
+  /**
+   * A touch-capable machine that had never been touched used to be decided at
+   * construction, so a laptop with a touchscreen permanently lost canvas
+   * drag-steering to a set of sticks nobody asked for. Decide on evidence.
+   */
+  const noteTouch = (event: PointerEvent) => {
+    if (isTouch || event.pointerType !== 'touch')
       return
+    isTouch = true
+    setTouchOverlayActive(true)
+    overlayDirty = true
+  }
+
+  const onPointerDown = (event: PointerEvent) => {
+    noteTouch(event)
+
+    const region = hitAt(event.clientX, event.clientY)
+    if (!region) {
+      // A finger on empty canvas is a gesture, not a miss. Mouse and pen fall
+      // through to `input.ts`, where a drag already steers.
+      if (event.pointerType === 'touch') {
+        event.preventDefault()
+        tryCapture(event)
+        gestures.down(event.pointerId, event.clientX, event.clientY)
+        applyGestures()
+      }
+      return
+    }
 
     event.preventDefault()
     event.stopImmediatePropagation()
@@ -387,8 +609,16 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
   const onPointerMove = (event: PointerEvent) => {
     const active = activePointers.get(event.pointerId)
     if (!active) {
-      if (event.pointerType !== 'touch')
-        setHover(event.clientX, event.clientY)
+      if (event.pointerType === 'touch') {
+        if (gestures.active) {
+          event.preventDefault()
+          event.stopImmediatePropagation()
+          gestures.move(event.pointerId, event.clientX, event.clientY)
+          applyGestures()
+        }
+        return
+      }
+      setHover(event.clientX, event.clientY)
       return
     }
 
@@ -398,8 +628,9 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
     active.lastY = event.clientY
 
     if (active.region.kind === 'stick' && active.region.stick) {
-      const rect   = canvas.getBoundingClientRect()
-      const radius = Math.max(42, Math.min(rect.width, rect.height) * 0.12)
+      // Origin is the PRESS point, not the pad's centre: a thumb landing near
+      // the gate used to clamp the axis before it had moved at all.
+      const radius = stickTravelCss()
       let x = (event.clientX - active.startX) / radius
       let y = (event.clientY - active.startY) / radius
       const length = Math.hypot(x, y)
@@ -413,10 +644,34 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
       applySlider(active.region, event.clientX)
   }
 
+  /** Free-pointer gestures onto the shared control surface. */
+  function applyGestures (): void {
+    const sample  = gestures.sample()
+    controls.panX = sample.panX
+    controls.panY = sample.panY
+
+    if (sample.blend !== null) {
+      controls.viewBlend = sample.blend
+      controls.viewBlendSeq++
+    }
+  }
+
   const endPointer = (event: PointerEvent, cancelled = false) => {
     const active = activePointers.get(event.pointerId)
-    if (!active)
+    if (!active) {
+      if (gestures.active) {
+        gestures.up(event.pointerId)
+        if (!gestures.active) {
+          // Touch fires no `pointerleave`, so without this the camera stays
+          // yawed at whatever the last finger left it at.
+          controls.panX = 0
+          controls.panY = 0
+        }
+        else
+          applyGestures()
+      }
       return
+    }
 
     event.preventDefault()
     event.stopImmediatePropagation()
@@ -474,13 +729,18 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
       controls.boost         = false
       controls.fire          = false
       controls.fireSecondary = false
+      heldActions.clear()
+      gestures.clear()
       if (isTouch) {
-        controls.steer    = 0
-        controls.strafe   = 0
-        controls.pitch    = 0
-        controls.throttle = false
-        controls.brake    = false
-        controls.reverse  = false
+        controls.steer        = 0
+        controls.strafe       = 0
+        controls.pitch        = 0
+        controls.throttle     = false
+        controls.throttleAxis = 0
+        controls.brake        = false
+        controls.reverse      = false
+        controls.panX         = 0
+        controls.panY         = 0
       }
       for (const panel of Object.values(panels))
         panel.dispose()

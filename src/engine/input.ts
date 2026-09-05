@@ -344,6 +344,14 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
   // two never contend: while a drag is active the pan is left frozen at
   // whatever it was, so looking around cannot fight a turn mid-corner.
   const onPointerMove = (event: PointerEvent) => {
+    // The overlay owns every touch pointer when its controls are up, including
+    // the ones that miss a control. Without this the drop in `onPointerDown`
+    // leaves `pointerId` null and a finger dragged on empty canvas falls into
+    // the HOVER branch below — which then never recentres, because touch fires
+    // no `pointerleave`, so the camera stays yawed after the finger lifts.
+    if (touchOverlay && event.pointerType === 'touch')
+      return
+
     if (pointerId === null) {
       const rect = target.getBoundingClientRect()
       if (rect.width > 0 && rect.height > 0) {

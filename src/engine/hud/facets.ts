@@ -138,11 +138,24 @@ function createSurfaceGeometry (corners: HudVisorCorners): THREE.BufferGeometry 
   return geometry
 }
 
-export function tickHudPanelMesh (mesh: THREE.Mesh, elapsed: number): void {
+/**
+ * @param reveal - 0..1 arrival phase. The facets are staggered across it, so
+ * the visor assembles panel by panel instead of appearing as one sheet — which
+ * is both better looking and how you can tell at a glance that a panel is late.
+ */
+export function tickHudPanelMesh (mesh: THREE.Mesh, elapsed: number, reveal = 1): void {
   const materials = mesh.userData.hudMaterials as HudFacetMaterial[]
   const glass     = mesh.userData.glassMaterial as HudGlassMaterial
-  for (const material of materials)
+  const stagger   = 0.45 / Math.max(1, materials.length - 1)
+
+  materials.forEach((material, index) => {
     material.uniforms.uTime.value = elapsed
+
+    // Compress each panel's own ramp into the window left after its delay, so
+    // every one of them still finishes exactly when the reveal does.
+    const delay                     = index * stagger
+    material.uniforms.uReveal.value = Math.max(0, Math.min(1, (reveal - delay) / (1 - delay)))
+  })
   glass.uniforms.uTime.value = elapsed
 }
 
