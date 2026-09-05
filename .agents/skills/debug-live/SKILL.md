@@ -18,17 +18,30 @@ Cold start (spawning a server) is ~30 s; against a warm server each command is
 
 ```bash
 bun run dev:probe [--level flats]
-bun run dev:scenario <name|path.json> [--json] [--out FILE] [--level L]
 bun run dev:shot <out.png> [--step N] [--overlay a,b] [--size 1280x720] [--nohud]
+bun run dev:shot <out.png> --level crash-lab [--query lane=N]   # the crash lab
+bun run lab [case] [--dump] [--twice]                           # headless dummies
 bun run dev:console [--seconds 5]
 bun run dev:eval -e '<javascript>'
 ```
 
-Common flags: `--level` (flats | neon-canyon | orbital-ring | procedural),
-`--seed`, `--overlay`, `--nohud`, `--size`, `--headed`.
+Determinism checks are **headless** — no browser, no page, tens of milliseconds:
+
+```bash
+bun run dev:scenario <name|path.json> [--json] [--runs N]   # race
+bun run dev:replay   <name|path.json> [--json] [--runs N]   # battle
+```
+
+Common flags for the browser commands: `--level` (flats | neon-canyon |
+orbital-ring | procedural | battle | crash-lab), `--seed`, `--overlay`,
+`--nohud`, `--size`, `--headed`.
 
 Handling baselines: `bun run dev:scenario turn-response` isolates full steering;
 `bun run dev:scenario strafe-response` isolates full lateral input.
+
+**Every mode is network-only**, race included, so the CLI starts a game server
+if one is not already listening (with `DB_DRIVER=pglite`, so a probe never
+touches a real database).
 
 ## Pick the right tool
 
@@ -38,22 +51,30 @@ Handling baselines: `bun run dev:scenario turn-response` isolates full steering;
 | Does the ship handle correctly through X? | `dev:scenario` |
 | Did my change break handling? | `dev:scenario … --out` twice, diff |
 | Where are the colliders really? | `dev:shot --overlay colliders` |
-| Is the suspension reaching the ground? | `dev:shot --overlay wheels` |
+| Are the hover rays reaching the ground? | `dev:shot --overlay rays` |
+| Which nozzle is firing, and how hard? | `dev:shot --overlay forces` |
+| Why is the ship drifting? | `dev:shot --overlay netForce` (white = sum force, red = net torque) |
 | Did the ship leave the shadow frustum? | `dev:shot --overlay frustum` |
 | Any errors? Is it slow? | `dev:console` |
 | One specific value | `dev:eval -e '…'` |
 
 ## Scenarios
 
-A scenario is an input timeline in `public/scenarios/`. It runs with rendering
-disabled — ~12 sim seconds in ~40 ms — and the sim is deterministic, so **two
-runs produce byte-identical traces**. That is the whole point: a handling change
-is a diff, not an opinion.
+A scenario is an input timeline, replayed against a fresh sim with no browser
+and no wall clock — ~12 sim seconds in tens of milliseconds. The sim is
+deterministic, so **two runs produce byte-identical traces**, and the CLI runs
+it twice by default and compares hashes. That is the whole point: a handling
+change is a diff, not an opinion.
+
+```
+packages/race/scenarios/     straight-line, hard-corner, turn-response, …
+packages/battle/scenarios/   point-blank, straight-fight
+```
 
 ```jsonc
 {
   "name": "hard-corner",
-  "level": "neon-canyon",
+  "track": "neon-canyon",
   "duration": 16,          // sim seconds
   "sampleEvery": 0.5,      // sim seconds per trace row
   "start": { "position": [0, 2, 0], "yaw": 0, "linvel": [0, 0, -20] },  // optional
@@ -73,42 +94,53 @@ actually need per-sample rows.
 
 ### What a scenario resets
 
-Reproducibility is not free — a run inherits state from however long the page
-was live before it. The runner therefore resets, before the timeline starts:
+Nothing — and that is the point. Both harnesses build a **fresh sim per run**,
+so there is no reset list to remember. `packages/race/src/dev/replay.ts` and
+`packages/battle/src/dev/replay.ts` construct a new `RaceSim` / `BattleSim`,
+feed it the scripted input timeline against a clock with no wall time in it,
+and hash the result.
 
-- **body pose** to `start` or the race spawn, with zero velocity
-- **60 settle ticks** with neutral input, to wash out rapier's warm-start
-  impulses and the vehicle controller's per-wheel suspension state
-- **the race store** (`resetRace()`) — lap, next checkpoint, respawn target
-- **telemetry** — `boostMeter` especially, which drains and never refills
-- **the publish module's** zone-escalation accumulator
+This replaced an in-page runner that drove the real app with rendering off and
+had to reset six things first (body pose, 60 settle ticks, the race store,
+telemetry, the publish module's zone accumulator, two held input axes). Every
+one of those was found by diffing two runs that should have matched.
 
-Everything is restored afterwards, so running a scenario mid-race is safe.
-
-If you add state that persists across ticks and is not reset here, scenarios
-using it will silently become non-reproducible. That is the one invariant worth
-protecting.
+What is left is one rule: **keep persistent sim state constructor-initialised.**
+A field assigned anywhere else lets a run start from a different value than the
+one before it, and the hash silently stops meaning anything.
 
 ### Reading a summary
 
+`deterministic` is the first thing to read: two runs of the same script must
+produce the same `hash`. If it is `false`, nothing else in the output means
+anything until you find out why.
+
+Race (`dev:scenario`):
+
 | Field | Means |
 |---|---|
-| `flipped` | Orientation failure — on its side or worse, persistently |
-| `fellThrough` | Went below the track. Always a collision bug |
-| `minUp` | 1 = level, 0 = on its side, -1 = inverted |
-| `minY` / `maxY` | Height envelope |
-| `airborneRatio` | Fraction of samples off the ground. **High is normal** for this ship |
-| `maxSpeed` / `avgSpeed` | m/s. `avgSpeed` ignores samples under 0.5 m/s |
-| `crashes` / `gatesPassed` / `finished` | Race progress |
-| `distance` | Path length, m |
+| `hash` | Trace digest. The whole point — identical across runs, diffable across commits |
+| `ticks` | Sim steps executed, 60 per second |
+| `status` | The race state machine at the end: `lobby`, `countdown`, `racing`, `finished` |
+| `track` | Which track the script ran on |
+| `events` / `eventCounts` | How many of each event fired: `countdown`, `raceStart`, `gate`, `lap`, `finish`, `respawn` |
+| `racers[]` | Per-ship end state: `position`, `lap`, `gates`, `bestLap`, `finished`, and the final `x`/`y`/`z` |
 
-`flipped` and `fellThrough` are separate because their causes are: handling
-versus collision. Thresholds are constants at the top of
-`src/engine/dev/scenario.ts` — adjust there, not inline.
+Battle (`dev:replay`):
 
-Note: a scenario that ends with `fellThrough: true` may be a bad *script* (full
-throttle off a canyon edge) rather than an engine bug. Check `minUp` — if the
-ship stayed level the whole way down, it drove off, it did not lose control.
+| Field | Means |
+|---|---|
+| `hash` / `ticks` / `status` | As above |
+| `scores` | `{ red, blue }` at the end |
+| `events` / `eventCounts` | `matchStart`, `fire`, `hit`, `lock`, `kill` |
+| `players[]` | Per-player end state: team, health, kills, deaths, final pose |
+
+A ship that drove off its deck shows up as a `respawn` event and a `y` back at
+spawn height, not as a flag: the harness records what happened rather than
+judging it. `--json` gives the full object above; the default output is the
+same fields, formatted. The pass/fail checks live in the crash lab
+(`bun run lab`), where each case declares what it expects.
+
 
 ## `window.__dev` API
 
@@ -124,17 +156,19 @@ teleport({ position, yaw|quaternion, linvel, angvel })
 setInput({ steer, throttle, brake, boost })
 respawn() / toggleView()
 setTuning(partial) / resetTuning()
-setStatus('idle'|'countdown'|'racing'|'finished')
-scenario(script)            → Promise<trace>
-overlay({ colliders, wheels, contacts, path, frustum })
+setStatus('lobby'|'countdown'|'racing'|'finished')
+overlay({ colliders, contacts, path, frustum,
+          rays, forces, netForce, thrusters, com, velocity, inertia })
+
+// Physics layers default to ON in a dev build; number keys 1-9 toggle one each
+// and 0 clears them. An explicit ?overlay= wins, including an empty one.
 trace()                     frame-time percentiles, errors, WebGL context state
 raw                         live handles: app, physics, clock, controls, vehicle, rig
 ```
 
 ## URL overrides (dev only)
 
-`?seed=` `?paused=1` `?overlay=colliders,wheels` `?nohud=1` `?tuning=<base64>`
-`?scenario=<name>`
+`?seed=` `?paused=1` `?overlay=colliders,forces` `?nohud=1` `?tuning=<base64>`
 
 Any reproduction can be handed over as a URL rather than a procedure.
 
@@ -150,6 +184,14 @@ Any reproduction can be handed over as a URL rather than a procedure.
 - **`raw` is not JSON-serializable.** Do not return it from `page.evaluate`.
 - **Nothing here exists in production** — it is all behind `NODE_ENV !==
   'production'` and loaded via dynamic import.
+- **Screenshots are slow and that is the environment, not a bug.** Capturing a
+  post-processed WebGL canvas through software GL costs ~7 s per frame with no
+  GPU, against ~0.6 s for a page with no canvas. `dev-cli` allows 120 s for it.
+- **Set `CHROMIUM_PATH`** when the sandbox's chromium build does not match the
+  one playwright pinned, rather than re-downloading half a gigabyte.
+- **`place()` and `face()` are gone** with the hand-rolled battle protocol.
+  `@colyseus/playground`, mounted at `/playground` on the game server in dev,
+  joins a real room and does the same job.
 
 ## Worked example
 
@@ -159,9 +201,9 @@ Any reproduction can be handed over as a URL rather than a procedure.
 bun run dev:scenario hard-corner
 ```
 
-Read `summary`: `minUp` near 1 and `flipped: false` means the upright control
-held. `fellThrough: true` with a high `minUp` means it drove off an edge — a
-track/line problem, not a handling one. Then, to see it:
+Read the summary: `deterministic: true` first — if it is false, nothing else in
+the output means anything and that is the bug to chase. Then where each racer
+ended up and how many gates they cleared. Then, to see it:
 
 ```bash
 bun run dev:shot /tmp/corner.png --level neon-canyon --step 420 --overlay colliders,path

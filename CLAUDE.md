@@ -45,10 +45,16 @@ what a summary field means. Invoke it when debugging runtime behaviour.
 - **All ship motion is `addForceAtPoint`.** No `setLinvel`/`setAngvel` for
   control — see the thruster-rig rules in AGENTS.md. Forces must be applied
   before `world.step()`.
-- **Six packages, and the boundaries are compiler-enforced.** `physics`, `net`,
-  `race` and `battle` each set `"paths": {}`, so an `@/…` or `Δ…` import inside
-  one fails the build rather than the boot. Nothing crosses from a package back
-  into `src/`.
+- **Eleven packages in a DAG, and the boundaries are compiler-enforced.** One
+  glyph per package (`Φ` physics, `Ξ` net, `Ð` data, `Λ` race, `Ψ` battle, `Ȼ`
+  core, `Ƨ` state, `Σ` engine, `Ɠ` game, `Ʊ` ui, `§` server), generated into
+  every `tsconfig.json`'s `paths` by `scripts/aliases.mjs` from its `GLYPH`/
+  `DEPS` tables — `bun run aliases` regenerates them, `bun run aliases:check`
+  fails CI on a hand-edited one or on an import leaving a package's own
+  `src/`. Nothing crosses from a package back into `src/`: no package's
+  `paths` ever includes `Δ*`, so that import is a compile error, not a
+  boot-time surprise. `@/…` and `@crash-velocity/*` import specifiers no
+  longer exist anywhere in the tree.
 - **Adding persistent sim state? Constructor-initialise it.** Both replay
   harnesses build a fresh sim per run, so there is no reset list to update — but
   a field set anywhere else makes a run start from a different value than the
@@ -58,19 +64,21 @@ what a summary field means. Invoke it when debugging runtime behaviour.
 - **Dev code must not ship.** After `bun run build`,
   `grep -r "__dev" .next/static` must return nothing. Same for `drizzle-orm`,
   `@neondatabase` and `colyseus/core` — those are server-only.
-- **New imports use `Δ`, not `@`.** Both resolve to `src/`; no slash after the
-  `Δ` (`Δengine/net/room-link`). Packages are imported by name.
+- **New imports use the owning package's glyph, never `@`.** `Δ` is `src/`'s
+  own glyph (`Δlib/auth`); every other package answers to its own
+  (`Σnet/room-link`, `Φconfig`, `Ψweapons`, …) — no slash after the glyph.
 - **No client ever simulates a remote ship.** One rapier world, one predicted
   chassis; everyone else is an interpolated transform.
 - **Never mark a Colyseus Schema field `.unreliable()`** while the transport is
   WebSocket: the field is then never patched at all.
 - **Rapier is the deterministic build, pinned exactly.** The SIMD build is not
-  cross-platform deterministic and nothing but `test/determinism.test.ts` would
-  notice the swap.
+  cross-platform deterministic and nothing but
+  `packages/physics/test/determinism.test.ts` would notice the swap.
 
 ## Verifying a change
 
 ```bash
+bun run aliases:check                        # tsconfig paths still generated, not hand-edited
 bun run typecheck && bun run lint && bun run test
 bun run dev:scenario straight-line   # race handling still reproducible?
 bun run dev:replay point-blank       # battle still deterministic?

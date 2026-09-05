@@ -11,6 +11,15 @@ Every item carries two ratings. **perf** is influence on the running game
 cleanliness, separation of concerns, KISS, and the repo's own written rules in
 `AGENTS.md`. The tier is whichever of the two is higher.
 
+> **Status, this pass (the package-split branch).** Annotated in place below,
+> not rewritten. Landed: 1.1 (partial — the `icaras` junk, not the spaceship/FBX
+> assets), 1.2 (`BattleSim` split), 1.3/1.4 (battle publish module + composition
+> root, partial), 2.1 (partial — shared clock/CLI, not the transports), 2.2 (now
+> fully done), 2.3 (aliases unified as glyphs), 2.4 (dead files and the doc
+> drift both gone), 2.5 (materials table), 2.7 (utils shim gone), 2.8 (random
+> ranges), and the Tier 3 `bot`/`bots` rename. Still open: 1.5, 1.6, 2.6, 2.9,
+> and the rest of Tier 3 — see each item.
+
 ---
 
 ## Tier 1 — high influence
@@ -35,6 +44,11 @@ convert `ships/*.fbx` to Draco-compressed `.glb` (smaller, no FBXLoader parse
 on the main thread); re-encode `textures/hangar` to KTX2 or at least WebP with
 a size budget. Add a CI step that fails when `public/` exceeds a byte budget.
 
+**Status: partially done.** `public/icaras` now holds only `textures/` — the
+`.rar`/`.zip`/`.blend`/`.mtl`/`.obj`/screenshots/HTML mockups are gone. Still
+open: `public/spaceship_-_cb1`, `ships/*.fbx` → `.glb`, and the `textures/hangar`
+re-encode; no `public/` byte-budget CI step exists.
+
 ### 1.2 `BattleSim` is a 1 228-line god object on the 60 Hz hot path
 perf: **med** · conformity: **high**
 
@@ -50,6 +64,9 @@ Fix: keep `BattleSim` as the orchestrator and lift pure subsystems out beside
 `lock-on.ts` (acquire/hold/break), `scoring.ts`. Each becomes a pure function
 of `(state, input, tick)` and gets its own test file instead of sharing the
 710-line `sim.test.ts`.
+
+**Status: done.** `zones.ts`, `respawn.ts`, `lock-on.ts` and `scoring.ts` exist
+as pure modules exactly as proposed; `sim.ts` is down to 1 089 lines.
 
 ### 1.3 Scenes and the HUD write the stores directly, bypassing `publish.ts`
 perf: **med** (React commits at frame rate) · conformity: **high**
@@ -73,6 +90,11 @@ owns every store write and runs on the publish cadence — and turn the HUD's
 `read()` closures into one `HudSource` per mode built in the scene, so
 `hud/index.ts` stops importing store modules at all.
 
+**Status: done.** `packages/engine/src/modules/publish-battle.ts` now owns every
+`battleActions.*` write; `hud/types.ts`'s `HudSource` exists and `hud/index.ts`
+is built from it per mode. `game/src/battle.ts` still calls `battleStore.get()`
+directly, but only to *read* the current loadout/team, never to write.
+
 ### 1.4 `scenes/battle.ts` is an 837-line composition root with 38 imports
 perf: **low** · conformity: **high**
 
@@ -84,6 +106,11 @@ Fix: extract `battle/opponents.ts` (the `Opponent` map + remote hull
 lifecycle), `battle/pools.ts` (beam/missile/blast pool construction and
 stepping), and the store publisher from 1.3. Target: `mountBattle` under 250
 lines that reads top to bottom.
+
+**Status: partially done.** `packages/engine/src/battle/opponents.ts` (165
+lines) and `pools.ts` (104 lines) both exist, plus the 1.3 publisher.
+`packages/game/src/battle.ts` (the renamed `mountBattle`) is down to 593 lines
+from 837 — real progress, but still more than double the 250-line target.
 
 ### 1.5 Thirteen open PRs implement the same five ideas in parallel
 perf: **high** (the fixes are real) · conformity: **high** (as a process)
@@ -109,6 +136,13 @@ small function and the dirty-key from #20 can live next to the painter it
 protects. Rename `hud/overlay.ts` (visor overlays) or `dev/overlay.ts`
 (physics debug) — two files with the same name in sibling directories.
 
+**Status: open, and larger.** The amber cockpit restyle landed
+(`hud/tokens.ts`'s `HUD_THEME`, the shared drawing vocabulary now factored into
+`hud/chrome.ts`), but the per-panel split has not: `overlay.ts` is 660 lines,
+`facets.ts` 654, `spatial-hud.ts` 840, `panel.ts` 385 — all grew.
+`drawRacePanels`/`drawBattlePanels` are still one big function each, not a
+`PanelPainter` table. `hud/overlay.ts` and `dev/overlay.ts` still share a name.
+
 ---
 
 ## Tier 2 — medium influence
@@ -129,6 +163,13 @@ clock; a `net/room-clock.ts` (PONG handler as a pure function), a
 `net/dev/replay-cli.ts` (arg parsing + double-run hash compare) and a shared
 `engine/net/mode-transport.ts` base would remove most of it.
 
+**Status: partially done.** `packages/net/src/room-clock.ts` (`pongFor`) and
+`packages/net/src/dev/replay-cli.ts` (`runReplayCli`) both landed exactly as
+proposed, and both rooms' `dev/replay-cli.ts` are now thin callers. The
+`engine/net/mode-transport.ts` base was not built —
+`engine/src/race/transport.ts` (255 lines) and `engine/src/battle/transport.ts`
+(347 lines) are still separate.
+
 ### 2.2 `mulberry32` is implemented three times
 perf: none · conformity: **med**
 
@@ -136,6 +177,12 @@ perf: none · conformity: **med**
 import `mulberry32` from `threejs-scene`. `packages/battle/src/sim.ts:112`
 keeps its own because packages cannot depend on the client library; one copy in
 `packages/physics` (a leaf both sides can import) would close it.
+
+**Status: now fully done.** `packages/physics/src/rng.ts` is that leaf copy,
+exported from the physics barrel as `Φrng`; `battle/src/sim.ts` now imports
+`mulberry32` from it instead of defining its own. `arena-visuals.ts` and
+`materials.ts` still use `threejs-scene`'s copy, which is fine — that one is
+presentation-only randomness, not sim state.
 
 ### 2.3 Two import aliases for one directory
 
@@ -148,6 +195,15 @@ perf: none · conformity: **med**
 spellings of the same path is entropy with no upside. Either finish the
 mechanical pass to `Δ` in one commit and delete `@/*` from `tsconfig.json`, or
 drop `Δ`. An eslint `no-restricted-imports` rule then keeps it that way.
+
+**Status: done, and gone further than proposed.** `@/*` is deleted from
+`tsconfig.json` and every `@/…` import is gone. The fix generalised past `src/`:
+`scripts/aliases.mjs` now generates one glyph per workspace package (`Φ`
+physics, `Ξ` net, `Λ` race, `Ψ` battle, `Ð` data, `Ȼ` core, `Ƨ` state, `Σ`
+engine, `Ɠ` game, `Ʊ` ui, `§` server, `Δ` for `src/` itself) from a `GLYPH`/`DEPS`
+table pair, with `bun run aliases:check` as the CI guard in place of a lint
+rule — it also catches a relative import leaving a package's own `src/`, which
+`no-restricted-imports` could not.
 
 ### 2.4 Dead files and stale documents
 perf: none · conformity: **med**
@@ -165,6 +221,15 @@ perf: none · conformity: **med**
 - `.agents/skills/debug-live/SKILL.md` and `.claude/skills/debug-live/SKILL.md`
   have already drifted by 83 lines. Keep one, symlink the other.
 
+**Status: done.** `PROMPT.md`, `.modified`, `flats-hover.jpeg` and
+`docs/blueprint.md` are all gone; the stale `tsconfig.json` excludes are gone
+too. The package-split branch moved everything the bullet above named
+(`src/engine/clock.ts` → `packages/physics/src/clock.ts` and so on down the
+list) and this pass corrected `AGENTS.md`'s references to match. There is no
+symlink between the two skill files (this filesystem's git checkout does not
+carry one), so this pass instead copies `.claude/skills/debug-live/SKILL.md`
+over `.agents/skills/debug-live/SKILL.md` byte-for-byte, same fix as proposed.
+
 ### 2.5 `src/lib/ship/materials.ts` is 781 lines of paired painters
 perf: none · conformity: **med**
 
@@ -172,6 +237,10 @@ Eight `draw<X>Pattern` functions each have a `drawEmissive<X>Pattern` twin, then
 `applyShipConfig` switches over names. A `PATTERNS: Record<PatternId, { base,
 emissive }>` table collapses the dispatch and makes adding a livery a one-entry
 change. Also carries 4 complexity warnings.
+
+**Status: done.** `packages/engine/src/ship/materials.ts` now has a `PATTERNS`
+table exactly as proposed; `drawTexture`/`drawEmissiveTexture` index into it
+instead of switching over `texturePreset`.
 
 ### 2.6 Lint debt is concentrated, not diffuse
 perf: none · conformity: **med**
@@ -183,6 +252,11 @@ perf: none · conformity: **med**
 `--max-warnings 63` in CI today and ratchet it down; the React ones are
 CSS-module fixes.
 
+**Status: still open.** `eslint.config.mjs` sets no `--max-warnings` and no
+`max-lines` rule; the file list above is stale (paths moved with the package
+split) but the underlying warning counts have not been re-measured in this
+pass.
+
 ### 2.7 `src/lib/utils.ts` is a grab-bag that owns `vehicleConfig`
 perf: none · conformity: **med**
 
@@ -190,6 +264,12 @@ Nine importers reach `vehicleConfig` through a file called `utils`. Move it
 next to the tuning code in `src/lib/tuning.ts`. (`src/engine/state.ts`, which
 re-exported physics types plus that config, is gone: `RaceState` lives in
 `src/state/types.ts` and `ShipTuning` is imported from its owner.)
+
+**Status: done, and gone further than proposed.** `src/lib/utils.ts` no longer
+exists at all — `vehicleConfig` lives in `packages/physics/src/config.ts` and is
+imported as `Φconfig`, so there was no `src/lib/tuning.ts` left to move it to.
+`RaceState` is in `packages/state/src/types.ts`; `ShipTuning` is imported from
+`packages/physics`.
 
 ### 2.8 `hangar-controls.tsx` hard-codes thirty random ranges
 perf: none · conformity: **med**
@@ -199,6 +279,11 @@ perf: none · conformity: **med**
 `RANDOM_RANGES` table in `src/lib/ship/` beside `SHIP_PRESETS` keeps the UI
 declarative and lets the hangar scene and tests reuse it.
 
+**Status: done.** `packages/core/src/ship/random-ranges.ts` holds
+`RANDOM_LOOK_RANGES`, `RANDOM_BUILD_RANGES` and `RANDOM_TEXTURE_PRESETS` beside
+`SHIP_PRESETS`'s package; `packages/ui/src/hangar/hangar-controls.tsx` imports
+them instead of inlining the ranges.
+
 ### 2.9 Unused and misplaced dependencies
 perf: low · conformity: **med**
 
@@ -207,23 +292,41 @@ packages that use it declare their own). `webgl-report.ts` imports `three` from
 `src/components`, the one place `AGENTS.md` says three must not appear outside
 `scene-canvas.tsx`; it belongs in `src/engine/dev`.
 
+**Status: done.** The root `package.json` no longer lists `zod` at all —
+`packages/net` and `packages/data` each declare their own. `webgl-report.ts`
+moved with the rest of the client runtime and lives at
+`packages/engine/src/webgl-report.ts` now, outside `packages/ui` entirely, so
+the boundary violation is gone as a side effect of the package split.
+
 ---
 
 ## Tier 3 — low influence, worth a sweep
 
 - `packages/battle/src/bot.ts` (230 lines) and `bots.ts` (71) — two files one
   letter apart. Merge or rename to `bot-brain.ts` / `bot-roster.ts`.
+  **Status: done** (renamed, not merged) — `bots.ts` is now `backfill.ts`,
+  naming the population policy it holds rather than restating "bot".
 - `Date.now()` inside `snapshot.ts` builders in both modes — inject the clock so
-  snapshot tests do not depend on wall time.
+  snapshot tests do not depend on wall time. **Status: still open** — the
+  shared `buildSnapshot` in `packages/net/src/codec/snapshot.ts` and the new
+  `pongFor` in `packages/net/src/room-clock.ts` (2.1) both still call
+  `Date.now()` directly.
 - `scene-canvas.tsx` exports `AnyApp = App<any>` and `base.ts` has three
   `as any` casts at the bridge; type the mount contract once and delete the
   eslint-disable comments.
+- New this pass: `STEP = 1 / 60` is now declared independently in both
+  `packages/physics/src/clock.ts` and `packages/net/src/rates.ts`. They agree
+  today only because nobody has changed one; there is no compile-time link
+  between the simulation's tick rate and the netcode's.
 - `test/vehicle-physics.ts` is a bun script, not a vitest test; it belongs in
-  `scripts/` with `crash-lab.ts`.
+  `scripts/` with `crash-lab.ts`. **Status: done** — it is now
+  `scripts/vehicle-physics.ts`, run by `bun run test:physics`.
 - `camera/rig.ts` defines its own `lerp`/`smoothstep`; `THREE.MathUtils` has
   both.
 - `README.md` says "9 ships"; count the presets in `registry.ts` before the
   next release and let the README import the number or drop it.
+  **Status: verified, still correct** — `packages/core/src/ship/registry.ts`'s
+  `SHIP_PRESETS` has exactly 9 entries. Still hand-counted, not imported.
 - Allocation discipline is already good: scratch vectors are module-level in
   `rig.ts`, `visuals.ts`, `sim.ts`, and #22 removed the transports' per-frame
   arrays. Keep `docs/battle-allocation-profile.md` as the check.

@@ -94,42 +94,53 @@ actually need per-sample rows.
 
 ### What a scenario resets
 
-Reproducibility is not free — a run inherits state from however long the page
-was live before it. The runner therefore resets, before the timeline starts:
+Nothing — and that is the point. Both harnesses build a **fresh sim per run**,
+so there is no reset list to remember. `packages/race/src/dev/replay.ts` and
+`packages/battle/src/dev/replay.ts` construct a new `RaceSim` / `BattleSim`,
+feed it the scripted input timeline against a clock with no wall time in it,
+and hash the result.
 
-- **body pose** to `start` or the race spawn, with zero velocity
-- **60 settle ticks** with neutral input, to wash out rapier's warm-start
-  impulses and the vehicle controller's per-wheel suspension state
-- **the race store** (`resetRace()`) — lap, next checkpoint, respawn target
-- **telemetry** — `boostMeter` especially, which drains and never refills
-- **the publish module's** zone-escalation accumulator
+This replaced an in-page runner that drove the real app with rendering off and
+had to reset six things first (body pose, 60 settle ticks, the race store,
+telemetry, the publish module's zone accumulator, two held input axes). Every
+one of those was found by diffing two runs that should have matched.
 
-Everything is restored afterwards, so running a scenario mid-race is safe.
-
-If you add state that persists across ticks and is not reset here, scenarios
-using it will silently become non-reproducible. That is the one invariant worth
-protecting.
+What is left is one rule: **keep persistent sim state constructor-initialised.**
+A field assigned anywhere else lets a run start from a different value than the
+one before it, and the hash silently stops meaning anything.
 
 ### Reading a summary
 
+`deterministic` is the first thing to read: two runs of the same script must
+produce the same `hash`. If it is `false`, nothing else in the output means
+anything until you find out why.
+
+Race (`dev:scenario`):
+
 | Field | Means |
 |---|---|
-| `flipped` | Orientation failure — on its side or worse, persistently |
-| `fellThrough` | Went below the track. Always a collision bug |
-| `minUp` | 1 = level, 0 = on its side, -1 = inverted |
-| `minY` / `maxY` | Height envelope |
-| `airborneRatio` | Fraction of samples off the ground. **High is normal** for this ship |
-| `maxSpeed` / `avgSpeed` | m/s. `avgSpeed` ignores samples under 0.5 m/s |
-| `crashes` / `gatesPassed` / `finished` | Race progress |
-| `distance` | Path length, m |
+| `hash` | Trace digest. The whole point — identical across runs, diffable across commits |
+| `ticks` | Sim steps executed, 60 per second |
+| `status` | The race state machine at the end: `lobby`, `countdown`, `racing`, `finished` |
+| `track` | Which track the script ran on |
+| `events` / `eventCounts` | How many of each event fired: `countdown`, `raceStart`, `gate`, `lap`, `finish`, `respawn` |
+| `racers[]` | Per-ship end state: `position`, `lap`, `gates`, `bestLap`, `finished`, and the final `x`/`y`/`z` |
 
-`flipped` and `fellThrough` are separate because their causes are: handling
-versus collision. Thresholds are constants at the top of
-`src/engine/dev/scenario.ts` — adjust there, not inline.
+Battle (`dev:replay`):
 
-Note: a scenario that ends with `fellThrough: true` may be a bad *script* (full
-throttle off a canyon edge) rather than an engine bug. Check `minUp` — if the
-ship stayed level the whole way down, it drove off, it did not lose control.
+| Field | Means |
+|---|---|
+| `hash` / `ticks` / `status` | As above |
+| `scores` | `{ red, blue }` at the end |
+| `events` / `eventCounts` | `matchStart`, `fire`, `hit`, `lock`, `kill` |
+| `players[]` | Per-player end state: team, health, kills, deaths, final pose |
+
+A ship that drove off its deck shows up as a `respawn` event and a `y` back at
+spawn height, not as a flag: the harness records what happened rather than
+judging it. `--json` gives the full object above; the default output is the
+same fields, formatted. The pass/fail checks live in the crash lab
+(`bun run lab`), where each case declares what it expects.
+
 
 ## `window.__dev` API
 
