@@ -88,6 +88,33 @@ const STICK_RADIUS = 0.115
 /** Minimum tappable size, CSS pixels. Below this a control is a coin toss. */
 const MIN_TOUCH_CSS = 44
 
+/**
+ * Whether this device gets the touch rail.
+ *
+ * A pure function of the three things that decide it, so the rule is testable
+ * without a DOM — it went wrong once already and no test could have caught it,
+ * because the decision was three `||`s inline in a 500-line closure.
+ *
+ * `forced` is the `?touch` query parameter: `'1'` on, `'0'` off, anything else
+ * (including absent) defers to the device. It is honoured in every build, not
+ * just dev — a tablet the sniff gets wrong otherwise has no way back.
+ *
+ * The sniff itself is deliberately either-or. A tablet reports `pointer:
+ * coarse`; an iPad in desktop mode reports `fine` but still reports touch
+ * points, and a convertible reports whichever it was last used as.
+ */
+export function wantsTouchControls (
+  forced: string | null,
+  coarsePointer: boolean,
+  maxTouchPoints: number
+): boolean {
+  if (forced === '1')
+    return true
+  if (forced === '0')
+    return false
+  return coarsePointer || maxTouchPoints > 0
+}
+
 export function touchLayout (input: TouchLayoutInput): TouchLayout {
   const { width, height, cssWidth, cssHeight, insets, mode } = input
 

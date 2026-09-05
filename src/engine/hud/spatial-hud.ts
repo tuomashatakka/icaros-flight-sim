@@ -7,9 +7,9 @@ import { HUD_AXIS_GATE, hudSliderValue, shapeHudAxis } from './interaction'
 import { drawHudOverlay, isHudBlockingOverlay } from './overlay'
 import { HudPanel } from './panel'
 import { createTouchGestures } from './pointers'
-import { createHudReveal } from './transition'
+import { HUD_TRANSITION_S, createHudReveal } from './transition'
 import { HUD_OVERLAY_PERIOD, HUD_PANEL_PERIOD, HUD_REFERENCE_FOV } from './tokens'
-import { NO_INSETS, touchLayout } from './touch-layout'
+import { NO_INSETS, touchLayout, wantsTouchControls } from './touch-layout'
 import type { SafeAreaInsets } from './touch-layout'
 import type { HudActionId, HudData, HudFrame, HudPanelKey, HudRegion, HudSource } from './types'
 
@@ -24,6 +24,9 @@ const _ndc = new THREE.Vector2()
  * home indicator and the top under the URL bar. Measured off a throwaway
  * element because `env()` is only resolvable by the style engine.
  */
+/** When the rail follows the visor in, in seconds. See its use for the derivation. */
+const TOUCH_STAGGER_S = HUD_TRANSITION_S * 0.206
+
 function readSafeAreaInsets (): SafeAreaInsets {
   if (typeof document === 'undefined')
     return NO_INSETS
@@ -135,14 +138,30 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
   const cssSize        = { width: 1, height: 1 }
   let insets: SafeAreaInsets = NO_INSETS
 
-  let isTouch = window.matchMedia('(pointer: coarse)').matches ||
-    navigator.maxTouchPoints > 0 ||
-    process.env.NODE_ENV !== 'production' && new URLSearchParams(window.location.search).get('touch') === '1'
+  // `?touch=1` forces the rail on and `?touch=0` forces it off, in EVERY build.
+  //  It used to be dev-only, which meant a tablet the sniff got wrong had no way
+  //  back and nobody had a way to tell the two halves apart from a bug report.
+  const forced = new URLSearchParams(window.location.search).get('touch')
+  const coarse = window.matchMedia('(pointer: coarse)')
+  let isTouch = wantsTouchControls(forced, coarse.matches, navigator.maxTouchPoints)
   const hidden = process.env.NODE_ENV !== 'production' &&
     new URLSearchParams(window.location.search).get('nohud') === '1'
 
   if (isTouch)
     setTouchOverlayActive(true)
+
+  // A device can change its mind: an iPad gains a trackpad and goes `fine`, a
+  //  convertible folds into a tablet. Sniffing once at mount latched whichever
+  //  answer the first frame happened to get, for the life of the scene.
+  const onPointerKind = () => {
+    const next = wantsTouchControls(forced, coarse.matches, navigator.maxTouchPoints)
+    if (next === isTouch)
+      return
+    isTouch      = next
+    overlayDirty = true
+    setTouchOverlayActive(next)
+  }
+  coarse.addEventListener('change', onPointerKind)
 
   const shortEdge = () => Math.min(cssSize.width, cssSize.height)
 
@@ -314,9 +333,18 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
       modalData = lastData
     else if (!modalReveal.live(frame.elapsed))
       modalData = null
+
     // The touch rail waits for the visor: both arriving at once is a wall of
-    // motion, and the controls are the thing you look at last anyway.
-    touchReveal.set(isTouch && revealPhase > 0.5 && !blocking, frame.elapsed)
+    // motion, and the controls are the thing you look at last anyway. It waits
+    // on the CLOCK rather than on `revealPhase`, though, so the rail's
+    // existence stops depending on the state of a layer it has nothing else to
+    // do with — which is how it came to be missing entirely.
+    //
+    // Same moment as before to the millisecond: the old gate was the EASED
+    // phase passing 0.5, and `1 - (1 - t)³` crosses a half at t ≈ 0.206, not at
+    // the halfway point of the transition.
+    const staggered = mountedAt !== null && frame.elapsed - mountedAt >= TOUCH_STAGGER_S
+    touchReveal.set(isTouch && staggered && !blocking, frame.elapsed)
 
     // A layer mid-transition needs every frame. `isHudBlockingOverlay` alone
     // would stop redrawing the moment a modal closed and freeze its exit wipe
@@ -722,6 +750,7 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
       canvas.removeEventListener('pointerup', onPointerUp)
       canvas.removeEventListener('pointercancel', onPointerCancel)
       canvas.removeEventListener('pointerleave', onPointerLeave)
+      coarse.removeEventListener('change', onPointerKind)
       canvas.style.cursor = ''
       if (isTouch)
         setTouchOverlayActive(false)

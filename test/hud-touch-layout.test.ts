@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { touchLayout } from 'Δengine/hud/touch-layout'
+import { touchLayout, wantsTouchControls } from 'Δengine/hud/touch-layout'
 import type { TouchLayout, TouchLayoutInput } from 'Δengine/hud/touch-layout'
 import type { HudMode } from 'Δengine/hud/types'
 
@@ -111,5 +111,39 @@ describe('touch layout', () => {
     // measured in two different coordinate spaces and disagreed by 20 %.
     expect(layout.stickTravel).toBeLessThan(stick.radius)
     expect(layout.stickTravel).toBeGreaterThan(stick.radius * 0.5)
+  })
+})
+
+/**
+ * The rail went missing on tablets once, and every test here still passed —
+ * because they all covered the LAYOUT, and what broke was the decision to draw
+ * it at all. These cover the decision.
+ */
+describe('wants touch controls', () => {
+  it('says yes to a coarse pointer', () => {
+    expect(wantsTouchControls(null, true, 0)).toBe(true)
+  })
+
+  it('says yes to touch points on a fine pointer', () => {
+    // An iPad in desktop mode reports `pointer: fine` and still has five touch
+    //  points. Requiring both would leave it with no controls.
+    expect(wantsTouchControls(null, false, 5)).toBe(true)
+  })
+
+  it('says no to a plain desktop', () => {
+    expect(wantsTouchControls(null, false, 0)).toBe(false)
+  })
+
+  it('lets ?touch=1 force the rail on where the sniff said no', () => {
+    expect(wantsTouchControls('1', false, 0)).toBe(true)
+  })
+
+  it('lets ?touch=0 force it off where the sniff said yes', () => {
+    expect(wantsTouchControls('0', true, 5)).toBe(false)
+  })
+
+  it('ignores a value that is neither, rather than treating it as off', () => {
+    expect(wantsTouchControls('yes please', true, 5)).toBe(true)
+    expect(wantsTouchControls('', false, 0)).toBe(false)
   })
 })
