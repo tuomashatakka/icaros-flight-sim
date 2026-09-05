@@ -27,6 +27,7 @@ import type { EnvironmentOverrides } from './environment'
 import { publishModule } from '../modules/publish'
 import type { PublishHandle } from '../modules/publish'
 import { attachBridge } from '../bridge'
+import { createRendererQuality } from '../quality/runtime'
 
 
 const SEED = 7
@@ -152,6 +153,7 @@ export type BaseSceneConfig<TState extends object> = {
     controls: Controls
   ) => void;
   onDispose?: () => void;
+  onQuality?: (effects: 0 | 1 | 2) => void;
 }
 
 export async function mountBaseScene<TState extends object> (
@@ -317,7 +319,17 @@ export async function mountBaseScene<TState extends object> (
     },
   })
 
+  const quality = createRendererQuality({
+    renderer:  app.ctx.renderer,
+    scene:     app.ctx.scene,
+    sun,
+    onEffects: config.onQuality,
+  })
+
+  let lastHudAt = -Infinity
+
   function renderFrame (frame: FrameContext) {
+    quality.beginFrame()
     if (controls.viewSeq !== lastViewSeq) {
       lastViewSeq = controls.viewSeq
       rig.toggleView()
@@ -368,7 +380,10 @@ export async function mountBaseScene<TState extends object> (
       _view.panX        = controls.panX
       _view.panY        = controls.panY
       _view.aimPitch    = aimNorm
-      hud.current?.update(_view)
+      if (frame.elapsed - lastHudAt >= 1 / quality.settings().hudHz) {
+        hud.current?.update(_view)
+        lastHudAt = frame.elapsed
+      }
 
       onFrame?.(frame, _shipPosition, _shipQuaternion, rig, controls)
       devFrame?.(_shipPosition, frame.delta)
@@ -380,6 +395,7 @@ export async function mountBaseScene<TState extends object> (
       composer.render(frame.delta)
     else
       app.ctx.renderer.render(app.ctx.scene, rig.camera)
+    quality.endFrame(frame.delta * 1000)
   }
 
   const detachControls = attachControls(canvas, controls)
@@ -399,6 +415,7 @@ export async function mountBaseScene<TState extends object> (
       vehicle,
       sun,
       publish,
+      quality,
       rig,
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       level:         config.levelSpec as any,
@@ -423,6 +440,7 @@ export async function mountBaseScene<TState extends object> (
     detachDev?.()
     detachControls()
     detachBridge()
+    quality.dispose()
     composer = null
     dispose()
     physics.free()

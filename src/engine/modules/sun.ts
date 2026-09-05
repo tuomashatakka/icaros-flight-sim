@@ -13,6 +13,9 @@ export type SunHandle = {
 
   /** The key light itself — the dev overlay draws a helper on its shadow camera. */
   readonly light: THREE.DirectionalLight | null;
+
+  /** Resize and invalidate the shadow target at a quality boundary. */
+  setMapSize(size: number): void;
 }
 
 /**
@@ -47,7 +50,7 @@ export function sunModule (
   let light: THREE.DirectionalLight | null = null
 
   /** World units per shadow texel — used to quantise movement. */
-  const texelSize = frustum * 2 / mapSize
+  let texelSize = frustum * 2 / mapSize
 
   return defineModule<RaceState>({
     name: 'sun',
@@ -85,6 +88,16 @@ export function sunModule (
       handle.current = {
         get light () {
           return light
+        },
+
+        setMapSize (size) {
+          if (!light || light.shadow.mapSize.x === size)
+            return
+          light.shadow.mapSize.set(size, size)
+          light.shadow.map?.dispose()
+          light.shadow.map         = null
+          light.shadow.needsUpdate = true
+          texelSize = frustum * 2 / size
         },
 
         follow (position) {

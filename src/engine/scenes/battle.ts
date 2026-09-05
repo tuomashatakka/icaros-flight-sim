@@ -576,7 +576,8 @@ export async function mountBattle (
     buildGeometry:  ctx => {
       scenery = buildArenaVisual(ctx, arena)
     },
-    post: post.options,
+    post:      post.options,
+    onQuality: level => post.setQuality(level),
 
     gameModuleFactory: (physics, _isVehicleCollider, telemetry, controls, vehicleRef, rig) => {
       // The sight casts against the same world the sim does, through one reused
