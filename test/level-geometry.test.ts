@@ -4,6 +4,7 @@ import { neonCanyonLevel } from '@/engine/levels/neon-canyon'
 import { orbitalRingLevel } from '@/engine/levels/orbital-ring'
 import { proceduralLevel } from '@/engine/levels/procedural'
 import type { LevelSpec } from '@/engine/levels/types'
+import { DEFAULT_ENVIRONMENT } from '@/engine/scenes/environment'
 
 /**
  * Level geometry is pure data, so it is the one part of the engine that can be
@@ -54,7 +55,7 @@ describe.each(levels)('level: %s', (id, build) => {
   })
 
   it('sets a fog range that suits its scale', () => {
-    const [ , near, far ] = level.fog
+    const [ , near, far ] = level.environment.fog ?? DEFAULT_ENVIRONMENT.fog
     expect(far).toBeGreaterThan(near)
     // The inherited 20-80 canvas fog would swallow every one of these tracks.
     expect(far).toBeGreaterThan(100)

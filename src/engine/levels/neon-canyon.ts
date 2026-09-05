@@ -31,9 +31,12 @@ export function neonCanyonLevel (): LevelSpec {
   })
 
   return {
-    id:         'neon-canyon',
-    background: '#1a0a14',
-    fog:        [ '#1a0a14', 140, 620 ],
+    id:          'neon-canyon',
+    environment: {
+      background: '#1a0a14',
+      fog:        [ '#1a0a14', 140, 620 ],
+      hemi:       { sky: '#ff6a4d', ground: '#1a0a14' },
+    },
 
     waypoints: Array.from({ length: 10 }, (_, i) => curve.getPointAt(i / 10)),
     width:     26,
@@ -53,13 +56,10 @@ export function neonCanyonLevel (): LevelSpec {
 
       ctx.scene.add(guideRail(curve.getSpacedPoints(420), '#ff2d6f', 0.7, 0.2))
 
-      ctx.scene.add(new THREE.HemisphereLight('#ff6a4d', '#1a0a14', 0.9))
-      ctx.scene.add(pointLight('#ff5a7a', 60, 140, [ 0, 18, 10 ]))
-      ctx.scene.add(pointLight('#ff3b5c', 150, 320, [ 150, 30, -90 ]))
-      ctx.scene.add(pointLight('#ff8a3d', 150, 320, [ 190, 30, 20 ]))
-      ctx.scene.add(pointLight('#ff2d6f', 130, 300, [ -130, 30, 70 ]))
-
-      ctx.scene.fog = new THREE.Fog('#1a0a14', 140, 620)
+      ctx.scene.add(pointLight('#ff5a7a', 30, 140, [ 0, 18, 10 ]))
+      ctx.scene.add(pointLight('#ff3b5c', 75, 320, [ 150, 30, -90 ]))
+      ctx.scene.add(pointLight('#ff8a3d', 75, 320, [ 190, 30, 20 ]))
+      ctx.scene.add(pointLight('#ff2d6f', 65, 300, [ -130, 30, 70 ]))
     },
   }
 }

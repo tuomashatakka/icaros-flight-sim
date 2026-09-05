@@ -3,6 +3,7 @@ import { buildScenery, createDeckTexture } from './scenery'
 import type { Scenery } from './scenery'
 import type { SceneContext } from 'threejs-scene'
 import type { BoxCollider } from '@/lib/track/build-track'
+import type { EnvironmentOverrides } from '../scenes/environment'
 
 
 export type BattleTeam = 'red' | 'blue'
@@ -66,12 +67,18 @@ export type PlateauDef = {
  * the collider/shape data without dragging in the renderer.
  */
 export type BattleArena = {
-  id:         string;
-  name:       string;
-  tagline:    string;
-  background: string;
-  fog:        [string, number, number];
-  bloom:      { strength: number; threshold: number; radius: number };
+  id:      string;
+  name:    string;
+  tagline: string;
+
+  /**
+   * How the arena differs from `DEFAULT_ENVIRONMENT`.
+   *
+   * The same field a `LevelSpec` carries, for the same reason: race and battle
+   * share one sky/fog/light budget so the ship reads identically in both.
+   */
+  environment: EnvironmentOverrides;
+  bloom:       { strength: number; threshold: number; radius: number };
 
   /** Deck height. Vehicles hover above this. */
   floorY: number;
@@ -402,14 +409,20 @@ export function apexArena (): BattleArena {
   }))
 
   return {
-    id:         'apex',
-    name:       'Apex Basin',
-    tagline:    'Five mesas, two ramps each, and nowhere to fall off.',
-    background: '#0a0c14',
-    fog:        FOG,
-    bloom:      { strength: 0.34, threshold: 0.86, radius: 0.5 },
-    floorY:     0,
-    half:       HALF,
+    id:          'apex',
+    name:        'Apex Basin',
+    tagline:     'Five mesas, two ramps each, and nowhere to fall off.',
+    environment: {
+      background: '#0a0c14',
+      fog:        FOG,
+      hemi:       { sky: '#93a6ff', ground: '#141726' },
+      // The deck is 600 across and the sun follows the local ship, so a race
+      // frustum leaves every other hull outside the shadow box casting nothing.
+      sun:        { frustum: 110 },
+    },
+    bloom:  { strength: 0.34, threshold: 0.86, radius: 0.5 },
+    floorY: 0,
+    half:   HALF,
 
     colliders:      [ ...ground, ...cover, ...plateaus.flatMap(plateauColliders) ],
     colliderOffset: [ 0, 0, 0 ],
@@ -535,14 +548,13 @@ function buildApexVisual (
   // Control zones are painted by the battle visual layer (per-ring materials
   // for ownership colours) — not static geometry here.
 
-  scene.add(new THREE.HemisphereLight('#93a6ff', '#141726', 0.95))
+  // Accents only — ambient fill, fog and the key light belong to the shared
+  // environment, so the deck's shadow budget matches every race track's.
   for (const [ x, z ] of [[ 0, 0 ], [ 0, -200 ], [ 0, 200 ]] as Array<[number, number]>) {
-    const light = new THREE.PointLight('#aab4ff', 260, 1400, 1.6)
+    const light = new THREE.PointLight('#aab4ff', 110, 1400, 1.6)
     light.position.set(x, 120, z)
     scene.add(light)
   }
-
-  scene.fog = new THREE.Fog(FOG[0], FOG[1], FOG[2])
 
   return buildScenery(scene, rng, { half: HALF, wallIn: WALL_IN, sunAnchor: SUN_ANCHOR })
 }

@@ -36,7 +36,7 @@ export async function mountRace (
     levelId,
     levelSpec:      level,
     initialState:   initialRaceState(),
-    background:     level.background,
+    environment:    level.environment,
     bloom:          level.bloom,
     colliders:      level.colliders,
     colliderOffset: level.colliderOffset,

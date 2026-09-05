@@ -498,7 +498,7 @@ export async function mountBattle (
   const app = await mountBaseScene<BattleState>({
     canvas,
     initialState:            initialBattleState(),
-    background:              new THREE.Color(arena.background),
+    environment:             arena.environment,
     bloom:                   arena.bloom,
     colliders:               arena.colliders,
     colliderOffset:          arena.colliderOffset,

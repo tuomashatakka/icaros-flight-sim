@@ -62,8 +62,15 @@ export function sunModule (
       cam.right  = frustum
       cam.top    = frustum
       cam.bottom = -frustum
-      cam.near   = 1
-      cam.far    = 400
+
+      // Derived from the rig rather than fixed at 1..400: the depth range is
+      // what shadow-map precision is spent on, and a scene with an 8-unit
+      // frustum should not be paying for a 400-unit one. `reach` is how far the
+      // light sits from whatever it is aimed at; the frustum multiples cover the
+      // box corners at any hull height.
+      const reach = Math.hypot(offset[0], offset[1], offset[2])
+      cam.near    = Math.max(0.5, reach - frustum * 2)
+      cam.far     = reach + frustum * 4
       cam.updateProjectionMatrix()
 
       // Normal bias handles the sloped track surfaces far better than a constant

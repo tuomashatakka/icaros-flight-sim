@@ -1,6 +1,5 @@
 import * as THREE from 'three'
 import { createApp, defineModule } from 'threejs-scene'
-import { standardLighting } from 'threejs-scene/modules/lighting'
 import { orbitControls } from 'threejs-scene/modules/orbit'
 import type { App, AppModule } from 'threejs-scene'
 import { loadShip } from '../assets/ship-loader'
@@ -18,6 +17,26 @@ import { CRASH_CASES, LANE_PITCH } from '@crash-velocity/physics/lab/cases'
 import type { CrashCase, LabSolid, LabTrace } from '@crash-velocity/physics/lab/cases'
 import { runCrashCase } from '@crash-velocity/physics/lab/run'
 import { DEFAULT_CONFIGS } from '@/lib/ship/registry'
+import type { SunHandle } from '../modules/sun'
+
+
+type SunRef = { current: SunHandle | null }
+
+import { environmentModules, resolveEnvironment } from './environment'
+
+/**
+ * The lab, as deltas from the shared environment.
+ *
+ * Eight lanes at `LANE_PITCH` apart is a far wider stage than a track, and
+ * nothing here calls the sun handle's `follow` — the light is static, so the
+ * shadow box has to span every lane at once rather than one hull.
+ */
+const CRASH_LAB_ENVIRONMENT = resolveEnvironment({
+  background: '#080a12',
+  fog:        [ '#080a12', 2200, 6000 ],
+  hemi:       { sky: '#8a9bff', ground: '#0a0c14', intensity: 0.45 },
+  sun:        { offset: [ 300, 500, 220 ], intensity: 2.2, frustum: 900, mapSize: 4096 },
+})
 
 /**
  * The crash lab, as something you can watch.
@@ -169,6 +188,8 @@ export async function mountCrashLab (
   let hull: ShipInstance | null = null
   let disposed                  = false
 
+  const sun: SunRef = { current: null }
+
   const app = createApp<CrashLabState>(canvas, {
     state: {
       frame:     0,
@@ -179,14 +200,10 @@ export async function mountCrashLab (
     },
     seed:     17,
     camera:   { position: eye, lookAt: [ focusX, 0, 0 ], fov: 55, far: 12000 },
-    scene:    { background: '#080a12' },
+    scene:    { background: CRASH_LAB_ENVIRONMENT.background },
     renderer: { shadows: true },
     use:      [
-      standardLighting<CrashLabState>({
-        env:  { intensity: 0.3 },
-        sun:  { intensity: 1.1 },
-        hemi: { skyColor: '#8a9bff', groundColor: '#0a0c14', intensity: 0.45 },
-      }) as unknown as AppModule<CrashLabState>,
+      ...environmentModules<CrashLabState>(CRASH_LAB_ENVIRONMENT, sun),
 
       // The overview orbits; a focused lane FOLLOWS its dummy instead. Orbiting
       // a fixed point is useless when the thing you came to look at is doing
@@ -200,7 +217,6 @@ export async function mountCrashLab (
 
         build (ctx) {
           camera = ctx.camera
-          ctx.scene.fog = new THREE.Fog('#080a12', 2200, 6000)
           ctx.scene.add(forceLines.object, netLines.object)
 
           CRASH_CASES.forEach((crash, i) => {

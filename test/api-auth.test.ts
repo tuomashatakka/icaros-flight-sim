@@ -21,7 +21,8 @@ const bearer = (token: string, method = 'GET') =>
   new Request('http://localhost/api/auth', { method, headers: { authorization: `Bearer ${token}` }})
 
 /** Fresh per case: the handlers share one process-wide store. */
-const uniqueName = () => `Pilot_${crypto.randomUUID().replaceAll('-', '').slice(0, 12)}`
+const uniqueName = () => `Pilot_${crypto.randomUUID().replaceAll('-', '')
+  .slice(0, 12)}`
 
 type AuthBody = { token?: string; account?: { username: string }; error?: string }
 
@@ -91,7 +92,7 @@ describe('GET /api/auth/me and POST /api/auth/logout', () => {
 
     const before = await meRoute(bearer(token))
     expect(before.status).toBe(200)
-    expect((await before.json() as { account: { username: string } }).account.username).toBe(username)
+    expect((await before.json() as { account: { username: string }}).account.username).toBe(username)
 
     expect((await logoutRoute(bearer(token, 'POST'))).status).toBe(204)
     expect((await meRoute(bearer(token))).status).toBe(401)

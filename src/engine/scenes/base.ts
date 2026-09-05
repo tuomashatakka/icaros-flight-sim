@@ -1,7 +1,6 @@
 import * as THREE from 'three'
 import { createApp, createSeededRng, defineModule } from 'threejs-scene'
 import type { App, AppModule, FrameContext } from 'threejs-scene'
-import { standardLighting } from 'threejs-scene/modules/lighting'
 import { postProcessing } from 'threejs-scene/modules/post'
 import type { PostProcessingOptions } from 'threejs-scene/modules/post'
 import { useCameraView } from '@/hooks/use-camera-view'
@@ -23,8 +22,9 @@ import type { VehicleHandle } from '../modules/vehicle'
 import { physicsStepModule } from '../modules/physics-step'
 import { shipVisualModule } from '../modules/ship-visual'
 import type { ShipVisualHandle } from '../modules/ship-visual'
-import { sunModule } from '../modules/sun'
 import type { SunHandle } from '../modules/sun'
+import { environmentModules, resolveEnvironment } from './environment'
+import type { EnvironmentOverrides } from './environment'
 import { publishModule } from '../modules/publish'
 import type { PublishHandle } from '../modules/publish'
 import { attachBridge } from '../bridge'
@@ -63,12 +63,20 @@ type AppContext<TState extends object> = Parameters<AppModule<TState>['build']>[
 export type ScenePost = Pick<PostProcessingOptions, 'depth' | 'effects' | 'onFrame' | 'onResize'>
 
 export type BaseSceneConfig<TState extends object> = {
-  canvas:                   HTMLCanvasElement;
-  initialState:             TState;
-  seed?:                    number;
-  levelId?:                 string;
-  levelSpec?:               unknown;
-  background?:              THREE.ColorRepresentation;
+  canvas:       HTMLCanvasElement;
+  initialState: TState;
+  seed?:        number;
+  levelId?:     string;
+  levelSpec?:   unknown;
+
+  /**
+   * How this scene differs from `DEFAULT_ENVIRONMENT`.
+   *
+   * Sky, fog, fill and the key light are one budget — a scene states its deltas
+   * here rather than adding lights of its own, so the key-to-fill ratio that
+   * makes the ship's shadow readable survives every level.
+   */
+  environment?:             EnvironmentOverrides;
   bloom?:                   { threshold: number; strength: number; radius: number };
   colliders?:               readonly BoxCollider[];
   colliderOffset?:          readonly [number, number, number];
@@ -127,7 +135,6 @@ export async function mountBaseScene<TState extends object> (
   const {
     canvas,
     initialState,
-    background = '#0a0c14',
     bloom = { threshold: 0.8, strength: 0.4, radius: 0.4 },
     colliders,
     colliderOffset,
@@ -141,6 +148,8 @@ export async function mountBaseScene<TState extends object> (
     onFrame,
     onDispose,
   } = config
+
+  const environment = resolveEnvironment(config.environment)
 
   const RAPIER    = await initRapier()
   const physics   = createPhysics(RAPIER)
@@ -196,13 +205,7 @@ export async function mountBaseScene<TState extends object> (
   const game = gameModuleFactory?.(physics, isVehicleCollider, telemetry, controls, vehicle, rig)
 
   const modules: Array<AppModule<TState>> = [
-    standardLighting<TState>({
-      env:  { intensity: 0.22 },
-      sun:  { intensity: 0 },
-      hemi: { skyColor: '#8a9bff', groundColor: '#0a0c14', intensity: 0.2 },
-    }),
-
-    sunModule(sun, { intensity: 1.6, frustum: 45, mapSize: 2048 }) as unknown as AppModule<TState>,
+    ...environmentModules<TState>(environment, sun),
 
     defineModule<TState>({
       name: 'scene-geometry',
@@ -282,7 +285,7 @@ export async function mountBaseScene<TState extends object> (
     seed,
     clock,
     camera:   rig.camera,
-    scene:    { background },
+    scene:    { background: environment.background },
     renderer: { shadows: true },
     use:      modules,
 

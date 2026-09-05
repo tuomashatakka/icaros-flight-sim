@@ -29,9 +29,12 @@ export function orbitalRingLevel (): LevelSpec {
   })
 
   return {
-    id:         'orbital-ring',
-    background: '#0a0f1e',
-    fog:        [ '#0a0f1e', 200, 700 ],
+    id:          'orbital-ring',
+    environment: {
+      background: '#0a0f1e',
+      fog:        [ '#0a0f1e', 200, 700 ],
+      hemi:       { sky: '#3b82f6', ground: '#0a0f1e' },
+    },
 
     waypoints: Array.from({ length: 10 }, (_, i) => curve.getPointAt(i / 10)),
     width:     24,
@@ -67,12 +70,9 @@ export function orbitalRingLevel (): LevelSpec {
       planet.position.set(0, -320, -40)
       ctx.scene.add(planet)
 
-      ctx.scene.add(new THREE.HemisphereLight('#3b82f6', '#0a0f1e', 0.9))
-      ctx.scene.add(pointLight('#67e8f9', 70, 160, [ 0, 20, 10 ]))
-      ctx.scene.add(pointLight('#22d3ee', 260, 460, [ 180, 50, -150 ]))
-      ctx.scene.add(pointLight('#818cf8', 200, 420, [ 250, 40, 60 ]))
-
-      ctx.scene.fog = new THREE.Fog('#0a0f1e', 200, 700)
+      ctx.scene.add(pointLight('#67e8f9', 35, 160, [ 0, 20, 10 ]))
+      ctx.scene.add(pointLight('#22d3ee', 130, 460, [ 180, 50, -150 ]))
+      ctx.scene.add(pointLight('#818cf8', 100, 420, [ 250, 40, 60 ]))
     },
   }
 }

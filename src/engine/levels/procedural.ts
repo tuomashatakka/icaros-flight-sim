@@ -147,11 +147,13 @@ export function proceduralLevel (): LevelSpec {
   const waypoints = centerline.filter((_, i) => i % step === 0)
 
   return {
-    id:         'procedural',
-    background: '#171720',
-    // The shared 20-80 canvas fog this inherited under R3F would have swallowed
-    // a ~3000-unit sprint; given a range that matches the track.
-    fog:        [ '#171720', 120, 900 ],
+    id:          'procedural',
+    environment: {
+      background: '#171720',
+      // A ~3000-unit sprint: it needs far more range than the fixed decks.
+      fog:        [ '#171720', 120, 900 ],
+      hemi:       { sky: '#8a9bff', ground: '#171720' },
+    },
 
     waypoints,
     width: 20,
@@ -169,14 +171,10 @@ export function proceduralLevel (): LevelSpec {
       road.receiveShadow = true
       ctx.scene.add(road)
 
-      // This level carried no lights of its own under R3F — it leaned entirely
-      // on the Canvas ambient + directional + Sky + Environment. The engine's
-      // base layer is deliberately dim, so it needs its own fill here.
-      ctx.scene.add(new THREE.HemisphereLight('#8a9bff', '#171720', 0.8))
-      ctx.scene.add(pointLight('#aab4ff', 120, 500, [ 0, 80, -200 ]))
-      ctx.scene.add(pointLight('#c8b4ff', 90, 400, [ 400, 60, -800 ]))
-
-      ctx.scene.fog = new THREE.Fog('#171720', 120, 900)
+      // Accents, not fill — the shared environment owns ambient and the key
+      // light. These two only pick out the ribbon against a very dark sky.
+      ctx.scene.add(pointLight('#aab4ff', 55, 500, [ 0, 80, -200 ]))
+      ctx.scene.add(pointLight('#c8b4ff', 45, 400, [ 400, 60, -800 ]))
     },
   }
 }
