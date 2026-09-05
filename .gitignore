@@ -33,6 +33,10 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
+# Agent tooling scratch. Delegation runners and plugin hosts write session logs
+# here; they are per-run noise with no value to anyone reading the history.
+.logs/
+
 # vercel
 .vercel
 
