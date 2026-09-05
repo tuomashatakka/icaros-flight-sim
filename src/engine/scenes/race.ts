@@ -324,9 +324,11 @@ export async function mountRace (
       }),
     ],
 
-    onFrame: () => {
-      transport.drainEvents()
-      renderRemotes()
+    frameHooks: {
+      dynamicTransforms: () => {
+        transport.drainEvents()
+        renderRemotes()
+      },
     },
 
     onDispose: () => {

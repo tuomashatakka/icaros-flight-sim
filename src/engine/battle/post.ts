@@ -43,6 +43,7 @@ import type { EffectContext, GradePass } from 'threejs-scene/modules/post'
 import { createCinematicLUT, createGradePass } from 'threejs-scene/modules/post'
 import { createAnamorphic, createChromaticAberration, createLUT, createRadialBlur } from 'threejs-scene/modules/post/webgl'
 import type { ScenePost } from '../scenes/base'
+import { capVisualDelta } from '../render/cadence'
 
 
 export type PostQuality = 'high' | 'low'
@@ -141,7 +142,7 @@ export function createBattlePost (quality: PostQuality = resolveQuality()): Batt
       onFrame: (frame, ctx) => {
         grade?.setTime(frame.elapsed)
 
-        flash = Math.max(0, flash - frame.delta * 3.2)
+        flash = Math.max(0, flash - capVisualDelta(frame.delta) * 3.2)
 
         if (radial) {
           // Nothing below 60% of top speed streaks — otherwise the arena is

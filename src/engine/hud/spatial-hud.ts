@@ -57,7 +57,8 @@ type SpatialHudOptions = {
 
 export type SpatialHud = {
   object: THREE.Group;
-  update(frame: HudFrame): void;
+  project(frame: HudFrame): void;
+  redraw(frame: HudFrame): void;
   dispose(): void;
 }
 
@@ -275,12 +276,17 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
     overlayDirty = false
   }
 
-  function update (frame: HudFrame): void {
+  function project (frame: HudFrame): void {
     if (disposed || hidden)
       return
 
     lastFrame = frame
     syncPose(frame)
+  }
+
+  function redraw (frame: HudFrame): void {
+    if (disposed || hidden)
+      return
 
     if (mountedAt === null) {
       mountedAt = frame.elapsed
@@ -713,7 +719,8 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
 
   return {
     object,
-    update,
+    project,
+    redraw,
 
     dispose () {
       disposed = true

@@ -19,7 +19,8 @@ import type { HudData, HudFrame, HudSight, HudSource, HudViewFrame } from './typ
 export type { HudFrame, HudSight, HudViewFrame } from './types'
 
 export type HudHandle = {
-  update(view: HudViewFrame): void;
+  project(view: HudViewFrame): void;
+  redraw(): void;
 }
 
 type HandleType = { current: HudHandle | null }
@@ -113,7 +114,7 @@ function sharedHudModule<TState extends object> ({
     build (context) {
       context.scene.add(spatial.object)
       handle.current = {
-        update (view) {
+        project (view) {
           frame.elapsed        = view.elapsed
           frame.shipPosition   = view.shipPosition
           frame.hullQuaternion = view.hullQuaternion
@@ -130,7 +131,10 @@ function sharedHudModule<TState extends object> ({
           frame.brake    = controls.brake
           frame.boost    = controls.boost
           target(frame)
-          spatial.update(frame)
+          spatial.project(frame)
+        },
+        redraw () {
+          spatial.redraw(frame)
         },
       }
     },

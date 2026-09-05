@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { capVisualDelta } from '../render/cadence'
 
 /**
  * Afterburner — crossed additive beam planes plus a nozzle flare, per engine.
@@ -391,7 +392,7 @@ export function createAfterburner (
     update (delta, elapsed) {
       // Exponential spool toward the target — an instant cut looks like a bug,
       // and a linear ramp overshoots on the stutter of a tapped throttle.
-      const k = 1 - Math.pow(0.5, delta / SPOOL_HALF_LIFE)
+      const k = 1 - Math.pow(0.5, capVisualDelta(delta) / SPOOL_HALF_LIFE)
       level += (target - level) * k
 
       // Two detuned sines instead of noise: the flicker has to be deterministic

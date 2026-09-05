@@ -742,33 +742,35 @@ export async function mountBattle (
       }),
     ],
 
-    onFrame: frame => {
-      const elapsed = frame.elapsed
+    frameHooks: {
+      lowFrequencyScenery: frame => scenery?.update(frame.elapsed),
+      dynamicTransforms:   frame => {
+        const elapsed = frame.elapsed
 
-      // Motion blur rides ground speed rather than the boost flag, so coasting
-      // fast still streaks and tapping boost from a standstill does not.
-      const lv = prediction?.rig.chassis.linvel()
-      post.setSpeed(lv ? Math.hypot(lv.x, lv.z) / vehicleConfig.maxSpeed : 0)
-      scenery?.update(elapsed)
-      blastPool.update(frame.delta)
+        // Motion blur rides ground speed rather than the boost flag, so coasting
+        // fast still streaks and tapping boost from a standstill does not.
+        const lv = prediction?.rig.chassis.linvel()
+        post.setSpeed(lv ? Math.hypot(lv.x, lv.z) / vehicleConfig.maxSpeed : 0)
+        blastPool.update(frame.delta)
 
-      renderRemotes(elapsed)
+        renderRemotes(elapsed)
 
-      // Stepped on the RENDER delta, not the sim step: these are visuals whose
-      // authoritative outcome the server already decided, and a missile that
-      // stutters between physics ticks reads as a dropped frame.
-      projectiles.step(frame.delta, id => {
-        const remote = transport.remotes().find(r => r.id === id)
-        if (remote)
-          return { x: remote.state.x, y: remote.state.y, z: remote.state.z }
+        // Stepped on the RENDER delta, not the sim step: these are visuals whose
+        // authoritative outcome the server already decided, and a missile that
+        // stutters between physics ticks reads as a dropped frame.
+        projectiles.step(frame.delta, id => {
+          const remote = transport.remotes().find(r => r.id === id)
+          if (remote)
+            return { x: remote.state.x, y: remote.state.y, z: remote.state.z }
 
-        const local = transport.localState()
-        return local && local.id === id ? { x: local.x, y: local.y, z: local.z } : null
-      })
+          const local = transport.localState()
+          return local && local.id === id ? { x: local.x, y: local.y, z: local.z } : null
+        })
 
-      const snapshot = transport.latest()
-      if (snapshot)
-        renderWorld(snapshot, elapsed)
+        const snapshot = transport.latest()
+        if (snapshot)
+          renderWorld(snapshot, elapsed)
+      },
     },
 
     onDispose: () => {

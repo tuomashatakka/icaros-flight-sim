@@ -1,4 +1,5 @@
 import * as THREE from 'three'
+import { capVisualDelta } from '../render/cadence'
 import { NEUTRAL_COLOR, TEAM_COLORS } from '@crash-velocity/battle/arena'
 import type { BattleTeam } from '@crash-velocity/battle/arena'
 import { WEAPONS } from '@crash-velocity/battle/weapons'
@@ -693,6 +694,7 @@ export function buildExplosionPool (size: number): ExplosionPool {
     },
 
     update (delta) {
+      delta = capVisualDelta(delta)
       for (const item of items) {
         if (!item.root.visible)
           continue

@@ -27,6 +27,8 @@ import type { EnvironmentOverrides } from './environment'
 import { publishModule } from '../modules/publish'
 import type { PublishHandle } from '../modules/publish'
 import { attachBridge } from '../bridge'
+import { capVisualDelta, createCadenceScheduler } from '../render/cadence'
+import { publishedControlsChanged, snapshotPublishedControls } from '../render/invalidation'
 
 
 const SEED = 7
@@ -76,6 +78,15 @@ type AppContext<TState extends object> = Parameters<AppModule<TState>['build']>[
 
 /** The slice of the post module a scene is allowed to fill in. */
 export type ScenePost = Pick<PostProcessingOptions, 'depth' | 'effects' | 'onFrame' | 'onResize'>
+
+export type SceneFrameHooks = {
+
+  /** Moving entities and display-rate visual integrators. */
+  dynamicTransforms?: (frame: FrameContext) => void;
+
+  /** Ambient animation that does not need display cadence. */
+  lowFrequencyScenery?: (frame: FrameContext) => void;
+}
 
 export type BaseSceneConfig<TState extends object> = {
   canvas:       HTMLCanvasElement;
@@ -144,14 +155,8 @@ export type BaseSceneConfig<TState extends object> = {
     controls: Controls
   ) => AppModule<TState>;
   extraModules?: Array<AppModule<TState>>;
-  onFrame?:        (
-    frame: FrameContext,
-    shipPosition: THREE.Vector3,
-    shipQuaternion: THREE.Quaternion,
-    rig: CameraRig,
-    controls: Controls
-  ) => void;
-  onDispose?: () => void;
+  frameHooks?:   SceneFrameHooks;
+  onDispose?:    () => void;
 }
 
 export async function mountBaseScene<TState extends object> (
@@ -169,7 +174,7 @@ export async function mountBaseScene<TState extends object> (
     gameModuleFactory,
     hudModuleFactory,
     extraModules = [],
-    onFrame,
+    frameHooks,
     onDispose,
   } = config
 
@@ -213,6 +218,9 @@ export async function mountBaseScene<TState extends object> (
   let lastViewSeq                                                         = controls.viewSeq
   let lastViewBlendSeq                                                    = controls.viewBlendSeq
   let lastView                                                            = rig.view()
+  let lastPublishedControls                                               = snapshotPublishedControls(controls)
+  const cadence                                                           = createCadenceScheduler()
+  let hudViewReady                                                        = false
 
   useCameraView.getState().setView(lastView)
 
@@ -253,15 +261,12 @@ export async function mountBaseScene<TState extends object> (
       name: 'input-sync',
       build () {},
       update () {
-        app.setState({
-          steer:    controls.steer,
-          throttle: controls.throttle,
-          brake:    controls.brake,
-          boost:    controls.boost,
-          reverse:  controls.reverse,
-          strafe:   controls.strafe,
-          resetSeq: controls.resetSeq,
-        } as unknown as Partial<TState>)
+        if (!publishedControlsChanged(lastPublishedControls, controls))
+          return
+
+        const next = snapshotPublishedControls(controls)
+        lastPublishedControls = next
+        app.setState(next as unknown as Partial<TState>)
       },
     })
   )
@@ -318,6 +323,19 @@ export async function mountBaseScene<TState extends object> (
   })
 
   function renderFrame (frame: FrameContext) {
+    const visualFrame = { ...frame, delta: capVisualDelta(frame.delta) }
+    const due         = cadence.advance(frame.delta)
+
+    updateCameraAndInterpolation(visualFrame)
+    updateDynamicTransforms(visualFrame)
+    if (due.lowFrequency)
+      frameHooks?.lowFrequencyScenery?.(visualFrame)
+    projectHud(visualFrame)
+    redrawHudCanvas(visualFrame)
+    finalRender(visualFrame)
+  }
+
+  function updateCameraAndInterpolation (frame: FrameContext) {
     if (controls.viewSeq !== lastViewSeq) {
       lastViewSeq = controls.viewSeq
       rig.toggleView()
@@ -346,6 +364,7 @@ export async function mountBaseScene<TState extends object> (
       hullAimPitch += (aimNorm * MAX_AIM_PITCH - hullAimPitch) *
         (1 - Math.exp(-9 * frame.delta))
       shipVisual.current?.setAimPitch(hullAimPitch)
+      shipVisual.current?.updateVisual(frame.delta, frame.elapsed)
 
       interpolator.sample(clock.alpha(), _shipPosition, _shipQuaternion)
       shipRoot.position.copy(_shipPosition)
@@ -368,14 +387,26 @@ export async function mountBaseScene<TState extends object> (
       _view.panX        = controls.panX
       _view.panY        = controls.panY
       _view.aimPitch    = aimNorm
-      hud.current?.update(_view)
-
-      onFrame?.(frame, _shipPosition, _shipQuaternion, rig, controls)
+      hudViewReady      = true
       devFrame?.(_shipPosition, frame.delta)
     }
-    else
-      onFrame?.(frame, _shipPosition, _shipQuaternion, rig, controls)
+  }
 
+  function updateDynamicTransforms (frame: FrameContext) {
+    frameHooks?.dynamicTransforms?.(frame)
+  }
+
+  function projectHud (_frame: FrameContext) {
+    if (hudViewReady)
+      hud.current?.project(_view)
+  }
+
+  function redrawHudCanvas (_frame: FrameContext) {
+    if (hudViewReady)
+      hud.current?.redraw()
+  }
+
+  function finalRender (frame: FrameContext) {
     if (composer)
       composer.render(frame.delta)
     else

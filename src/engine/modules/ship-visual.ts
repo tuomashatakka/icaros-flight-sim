@@ -8,12 +8,15 @@ import type { ShipInstance } from '../assets/ship-loader'
 import type { RaceState } from '../state'
 import type { Telemetry } from '../telemetry'
 import type { ShipConfig } from '@/lib/ship/registry'
+import { changedBeyond } from '../render/invalidation'
 
 /** Roughly the chassis length, so the hull matches its collider. */
 const SHIP_TARGET_SIZE = 2.8
 
 /** Lifts the model off the collider centre, as the R3F build's wrapper group did. */
-const VISUAL_LIFT = 0.5
+const VISUAL_LIFT     = 0.5
+const CONTROL_EPSILON = 0.001
+const AIM_EPSILON     = 0.0001
 
 export type ShipVisualHandle = {
 
@@ -27,6 +30,9 @@ export type ShipVisualHandle = {
    * `vehicle.ts` never sees it.
    */
   setAimPitch(radians: number): void;
+
+  /** Advance display-rate plume easing with the scene's capped visual delta. */
+  updateVisual(delta: number, elapsed: number): void;
 
   /**
    * Show or hide the exterior hull. Called from the render phase as the camera
@@ -72,7 +78,11 @@ export function shipVisualModule (
 
   // Survives a hull swap: reapplied in `swapTo` so changing ship mid-hold does
   // not silently snap the nose back to level.
-  let aimPitch = 0
+  let aimPitch                     = 0
+  let lastRenderedAim              = Number.NaN
+  let lastAirbrake                 = Number.NaN
+  let lastBoosting: boolean | null = null
+  let lastThrottle                 = Number.NaN
 
   async function swapTo (config: ShipConfig) {
     const mine = ++generation
@@ -90,11 +100,15 @@ export function shipVisualModule (
     next.root.visible    = hullVisible
     // Negative: a +X rotation swings +Z (forward) toward -Y, i.e. nose DOWN.
     next.root.rotation.x = -aimPitch
+    lastRenderedAim      = aimPitch
     shipRoot.add(next.root)
 
     // Built AFTER the hull is parented and fitted, so the bounding box the flap
     // placement is measured from is the fitted one.
     airbrakes = createAirbrakes(next.root)
+    lastAirbrake = Number.NaN
+    lastBoosting = null
+    lastThrottle = Number.NaN
 
     // Cache the glow materials once instead of traversing the hull every frame,
     // which is what the R3F build did.
@@ -134,13 +148,19 @@ export function shipVisualModule (
 
           setAimPitch (radians) {
             aimPitch = radians
-            if (instance)
+            if (instance && changedBeyond(lastRenderedAim, radians, AIM_EPSILON)) {
               instance.root.rotation.x = -radians
+              lastRenderedAim = radians
+            }
+          },
+
+          updateVisual (delta, elapsed) {
+            instance?.burner.update(delta, elapsed)
           },
         }
     },
 
-    update (state, frame) {
+    update (state) {
       const config = state.shipConfig
       if (!config)
         return
@@ -155,21 +175,29 @@ export function shipVisualModule (
           instance?.applyConfig(config)
       }
 
-      airbrakes?.setDeploy(telemetry.airbrake)
+      if (changedBeyond(lastAirbrake, telemetry.airbrake, CONTROL_EPSILON)) {
+        lastAirbrake = telemetry.airbrake
+        airbrakes?.setDeploy(lastAirbrake)
+      }
 
       // Pulse the engine glow while boosting.
-      const intensity = telemetry.boosting ? 3.6 : 1.6
-      for (const material of glowMaterials)
-        material.emissiveIntensity = intensity
+      if (lastBoosting !== telemetry.boosting) {
+        lastBoosting = telemetry.boosting
+
+        const intensity = lastBoosting ? 3.6 : 1.6
+        for (const material of glowMaterials)
+          material.emissiveIntensity = intensity
+      }
 
       // Plume tracks the throttle. The idle floor is deliberate: an engine that
       // goes fully dark on lift-off reads as a stall rather than a coast.
       const burner = instance?.burner
       if (burner) {
-        burner.setThrottle(telemetry.boosting ? 1 : state.throttle ? 0.72 : 0.12)
-        // Driven on the fixed step rather than the render frame so the plume is
-        // identical across displays, as the rest of the sim is.
-        burner.update(frame.delta, frame.elapsed)
+        const throttle = telemetry.boosting ? 1 : state.throttle ? 0.72 : 0.12
+        if (changedBeyond(lastThrottle, throttle, CONTROL_EPSILON)) {
+          lastThrottle = throttle
+          burner.setThrottle(throttle)
+        }
       }
     },
 
@@ -181,6 +209,10 @@ export function shipVisualModule (
       instance = null
       glowMaterials = []
       lastConfig = null
+      lastRenderedAim = Number.NaN
+      lastAirbrake    = Number.NaN
+      lastBoosting    = null
+      lastThrottle    = Number.NaN
       if (handle)
         handle.current = null
     },
