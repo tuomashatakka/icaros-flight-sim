@@ -13,6 +13,7 @@ import type { BoxCollider } from 'Φcolliders'
 import { createTelemetry } from '../telemetry'
 import type { Telemetry } from '../telemetry'
 import { createControls, attachControls } from '../input'
+import { attachTapMove } from '../nav/tap-move'
 import type { Controls } from '../input'
 import { createCameraRig } from '../camera/rig'
 import type { CameraRig } from '../camera/rig'
@@ -369,7 +370,6 @@ export async function mountBaseScene<TState extends object> (
       _view.elapsed     = (performance.now() - hudEpoch) / 1000
       _view.throttle    = telemetry.thrustCommand
       _view.cameraBlend = blend
-      _view.camera      = rig.camera
       _view.aimPitch    = aimNorm
 
       // Every frame, unconditionally. The visor is anchored in world space to
@@ -382,6 +382,11 @@ export async function mountBaseScene<TState extends object> (
       // to its own texture cadence.
       _view.drawHz = quality.settings().hudHz
       hud.current?.update(_view)
+
+      // After the HUD read the frame and before the next sim tick: a held key
+      // or a thumb on a stick is a live intent and outranks a standing
+      // destination, so the tap path writes last only when it still has one.
+      tapMove.drive()
 
       onFrame?.(frame, _shipPosition, _shipQuaternion, rig, controls)
       devFrame?.(_shipPosition, frame.delta)
@@ -396,7 +401,27 @@ export async function mountBaseScene<TState extends object> (
     quality.endFrame(frame.delta * 1000)
   }
 
+  // One camera for the rig's lifetime (`camera/rig.ts`), so the HUD's frame
+  // record carries it from here rather than re-assigning it every frame.
+  _view.camera = rig.camera
+
   const detachControls = attachControls(canvas, controls)
+
+  // Tap the ground to fly there. A fallback path for touch, where the canvas
+  // drag is look-around and the virtual sticks own thrust — so a rail that
+  // fails to paint leaves a phone with no way to move at all. `?tap=1` opens it
+  // to a mouse so it can be driven from `dev-cli` without a touchscreen.
+  const tapEverywhere = typeof window !== 'undefined' &&
+    new URLSearchParams(window.location.search).get('tap') === '1'
+  const tapMove = attachTapMove({
+    canvas,
+    controls,
+    scene:          app.ctx.scene,
+    camera:         () => rig.camera,
+    shipPosition:   () => _shipPosition,
+    hullQuaternion: () => _shipQuaternion,
+    accepts:        pointerType => tapEverywhere || pointerType === 'touch',
+  })
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const detachBridge   = attachBridge(app as any)
 
@@ -451,6 +476,7 @@ export async function mountBaseScene<TState extends object> (
     onDispose?.()
     detachDev?.()
     detachControls()
+    tapMove.dispose()
     detachBridge()
     quality.dispose()
     composer = null
