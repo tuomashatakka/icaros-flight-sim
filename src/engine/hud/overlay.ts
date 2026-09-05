@@ -553,6 +553,16 @@ export type DrawHudOverlayOptions = {
 
   /** Arrival phase of the touch controls, 0..1. */
   touchPhase: number;
+
+  /**
+   * A line describing why the touch rail is or is not on screen.
+   *
+   * Only set under `?touch=1`, and drawn over everything. A rail that fails to
+   * appear on someone else's phone is otherwise undiagnosable from here: the
+   * decision has four inputs, a bug report can only report the output, and
+   * there is no console on a handset worth asking anyone to open.
+   */
+  touchDebug?: string | null;
 }
 
 export function drawHudOverlay ({
@@ -572,6 +582,7 @@ export function drawHudOverlay ({
   modalData,
   modalClosing,
   touchPhase,
+  touchDebug,
 }: DrawHudOverlayOptions): void {
   const { context, canvas } = overlay
   const { width, height }   = canvas
@@ -615,6 +626,20 @@ export function drawHudOverlay ({
 
   if (modalClosing)
     overlay.regions.length = regionMark
+
+  // Last, and outside every branch above, so it reports even when the thing it
+  //  is reporting on drew nothing at all.
+  if (touchDebug) {
+    context.save()
+    context.font         = `500 ${Math.round(height * 0.022)}px ui-monospace, monospace`
+    context.textAlign    = 'left'
+    context.textBaseline = 'top'
+    context.fillStyle    = 'rgba(0, 0, 0, .72)'
+    context.fillRect(0, 0, context.measureText(touchDebug).width + 24, height * 0.04)
+    context.fillStyle    = '#7dffe0'
+    context.fillText(touchDebug, 12, height * 0.008)
+    context.restore()
+  }
 
   overlay.texture.needsUpdate = true
 

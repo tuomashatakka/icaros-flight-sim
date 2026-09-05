@@ -163,6 +163,9 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
   }
   coarse.addEventListener('change', onPointerKind)
 
+  /** Last computed blocking state, for the `?touch=1` readout. */
+  let lastBlocking = false
+
   const shortEdge = () => Math.min(cssSize.width, cssSize.height)
 
   const gestures = createTouchGestures({
@@ -290,8 +293,31 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
       modalData,
       modalClosing: modalReveal.closing(),
       touchPhase:   touchReveal.value(frame.elapsed),
+      touchDebug:   forced === '1' ? touchDebugLine(frame) : null,
     })
     overlayDirty = false
+  }
+
+  /**
+   * Every input to the rail's visibility, on one line.
+   *
+   * Reported rather than deduced: the four conditions are read here, at the
+   * moment the overlay is drawn, so the line cannot disagree with what the
+   * frame actually did.
+   */
+  function touchDebugLine (frame: HudFrame): string {
+    const age = mountedAt === null ? -1 : frame.elapsed - mountedAt
+    return [
+      `touch=${isTouch ? 1 : 0}`,
+      `coarse=${coarse.matches ? 1 : 0}`,
+      `pts=${navigator.maxTouchPoints}`,
+      `phase=${touchReveal.value(frame.elapsed).toFixed(2)}`,
+      `age=${age.toFixed(2)}`,
+      `block=${lastBlocking ? 1 : 0}`,
+      `css=${Math.round(cssSize.width)}x${Math.round(cssSize.height)}`,
+      `ovl=${overlay.canvas.width}x${overlay.canvas.height}`,
+      `ins=${Math.round(insets.top)}/${Math.round(insets.bottom)}`,
+    ].join(' ')
   }
 
   function update (frame: HudFrame): void {
@@ -328,6 +354,7 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
     }
 
     const blocking = isHudBlockingOverlay(lastData)
+    lastBlocking   = blocking
     modalReveal.set(blocking, frame.elapsed)
     if (blocking)
       modalData = lastData
@@ -343,8 +370,14 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
     // Same moment as before to the millisecond: the old gate was the EASED
     // phase passing 0.5, and `1 - (1 - t)³` crosses a half at t ≈ 0.206, not at
     // the halfway point of the transition.
+    //
+    // `?touch=1` skips all of it. An override that still had to negotiate a
+    // stagger and a modal check was not an override — it forced one of the
+    // three conditions and left the other two to fail silently, which is a
+    // diagnostic that cannot distinguish "the sniff was wrong" from "something
+    // downstream ate the rail".
     const staggered = mountedAt !== null && frame.elapsed - mountedAt >= TOUCH_STAGGER_S
-    touchReveal.set(isTouch && staggered && !blocking, frame.elapsed)
+    touchReveal.set(forced === '1' || isTouch && staggered && !blocking, frame.elapsed)
 
     // A layer mid-transition needs every frame. `isHudBlockingOverlay` alone
     // would stop redrawing the moment a modal closed and freeze its exit wipe
