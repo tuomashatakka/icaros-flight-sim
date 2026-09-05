@@ -1,0 +1,13 @@
+[
+  { "name": "race-empty", "level": "flats", "workload": "empty network scene", "remoteShips": 0, "hud": false, "view": "third-person" },
+  { "name": "race-max-remotes", "level": "flats", "workload": "maximum supported remote ships", "remoteShips": 11, "hud": false, "view": "third-person" },
+  { "name": "race-cockpit-hud", "level": "neon-canyon", "workload": "cockpit hud", "remoteShips": 0, "hud": true, "view": "cockpit" },
+  { "name": "race-third-person", "level": "orbital-ring", "workload": "third-person camera", "remoteShips": 0, "hud": true, "view": "third-person" },
+  { "name": "race-forced-touch", "level": "flats", "workload": "forced touch controls", "remoteShips": 0, "hud": true, "view": "third-person", "touch": true },
+  { "name": "battle-empty", "level": "battle", "workload": "empty client scene", "remoteShips": 0, "hud": false, "view": "third-person" },
+  { "name": "battle-max-remotes", "level": "battle", "workload": "maximum supported remote ships", "remoteShips": 15, "hud": false, "view": "third-person" },
+  { "name": "battle-projectiles", "level": "battle", "workload": "active projectiles and explosions", "remoteShips": 5, "hud": true, "view": "third-person", "fire": true },
+  { "name": "battle-cockpit-hud", "level": "battle", "workload": "cockpit hud", "remoteShips": 5, "hud": true, "view": "cockpit" },
+  { "name": "battle-third-person", "level": "battle", "workload": "third-person camera", "remoteShips": 5, "hud": true, "view": "third-person" },
+  { "name": "battle-forced-touch", "level": "battle", "workload": "forced touch controls", "remoteShips": 5, "hud": true, "view": "third-person", "touch": true }
+]

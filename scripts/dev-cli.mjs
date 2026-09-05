@@ -28,10 +28,11 @@
  * be perturbed by however long the page happened to be open first.
  */
 import { spawn } from 'node:child_process'
-import { mkdir, writeFile } from 'node:fs/promises'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { chromium } from 'playwright'
+import { PERFORMANCE_TIERS, TOTAL_FRAME_60_FPS_MS } from '../src/engine/dev/performance-budget.ts'
 
 
 const ROOT   = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -93,6 +94,10 @@ function parseArgs (argv) {
 }
 
 const out = value => process.stdout.write(`${JSON.stringify(value, null, 2)}\n`)
+
+const BENCHMARKS = JSON.parse(await readFile(
+  new URL('../src/engine/dev/benchmark-scenarios.json', import.meta.url), 'utf8'
+))
 
 function fail (message, code = 1) {
   process.stderr.write(`${message}\n`)
@@ -373,6 +378,80 @@ const commands = {
       errors:      result.trace.errors,
       console:     result.consoleLines.slice(-30),
     })
+  },
+
+  async benchmark (args) {
+    const name     = args._[0] ?? 'race-third-person'
+    const scenario = BENCHMARKS.find(item => item.name === name)
+    if (!scenario)
+      fail(`unknown benchmark '${name}'. choose: ${BENCHMARKS.map(item => item.name).join(', ')}`)
+
+    const tierName = args.tier ?? 'desktop'
+    const tier     = PERFORMANCE_TIERS[tierName]
+    if (!tier)
+      fail(`unknown tier '${tierName}'. choose: ${Object.keys(PERFORMANCE_TIERS).join(', ')}`)
+
+    const seconds       = args.sustained ? 60 : Number(args.seconds ?? 10)
+    const benchmarkArgs = {
+      ...args,
+      level: scenario.level,
+      size:  args.size ?? tier.viewport,
+      nohud: !scenario.hud,
+      query: [ args.query, scenario.touch ? 'touch=1' : '' ].filter(Boolean).join(','),
+    }
+    const result = await withPage(benchmarkArgs, async page => {
+      const peers = []
+      for (let i = 0; i < scenario.remoteShips; i++) {
+        const peer = await page.context().newPage()
+        await peer.goto(buildUrl(benchmarkArgs), { waitUntil: 'domcontentloaded' })
+        await peer.waitForFunction(() => window.__dev?.ready === true, null, { timeout: READY_TIMEOUT })
+        peers.push(peer)
+      }
+      if (scenario.view === 'cockpit')
+        await page.evaluate(() => window.__dev.toggleView())
+      if (scenario.fire)
+        await page.evaluate(() => window.__dev.setInput({ throttle: true, fire: true, fireSecondary: true }))
+      await page.waitForTimeout(2000)
+
+      const capture = await page.evaluate(
+        options => window.__dev.capturePerformance(options),
+        { seconds, longFrameMs: TOTAL_FRAME_60_FPS_MS }
+      )
+      const device = await page.evaluate(() => {
+        const gl    = window.__dev.raw.app.ctx.renderer.getContext()
+        const debug = gl.getExtension('WEBGL_debug_renderer_info')
+        return {
+          userAgent: navigator.userAgent,
+          renderer:  debug ? gl.getParameter(debug.UNMASKED_RENDERER_WEBGL) : 'masked by browser',
+          vendor:    debug ? gl.getParameter(debug.UNMASKED_VENDOR_WEBGL) : 'masked by browser',
+        }
+      })
+      return { capture, device, joinedRemoteShips: peers.length }
+    })
+
+    const { capture } = result
+    const checks      = {
+      p95FrameMs:   capture.frameMs.p95 <= tier.limits.p95FrameMs,
+      p99FrameMs:   capture.frameMs.p99 <= tier.limits.p99FrameMs,
+      worstFrameMs: capture.frameMs.worst <= tier.limits.worstFrameMs,
+      drawCalls:    capture.render.drawCalls <= tier.limits.drawCalls,
+      triangles:    capture.render.triangles <= tier.limits.triangles,
+    }
+    const report = {
+      scenario:          { ...scenario, joinedRemoteShips: result.joinedRemoteShips },
+      selectedTier:      tierName,
+      target:            tier.target,
+      browserDevice:     result.device,
+      totalFrame60FpsMs: TOTAL_FRAME_60_FPS_MS,
+      headroomNote:      'desktop p95 reserves 2.67 ms for browser composition and input processing',
+      capture,
+      limits:            tier.limits,
+      checks,
+      pass:              Object.values(checks).every(Boolean),
+    }
+    out(report)
+    if (!report.pass)
+      throw new Error(`benchmark failed selected tier '${tierName}'`)
   },
 
   async eval (args) {

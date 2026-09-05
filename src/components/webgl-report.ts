@@ -22,6 +22,122 @@ export type DeviceInfo = {
   drawingBuffer?:  string;
 }
 
+export type FramePercentiles = { p50: number | null; p95: number | null; p99: number | null; worst: number | null }
+
+export type PerformanceCapture = {
+  intervalSeconds:      number;
+  frames:               number;
+  frameMs:              FramePercentiles;
+  gpuMs:                FramePercentiles | null;
+  timing:               'gpu-and-cpu' | 'cpu-only';
+  gpuTimer:             'ext_disjoint_timer_query_webgl2' | 'unavailable';
+  longFrameThresholdMs: number;
+  longFrames:           Array<{ atSeconds: number; ms: number }>;
+  render: {
+    drawCalls:  number;
+    triangles:  number;
+    programs:   number;
+    textures:   number;
+    geometries: number;
+    target:     { width: number; height: number; pixelRatio: number };
+  };
+}
+
+type TimerExtension = {
+  TIME_ELAPSED_EXT: number; GPU_DISJOINT_EXT: number;
+}
+
+/** A non-blocking CPU/GPU sampler. Query results are read only after the driver marks them available. */
+export function createPerformanceCapture (app: AnyApp) {
+  const renderer                                             = app.ctx.renderer
+  const gl                                                   = renderer.getContext() as WebGL2RenderingContext
+  const ext                                                  = gl.getExtension('EXT_disjoint_timer_query_webgl2') as TimerExtension | null
+  const frames: number[]                                     = []
+  const gpu: number[]                                        = []
+  const pending: WebGLQuery[]                                = []
+  const started                                              = performance.now()
+  const longFrames: Array<{ atSeconds: number; ms: number }> = []
+  const peaks                                                = { drawCalls: 0, triangles: 0, programs: 0, textures: 0, geometries: 0 }
+  let active: WebGLQuery | null = null
+  let stopped                   = false
+  let longFrameThresholdMs      = 16.67
+
+  const percentiles = (values: number[]): FramePercentiles => {
+    const sorted = [ ...values ].sort((a, b) => a - b)
+    const at     = (q: number) => sorted.length
+      ? +sorted[Math.min(sorted.length - 1, Math.ceil(sorted.length * q) - 1)].toFixed(2)
+      : null
+    return { p50: at(0.5), p95: at(0.95), p99: at(0.99), worst: at(1) }
+  }
+  const pollGpu = () => {
+    if (!ext)
+      return
+    if (gl.getParameter(ext.GPU_DISJOINT_EXT)) {
+      for (const query of pending)
+        gl.deleteQuery(query)
+      pending.length = 0
+      return
+    }
+    while (pending.length && gl.getQueryParameter(pending[0], gl.QUERY_RESULT_AVAILABLE)) {
+      const query = pending.shift()!
+      gpu.push(gl.getQueryParameter(query, gl.QUERY_RESULT) / 1e6)
+      gl.deleteQuery(query)
+    }
+  }
+
+  return {
+    setLongFrameThreshold (ms: number) {
+      longFrameThresholdMs = ms
+    },
+    beginGpu () {
+      pollGpu()
+      if (!ext || active || stopped)
+        return
+      active = gl.createQuery()
+      if (active)
+        gl.beginQuery(ext.TIME_ELAPSED_EXT, active)
+    },
+    endGpu () {
+      if (!ext || !active)
+        return
+      gl.endQuery(ext.TIME_ELAPSED_EXT)
+      pending.push(active)
+      active = null
+    },
+    frame (ms: number) {
+      if (stopped)
+        return
+      frames.push(ms)
+      if (ms > longFrameThresholdMs)
+        longFrames.push({ atSeconds: +((performance.now() - started) / 1000).toFixed(3), ms: +ms.toFixed(2) })
+
+      const info       = renderer.info
+      peaks.drawCalls  = Math.max(peaks.drawCalls, info.render.calls)
+      peaks.triangles  = Math.max(peaks.triangles, info.render.triangles)
+      peaks.programs   = Math.max(peaks.programs, info.programs?.length ?? 0)
+      peaks.textures   = Math.max(peaks.textures, info.memory.textures)
+      peaks.geometries = Math.max(peaks.geometries, info.memory.geometries)
+    },
+    finish (intervalSeconds: number): PerformanceCapture {
+      stopped = true
+      pollGpu()
+
+      const size = renderer.getDrawingBufferSize(new THREE.Vector2())
+      return {
+        intervalSeconds,
+        frames:   frames.length,
+        frameMs:  percentiles(frames),
+        gpuMs:    gpu.length ? percentiles(gpu) : null,
+        timing:   ext ? 'gpu-and-cpu' : 'cpu-only',
+        gpuTimer: ext ? 'ext_disjoint_timer_query_webgl2' : 'unavailable',
+        longFrameThresholdMs,
+        longFrames,
+        render:   { ...peaks, target: { width: size.x, height: size.y, pixelRatio: renderer.getPixelRatio() }},
+      }
+    },
+  }
+}
+
 /**
  * Read the device's own identification from a live context.
  *
