@@ -69,10 +69,26 @@ export type BattleView = {
   countdown: number;
   timeLeft:  number;
   scores:    Record<BattleTeam, number>;
-  players:   ViewPlayer[];
-  zones:     Array<{ id: string; owner: BattleTeam | null; progress: number; capturing: BattleTeam | null; contested: boolean }>;
-  flags:     Array<{ team: BattleTeam; state: string; carrierId: string | null; x: number; y: number; z: number }>;
-  beams:     Beam[];
+  players:   readonly ViewPlayer[];
+  zones:     ReadonlyArray<{ id: string; owner: BattleTeam | null; progress: number; capturing: BattleTeam | null; contested: boolean }>;
+  flags:     ReadonlyArray<{ team: BattleTeam; state: string; carrierId: string | null; x: number; y: number; z: number }>;
+  beams:     readonly Beam[];
+}
+
+type ViewZone = BattleView['zones'][number]
+type ViewFlag = BattleView['flags'][number]
+
+export type BattleFrame = BattleView & {
+  readonly playersById:       ReadonlyMap<string, ViewPlayer>;
+  readonly namesById:         ReadonlyMap<string, string>;
+  readonly playersByNetIndex: ReadonlyMap<number, ViewPlayer>;
+  readonly remotes:           readonly NetRemote[];
+  readonly remotesById:       ReadonlyMap<string, NetRemote>;
+  readonly remotesByNetIndex: ReadonlyMap<number, NetRemote>;
+  readonly zonesById:         ReadonlyMap<string, ViewZone>;
+  readonly flagsByTeam:       ReadonlyMap<BattleTeam, ViewFlag>;
+  readonly flagsByCarrierId:  ReadonlyMap<string, ViewFlag>;
+  readonly local:             ViewPlayer | null;
 }
 
 export type NetRemote = {
@@ -98,7 +114,9 @@ const beamsInFlight: Beam[] = []
 
 export class BattleTransport {
   private readonly link = new RoomLink<BattleStateType, BattleEvent>()
-  private view: BattleView | null = null
+  private view:         BattleFrame | null = null
+  private viewSnapshot: ShipState[] | null = null
+  private viewStateVersion = -1
 
   get clock () {
     return this.link.clock
@@ -167,22 +185,11 @@ export class BattleTransport {
   }
 
   remotes (): readonly NetRemote[] {
-    const view = this.latest()
-    if (!view)
-      return []
-
-    const out: NetRemote[] = []
-    for (const remote of this.link.remotes()) {
-      const player = view.players.find(p => p.respawnIndex >= 0 && this.indexOf(p.id) === remote.netIndex)
-      if (player)
-        out.push({ id: player.id, team: player.team, name: player.name, interp: remote.interp, state: player })
-    }
-    return out
+    return this.frame()?.remotes ?? []
   }
 
   localState (): ViewPlayer | null {
-    const id = this.localId()
-    return id ? this.latest()?.players.find(p => p.id === id) ?? null : null
+    return this.frame()?.local ?? null
   }
 
   localId (): string | null {
@@ -216,31 +223,31 @@ export class BattleTransport {
     return this.link.stats()
   }
 
-  private indexOf (playerId: string): number {
-    return this.link.state?.players.get(playerId)?.netIndex ?? -1
-  }
-
   /**
    * Join the two channels.
    *
-   * Rebuilt per call rather than cached, because both halves change at
-   * different rates and a cache keyed on either would go stale against the
-   * other. The scene asks once per frame.
+   * Rebuilt when either channel changes. Calls in between return the same
+   * read-only frame so every consumer in a render sees one coherent join.
    */
-  latest (): BattleView | null {
+  frame (): BattleFrame | null {
     const state = this.link.state
     const snap  = this.link.latest()
     if (!state)
       return null
+    if (this.view && this.viewSnapshot === snap?.ships && this.viewStateVersion === this.link.stateVersion)
+      return this.view
 
     const poses = new Map<number, ShipState>()
     for (const ship of snap?.ships ?? [])
       poses.set(ship.id, ship)
 
     const players: ViewPlayer[] = []
+    const playersById           = new Map<string, ViewPlayer>()
+    const namesById             = new Map<string, string>()
+    const playersByNetIndex     = new Map<number, ViewPlayer>()
     for (const [ id, entry ] of state.players) {
-      const pose = poses.get(entry.netIndex)
-      players.push({
+      const pose               = poses.get(entry.netIndex)
+      const player: ViewPlayer = {
         id,
         team:         entry.team as BattleTeam,
         name:         entry.name,
@@ -264,34 +271,77 @@ export class BattleTransport {
         lockMeter:    entry.lockMeter,
         aimAngle:     (pose?.aim ?? 0) * AIM_NORMALISER,
         respawnIndex: pose?.respawnIndex ?? 0,
-      })
+      }
+      players.push(player)
+      playersById.set(id, player)
+      namesById.set(id, player.name)
+      playersByNetIndex.set(entry.netIndex, player)
     }
 
-    this.view = {
+    const zones = [ ...state.zones.values() ].map(z => ({
+      id:        z.id,
+      owner:     (z.owner || null) as BattleTeam | null,
+      progress:  z.progress,
+      capturing: (z.capturing || null) as BattleTeam | null,
+      contested: z.contested,
+    }))
+    const flags = [ ...state.flags.values() ].map(f => ({
+      team:      f.team as BattleTeam,
+      state:     f.state,
+      carrierId: f.carrierId || null,
+      x:         f.x,
+      y:         f.y,
+      z:         f.z,
+    }))
+    const zonesById        = new Map(zones.map(zone => [ zone.id, zone ]))
+    const flagsByTeam      = new Map(flags.map(flag => [ flag.team, flag ]))
+    const flagsByCarrierId = new Map<string, ViewFlag>()
+    for (const flag of flags)
+      if (flag.carrierId)
+        flagsByCarrierId.set(flag.carrierId, flag)
+
+    const remotes: NetRemote[] = []
+    const remotesById          = new Map<string, NetRemote>()
+    const remotesByNetIndex    = new Map<number, NetRemote>()
+    for (const remote of this.link.remotes()) {
+      const player = playersByNetIndex.get(remote.netIndex)
+      if (!player)
+        continue
+
+      const joined = { id: player.id, team: player.team, name: player.name, interp: remote.interp, state: player }
+      remotes.push(joined)
+      remotesById.set(joined.id, joined)
+      remotesByNetIndex.set(remote.netIndex, joined)
+    }
+
+    this.viewSnapshot     = snap?.ships ?? null
+    this.viewStateVersion = this.link.stateVersion
+    this.view             = {
       tick:      state.serverTick,
       status:    state.status as BattleStatus,
       countdown: state.countdown,
       timeLeft:  state.timeLeft,
       scores:    { red: state.scoreRed, blue: state.scoreBlue },
       players,
-      zones:     [ ...state.zones.values() ].map(z => ({
-        id:        z.id,
-        owner:     (z.owner || null) as BattleTeam | null,
-        progress:  z.progress,
-        capturing: (z.capturing || null) as BattleTeam | null,
-        contested: z.contested,
-      })),
-      flags: [ ...state.flags.values() ].map(f => ({
-        team:      f.team as BattleTeam,
-        state:     f.state,
-        carrierId: f.carrierId || null,
-        x:         f.x,
-        y:         f.y,
-        z:         f.z,
-      })),
-      beams: beamsInFlight,
+      playersById,
+      namesById,
+      playersByNetIndex,
+      zones,
+      zonesById,
+      flags,
+      flagsByTeam,
+      flagsByCarrierId,
+      remotes,
+      remotesById,
+      remotesByNetIndex,
+      local:     playersByNetIndex.get(this.link.netIndex) ?? null,
+      beams:     beamsInFlight,
     }
 
     return this.view
+  }
+
+  latest (): BattleView | null {
+    return this.frame()
   }
 }

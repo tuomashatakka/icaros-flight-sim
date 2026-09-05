@@ -146,8 +146,9 @@ export class RoomLink<TState extends object, TEvent> {
 
   private readonly pending = new PendingInputs()
   private readonly remoteShips = new Map<number, RemoteShip>()
+  private remoteList: readonly RemoteShip[] = []
   private readonly respawnSeen = new Map<number, number>()
-  private events: TEvent[] = []
+  private events:     TEvent[] = []
 
   private baseline:   Baseline | null = null
   private newest:     Snapshot | null = null
@@ -157,6 +158,7 @@ export class RoomLink<TState extends object, TEvent> {
   private correctionM = 0
   private joinedInfo: JoinedMessage | null = null
   private linkError:  string | null = null
+  private schemaVersion = 0
 
   // Bridges the monotonic render clock to server wall-time, once. Everything
   //  after runs on `performance.now()`, which no NTP adjustment can move.
@@ -207,6 +209,11 @@ export class RoomLink<TState extends object, TEvent> {
       this.localIndex = message.netIndex
     })
 
+    // Colyseus mutates one Schema object in place. A monotonically increasing
+    // patch version lets mode transports rebuild their joined indexes exactly
+    // when that object changes, without scanning a roster during every frame.
+    this.room.onStateChange(() => this.schemaVersion++)
+
     this.room.onMessage(MessageKind.SNAPSHOT, (payload: ArrayBuffer | Uint8Array) => this.applySnapshot(payload))
 
     this.room.onMessage(MessageKind.EVENTS, (list: TEvent[]) => {
@@ -237,12 +244,14 @@ export class RoomLink<TState extends object, TEvent> {
 
     this.pending.reset()
     this.remoteShips.clear()
+    this.remoteList = []
     this.respawnSeen.clear()
-    this.events     = []
-    this.baseline   = null
-    this.newest     = null
-    this.localIndex = -1
-    this.linkError  = null
+    this.events        = []
+    this.baseline      = null
+    this.newest        = null
+    this.localIndex    = -1
+    this.linkError     = null
+    this.schemaVersion = 0
     this.clock.reset()
   }
 
@@ -306,6 +315,7 @@ export class RoomLink<TState extends object, TEvent> {
       if (!remote) {
         remote = { netIndex: ship.id, interp: new NetBodyInterpolator(), state: ship }
         this.remoteShips.set(ship.id, remote)
+        this.remoteList = [ ...this.remoteShips.values() ]
       }
 
       remote.state = ship
@@ -336,7 +346,8 @@ export class RoomLink<TState extends object, TEvent> {
   }
 
   private drop (netIndex: number): void {
-    this.remoteShips.delete(netIndex)
+    if (this.remoteShips.delete(netIndex))
+      this.remoteList = [ ...this.remoteShips.values() ]
     this.respawnSeen.delete(netIndex)
   }
 
@@ -351,7 +362,7 @@ export class RoomLink<TState extends object, TEvent> {
   }
 
   remotes (): readonly RemoteShip[] {
-    return [ ...this.remoteShips.values() ]
+    return this.remoteList
   }
 
   localShip (): ShipState | null {
@@ -376,6 +387,10 @@ export class RoomLink<TState extends object, TEvent> {
 
   get joined (): JoinedMessage | null {
     return this.joinedInfo
+  }
+
+  get stateVersion (): number {
+    return this.schemaVersion
   }
 
   serverTick (): number {

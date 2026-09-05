@@ -23,7 +23,7 @@ vi.mock('@colyseus/sdk', () => ({
     async joinOrCreate () {
       if (joinFailure)
         throw joinFailure
-      return { onMessage: () => {}, send: () => {}, leave: async () => {} }
+      return { onMessage: () => {}, onStateChange: () => {}, send: () => {}, leave: async () => {} }
     }
   },
 }))

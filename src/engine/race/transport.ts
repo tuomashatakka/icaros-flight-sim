@@ -64,7 +64,16 @@ export type RaceView = {
   countdown: number;
   trackId:   string;
   laps:      number;
-  racers:    ViewRacer[];
+  racers:    readonly ViewRacer[];
+}
+
+export type RaceFrame = RaceView & {
+  readonly racersById:        ReadonlyMap<string, ViewRacer>;
+  readonly racersByNetIndex:  ReadonlyMap<number, ViewRacer>;
+  readonly remotes:           readonly NetRacer[];
+  readonly remotesById:       ReadonlyMap<string, NetRacer>;
+  readonly remotesByNetIndex: ReadonlyMap<number, NetRacer>;
+  readonly local:             ViewRacer | null;
 }
 
 export type NetRacer = {
@@ -83,6 +92,9 @@ export type RaceConnectOptions = {
 
 export class RaceTransport {
   private readonly link = new RoomLink<RaceStateType, RaceEvent>()
+  private frameView:     RaceFrame | null = null
+  private frameSnapshot: ShipState[] | null = null
+  private frameStateVersion = -1
 
   get clock () {
     return this.link.clock
@@ -146,46 +158,34 @@ export class RaceTransport {
   }
 
   localState (): ViewRacer | null {
-    const id = this.localId()
-    return id ? this.latest()?.racers.find(r => r.id === id) ?? null : null
+    return this.frame()?.local ?? null
   }
 
   remotes (): readonly NetRacer[] {
-    const view = this.latest()
-    if (!view)
-      return []
-
-    const byIndex = new Map<number, ViewRacer>()
-    for (const racer of view.racers) {
-      const index = this.link.state?.racers.get(racer.id)?.netIndex
-      if (index !== undefined)
-        byIndex.set(index, racer)
-    }
-
-    const out: NetRacer[] = []
-    for (const remote of this.link.remotes()) {
-      const racer = byIndex.get(remote.netIndex)
-      if (racer)
-        out.push({ id: racer.id, name: racer.name, interp: remote.interp, state: racer })
-    }
-    return out
+    return this.frame()?.remotes ?? []
   }
 
-  // Join the two channels. Rebuilt per call: they change at different rates,
-  //  so a cache keyed on either would go stale against the other.
-  latest (): RaceView | null {
+  // Join the two channels once per binary snapshot or Schema patch. Calls in
+  // between return the same read-only frame and indexes.
+  frame (): RaceFrame | null {
     const state = this.link.state
     if (!state)
       return null
 
+    const snapshot = this.link.latest()
+    if (this.frameView && this.frameSnapshot === snapshot?.ships && this.frameStateVersion === this.link.stateVersion)
+      return this.frameView
+
     const poses = new Map<number, ShipState>()
-    for (const ship of this.link.latest()?.ships ?? [])
+    for (const ship of snapshot?.ships ?? [])
       poses.set(ship.id, ship)
 
     const racers: ViewRacer[] = []
+    const racersById          = new Map<string, ViewRacer>()
+    const racersByNetIndex    = new Map<number, ViewRacer>()
     for (const [ id, entry ] of state.racers) {
-      const pose = poses.get(entry.netIndex)
-      racers.push({
+      const pose             = poses.get(entry.netIndex)
+      const racer: ViewRacer = {
         id,
         name:     entry.name,
         shipId:   entry.shipId as ShipId,
@@ -210,16 +210,46 @@ export class RaceTransport {
         finished:       entry.finished,
         aimAngle:       (pose?.aim ?? 0) * AIM_NORMALISER,
         respawnIndex:   pose?.respawnIndex ?? 0,
-      })
+      }
+      racers.push(racer)
+      racersById.set(id, racer)
+      racersByNetIndex.set(entry.netIndex, racer)
     }
 
-    return {
+    const remotes: NetRacer[] = []
+    const remotesById         = new Map<string, NetRacer>()
+    const remotesByNetIndex   = new Map<number, NetRacer>()
+    for (const remote of this.link.remotes()) {
+      const racer = racersByNetIndex.get(remote.netIndex)
+      if (!racer)
+        continue
+
+      const joined = { id: racer.id, name: racer.name, interp: remote.interp, state: racer }
+      remotes.push(joined)
+      remotesById.set(joined.id, joined)
+      remotesByNetIndex.set(remote.netIndex, joined)
+    }
+
+    this.frameSnapshot     = snapshot?.ships ?? null
+    this.frameStateVersion = this.link.stateVersion
+    this.frameView         = {
       tick:      state.serverTick,
       status:    state.status as RaceStatus,
       countdown: state.countdown,
       trackId:   state.trackId,
       laps:      state.laps,
       racers,
+      racersById,
+      racersByNetIndex,
+      remotes,
+      remotesById,
+      remotesByNetIndex,
+      local:     racersByNetIndex.get(this.link.netIndex) ?? null,
     }
+    return this.frameView
+  }
+
+  latest (): RaceView | null {
+    return this.frame()
   }
 }
