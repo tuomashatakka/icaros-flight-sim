@@ -8,7 +8,7 @@ import { drawHudOverlay, isHudBlockingOverlay } from './overlay'
 import { HudPanel } from './panel'
 import { createTouchGestures } from './pointers'
 import { HUD_TRANSITION_S, createHudReveal } from './transition'
-import { HUD_OVERLAY_PERIOD, HUD_PANEL_PERIOD, HUD_REFERENCE_FOV } from './tokens'
+import { HUD_OVERLAY_PERIOD, HUD_PANEL_HZ, HUD_REFERENCE_FOV } from './tokens'
 import { NO_INSETS, touchLayout, wantsTouchControls } from './touch-layout'
 import type { SafeAreaInsets } from './touch-layout'
 import type { HudActionId, HudData, HudFrame, HudPanelKey, HudRegion, HudSource } from './types'
@@ -66,6 +66,7 @@ type SpatialHudOptions = {
    * hands it down, which is also what makes this testable without a URL.
    */
   forcedTouch?: string | null;
+  panelHz?: number;
 }
 
 export type SpatialHud = {
@@ -111,11 +112,12 @@ const PINCH_RANGE = 0.42
  * plane handles full-screen moments and touch controls. React never sees a
  * frame-rate value or pointer move, and every allocation has a paired dispose.
  */
-export function createSpatialHud ({ canvas, controls, source, forcedTouch = null }: SpatialHudOptions): SpatialHud {
-  const station   = createHudStation()
-  const panels    = createHudPanels()
-  const panelMesh = createHudPanelMesh(panels)
-  const visorRoot = new THREE.Group()
+export function createSpatialHud ({ canvas, controls, source, forcedTouch = null, panelHz = HUD_PANEL_HZ }: SpatialHudOptions): SpatialHud {
+  const station     = createHudStation()
+  const panelPeriod = 1 / THREE.MathUtils.clamp(panelHz, 15, 30)
+  const panels      = createHudPanels()
+  const panelMesh   = createHudPanelMesh(panels)
+  const visorRoot   = new THREE.Group()
   visorRoot.add(panelMesh)
 
   const overlay         = new HudPanel({ name: 'overlay', width: 1280, height: 720, center: true })
@@ -360,7 +362,7 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
       overlayDirty = true
     }
 
-    if (frame.elapsed - panelDrawAt >= HUD_PANEL_PERIOD) {
+    if (frame.elapsed - panelDrawAt >= panelPeriod) {
       lastData    = source.read()
       panelDrawAt = frame.elapsed
       expireToasts(lastData, frame.elapsed)
@@ -407,7 +409,7 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
       frame.elapsed < crashUntil ||
       lastData.mode === 'race' && lastData.race.status === 'countdown' ||
       lastData.mode === 'battle' && lastData.battle.toasts.length > 0
-    const period = overlayLive ? HUD_OVERLAY_PERIOD : HUD_PANEL_PERIOD
+    const period = overlayLive ? HUD_OVERLAY_PERIOD : panelPeriod
     if (overlayDirty || frame.elapsed - overlayDrawAt >= period) {
       overlayDrawAt = frame.elapsed
       drawOverlay(lastData, frame)

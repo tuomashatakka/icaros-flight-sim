@@ -54,7 +54,7 @@ export const HUD_SURFACES = {
   track: 'rgba(126, 168, 190, .16)',
 } as const
 
-export const HUD_PANEL_PERIOD   = 0.075
+export const HUD_PANEL_HZ       = 20
 export const HUD_OVERLAY_PERIOD = 1 / 30
 export const HUD_REFERENCE_FOV  = 63
 
