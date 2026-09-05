@@ -337,6 +337,26 @@ function drawReticle (panel: HudPanel, data: HudData, frame: HudFrame): void {
   context.globalAlpha = 1
 }
 
+const ALERT = '#ff8fa8'
+
+/**
+ * The one line at the top of the visor.
+ *
+ * A dead link outranks every other status: none of the rest is true if the
+ * server was never reached, and a ship that will not move is the symptom a
+ * player sees first.
+ */
+function raceStatusLine (data: RaceHudData, boosting: boolean): string {
+  const race = data.race
+  if (race.linkError)
+    return 'NO LINK · GAME SERVER UNREACHABLE'
+  if (race.status === 'countdown')
+    return `LAUNCH · ${Math.max(1, Math.ceil(data.clocks.countdown))}`
+  if (race.status === 'finished')
+    return 'COURSE COMPLETE'
+  return boosting ? 'BOOST · FLIGHT' : 'CRUISE · FLIGHT'
+}
+
 function drawRacePanels (panels: Record<HudPanelKey, HudPanel>, data: RaceHudData, frame: HudFrame): void {
   const race               = data.race
   const telemetry          = frame.telemetry
@@ -369,14 +389,9 @@ function drawRacePanels (panels: Record<HudPanelKey, HudPanel>, data: RaceHudDat
   topCenter.title = 'attitude'
   topCenter.begin()
 
-  const status = race.status === 'countdown'
-    ? `LAUNCH · ${Math.max(1, Math.ceil(data.clocks.countdown))}`
-    : race.status === 'finished'
-      ? 'COURSE COMPLETE'
-      : telemetry.boosting
-        ? 'BOOST · FLIGHT'
-        : 'CRUISE · FLIGHT'
-  topCenter.text({ x: 320, y: 92, size: 18, align: 'center', color: '#dfeaff', value: status })
+  topCenter.text({ x: 320, y: 92, size: 18, align: 'center', color: race.linkError ? ALERT : '#dfeaff', value: raceStatusLine(data, telemetry.boosting) })
+  if (race.linkError)
+    topCenter.text({ x: 320, y: 116, size: 12, align: 'center', alpha: 0.7, color: ALERT, value: race.linkError })
   drawAttitudeScale(topCenter, frame.aimPitch, roll)
   topCenter.text({ x: 36, y: 278, size: 13, alpha: 0.55, value: `TURN ${signedPercent(frame.steer)} · STRAFE ${signedPercent(frame.strafe)} · AIM ${signedPercent(frame.aimPitch)}` })
   topCenter.button({ id: 'attitude-view', x: 500, y: 254, width: 108, height: 38, label: view, action: 'view', active: frame.cameraBlend > 0.5, size: 13 })
@@ -465,9 +480,11 @@ function drawBattlePanels (panels: Record<HudPanelKey, HudPanel>, data: BattleHu
   // NET reads real connection health now. It used to show a hash-match tally
   // from a verifier that compared the local sim against a hash the local sim
   // had just produced — it was pinned to OK by construction.
-  const net = battle.net.synced
-    ? `${battle.net.rttMs}ms ±${battle.net.jitterMs}`
-    : 'SYNCING'
+  const net = battle.net.linkError
+    ? 'NO LINK'
+    : battle.net.synced
+      ? `${battle.net.rttMs}ms ±${battle.net.jitterMs}`
+      : 'SYNCING'
   topCenter.text({ x: 36, y: 278, size: 13, alpha: 0.55, value: `TURN ${signedPercent(frame.steer)} · STRAFE ${signedPercent(frame.strafe)} · NET ${net}` })
   topCenter.button({ id: 'battle-attitude-view', x: 500, y: 254, width: 108, height: 38, label: frame.cameraBlend > 0.5 ? 'cockpit' : 'chase', action: 'view', active: frame.cameraBlend > 0.5, size: 13 })
   topCenter.finish(frame.elapsed)

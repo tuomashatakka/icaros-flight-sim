@@ -197,6 +197,17 @@ export async function mountRace (
       let sinceCommit  = 0
       let lastRespawn  = -1
 
+      // Hoisted out of `update` so the per-frame path stays one straight line:
+      //  the store only hears about the link when the link changes its mind.
+      let lastLinkError: string | null = null
+      const reportLink = () => {
+        const linkError = transport.stats().linkError
+        if (linkError === lastLinkError)
+          return
+        lastLinkError = linkError
+        useRaceStore.getState().sync({ linkError })
+      }
+
       const raceNetModule: AppModule<RaceState> = defineModule<RaceState>({
         name: 'race-net',
         build () {},
@@ -245,6 +256,11 @@ export async function mountRace (
           telemetry.boosting   = sceneControls.boost
           telemetry.grounded   = prediction?.grounded ?? false
           telemetry.airbrake   = prediction?.airbrake ?? 0
+
+          // Above the early return, deliberately: a link that never came up is
+          // exactly the case where there is no view and no server state, so
+          // reporting it below this line would report it never.
+          reportLink()
 
           if (!view || !server)
             return

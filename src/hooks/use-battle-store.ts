@@ -118,6 +118,9 @@ export type NetHealth = {
 
   /** Input frames sent but not yet acknowledged. */
   pending: number;
+
+  /** Why the link is down, or `null` while it is up. */
+  linkError: string | null;
 }
 
 export const IDLE_NET: NetHealth = {
@@ -127,6 +130,7 @@ export const IDLE_NET: NetHealth = {
   snapshotAgeMs: 0,
   correctionM:   0,
   pending:       0,
+  linkError:     null,
 }
 
 const initial: BattleSessionState = {

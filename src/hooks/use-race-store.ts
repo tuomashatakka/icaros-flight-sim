@@ -56,6 +56,16 @@ export type RaceHudState = {
 
   standings: Standing[];
 
+  /**
+   * Why the game server could not be reached, or `null`.
+   *
+   * Race is network-only now, so a failed join is not a degraded race — it is
+   * no race. Without this the HUD would sit on the initial `lobby` status with
+   * a motionless ship and say nothing, because the sync below the fold never
+   * runs when there is no server state to sync.
+   */
+  linkError: string | null;
+
   /** Written by the scene once per publish period. */
   sync:  (next: Partial<RaceHudState>) => void;
   reset: () => void;
@@ -78,6 +88,7 @@ const initial = {
   bestLap:         null,
   finished:        false,
   standings:       [] as Standing[],
+  linkError:       null as string | null,
 }
 
 /**

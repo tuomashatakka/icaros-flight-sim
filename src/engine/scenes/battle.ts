@@ -522,6 +522,22 @@ export async function mountBattle (
       let lastSnapshot  = 0
       let lastAimCommit = -1
 
+      /**
+       * Publish connection health, and raise the alarm once if it is fatal.
+       *
+       * A join that never lands used to show `SYNCING` forever — the same thing
+       * a healthy handshake shows. Battle already draws a full error overlay;
+       * it just had nothing that could ever trigger it.
+       */
+      const reportNet = () => {
+        const stats = transport.stats()
+        const store = useBattleStore.getState()
+        store.setNetStats(stats)
+
+        if (stats.linkError && store.status !== 'error')
+          store.setError(`cannot reach the game server · ${stats.linkError}`)
+      }
+
       const battleGameModule: AppModule<BattleState> = defineModule<BattleState>({
         name: 'battle-net',
         build () {},
@@ -573,7 +589,7 @@ export async function mountBattle (
           const snapshot = transport.latest()
           const store    = useBattleStore.getState()
 
-          store.setNetStats(transport.stats())
+          reportNet()
 
           const aim = prediction?.aimNormalised ?? 0
           if (Math.abs(aim - lastAimCommit) > 0.01) {

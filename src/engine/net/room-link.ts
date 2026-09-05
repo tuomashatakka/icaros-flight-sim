@@ -77,6 +77,19 @@ function protocol (): string {
   return typeof location !== 'undefined' && location.protocol === 'https:' ? 'wss:' : 'ws:'
 }
 
+/**
+ * Turn a join failure into something a player can act on.
+ *
+ * Colyseus reports a refused socket as a bare `WebSocket connection failed`,
+ * which tells a player nothing about which server was tried — and the URL is
+ * the part that is usually wrong, since it falls back to the page's own host on
+ * a fixed port when `NEXT_PUBLIC_GAME_SERVER_URL` is unset.
+ */
+function describeJoinFailure (error: unknown, url: string): string {
+  const detail = error instanceof Error ? error.message : String(error)
+  return `${detail || 'connection failed'} · ${url}`
+}
+
 export type RemoteShip = {
   netIndex: number;
   interp:   NetBodyInterpolator;
@@ -91,6 +104,16 @@ export type NetStats = {
   pending:       number;
   snapshotBytes: number;
   correctionM:   number;
+
+  /**
+   * Why the link is not up, or `null` while it is fine.
+   *
+   * Every mode is network-only now, so a join that never succeeds is not a
+   * degraded game — it is no game at all. Without this the HUD cannot tell
+   * "still handshaking" from "there is no server and there never will be",
+   * and both render as a motionless ship.
+   */
+  linkError: string | null;
 }
 
 export type JoinedMessage = {
@@ -133,6 +156,7 @@ export class RoomLink<TState extends object, TEvent> {
   private lastBytes = 0
   private correctionM = 0
   private joinedInfo: JoinedMessage | null = null
+  private linkError:  string | null = null
 
   // Bridges the monotonic render clock to server wall-time, once. Everything
   //  after runs on `performance.now()`, which no NTP adjustment can move.
@@ -142,7 +166,28 @@ export class RoomLink<TState extends object, TEvent> {
     return this.epoch + performance.now()
   }
 
+  /**
+   * Join the room, or record why we could not.
+   *
+   * This resolves either way and never rejects. Both transports call it as
+   * fire-and-forget — there is nothing useful for a scene to `await`, since the
+   * scene has to render whether or not the socket ever opens — and a rejecting
+   * promise behind a `void` is an unhandled rejection that reaches nobody. The
+   * failure goes into `stats().linkError` instead, which both HUDs already poll
+   * every frame.
+   */
   async connect (options: RoomLinkOptions<TState>): Promise<void> {
+    try {
+      await this.open(options)
+      this.linkError = null
+    }
+    catch (error) {
+      this.linkError = describeJoinFailure(error, resolveServerUrl(options.server))
+      console.error('[net] join failed:', error)
+    }
+  }
+
+  private async open (options: RoomLinkOptions<TState>): Promise<void> {
     const ticket = await fetchTicket(options.name)
     const client = new Client(resolveServerUrl(options.server))
 
@@ -197,6 +242,7 @@ export class RoomLink<TState extends object, TEvent> {
     this.baseline   = null
     this.newest     = null
     this.localIndex = -1
+    this.linkError  = null
     this.clock.reset()
   }
 
@@ -357,6 +403,7 @@ export class RoomLink<TState extends object, TEvent> {
       pending:       this.pending.length,
       snapshotBytes: this.lastBytes,
       correctionM:   this.correctionM,
+      linkError:     this.linkError,
     }
   }
 }
