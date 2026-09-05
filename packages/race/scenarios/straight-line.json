@@ -1,0 +1,22 @@
+{
+  "name": "straight-line",
+  "track": "flats",
+  "ticks": 720,
+  "countdown": 0,
+  "note": "Full throttle down the flats. The baseline every handling change is compared against.",
+  "racers": [
+    {
+      "name": "Probe",
+      "shipId": "icaras"
+    }
+  ],
+  "timeline": [
+    {
+      "tick": 0,
+      "racer": 0,
+      "input": {
+        "throttle": true
+      }
+    }
+  ]
+}

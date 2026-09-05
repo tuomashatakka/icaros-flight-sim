@@ -1,0 +1,28 @@
+{
+  "name": "strafe-response",
+  "track": "flats",
+  "ticks": 120,
+  "countdown": 0,
+  "note": "Lateral authority in isolation. The rig yaws, banks and dips into a strafe by design.",
+  "racers": [
+    {
+      "name": "Probe",
+      "shipId": "icaras",
+      "at": [
+        0,
+        2,
+        0
+      ],
+      "yaw": 0
+    }
+  ],
+  "timeline": [
+    {
+      "tick": 0,
+      "racer": 0,
+      "input": {
+        "strafe": 1
+      }
+    }
+  ]
+}

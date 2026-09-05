@@ -1,0 +1,46 @@
+{
+  "name": "respawn",
+  "track": "flats",
+  "ticks": 600,
+  "countdown": 0,
+  "note": "Arrives fast and high, then requests a respawn mid-flight via resetSeq.",
+  "racers": [
+    {
+      "name": "Probe",
+      "shipId": "icaras",
+      "at": [
+        0,
+        12,
+        0
+      ],
+      "linvel": [
+        0,
+        0,
+        -30
+      ]
+    }
+  ],
+  "timeline": [
+    {
+      "tick": 0,
+      "racer": 0,
+      "input": {
+        "throttle": true
+      }
+    },
+    {
+      "tick": 300,
+      "racer": 0,
+      "input": {
+        "resetSeq": 1
+      }
+    },
+    {
+      "tick": 300,
+      "racer": 0,
+      "input": {
+        "throttle": true
+      }
+    }
+  ]
+}

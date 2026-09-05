@@ -1,6 +1,6 @@
 import * as THREE from 'three'
-import { TEAM_COLORS } from '../battle/arena'
-import { WEAPONS } from '../battle/weapons'
+import { TEAM_COLORS } from '@crash-velocity/battle/arena'
+import { WEAPONS } from '@crash-velocity/battle/weapons'
 import { drawFlightPathMarker, drawPitchLadder, pitchFrom, rollFrom, slipFrom } from './instruments'
 import type { HudPanel } from './panel'
 import { HUD_COLORS as COLORS, HUD_FONT as FONT } from './tokens'

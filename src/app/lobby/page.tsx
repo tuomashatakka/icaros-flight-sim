@@ -1,48 +1,45 @@
 'use client'
 
-import { useCallback, useEffect, useRef, useState } from 'react'
+/**
+ * The lobby.
+ *
+ * A third of what it was, because most of what it did is Colyseus's job now.
+ * There is no lobby socket, no `create`/`join`/`ready`/`start` protocol, no
+ * ticket table and no roster to keep in sync — `joinOrCreate(mode, { track })`
+ * with a `filterBy` on the server seats everyone who picked the same thing in
+ * the same room and starts a new one for anyone who picked something else.
+ *
+ * What is left is genuinely a lobby's job: who you are, what you want to play,
+ * and who is already playing it.
+ */
+
+import { Suspense, useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { useRouter, useSearchParams } from 'next/navigation'
-import { Suspense } from 'react'
-import { LobbyClient } from 'Δlib/net/lobby-client'
-import { login, me, register, signOut, storedName, storedToken, storeName } from 'Δlib/net/account'
-import { useLobbyStore } from 'Δhooks/use-lobby-store'
+import { useSession } from 'next-auth/react'
+import { TRACK_IDS } from '@crash-velocity/race'
+
+import { guestName, login, logout, register, rememberGuestName } from 'Δlib/net/account'
+import { resolveServerUrl } from 'Δengine/net/room-link'
+
+
 import styles from './lobby.module.css'
 
 
-/**
- * Auth takes no `server` override, unlike everything else on this page.
- * `?sv=` points at a battle server, and identity is not there any more — it is
- * same-origin, next to the database. The socket below still honours it.
- */
+const TRACK_NAMES: Record<string, string> = {
+  'flats':        'The Flats',
+  'neon-canyon':  'Neon Canyon',
+  'orbital-ring': 'Orbital Ring',
+  'procedural':   'Procedural Sprint',
+}
+
 function Identity () {
-  const { name, registered, stats } = useLobbyStore()
-  const [ open, setOpen ]           = useState(false)
-  const [ username, setUsername ]   = useState('')
-  const [ password, setPassword ]   = useState('')
-  const [ error, setError ]         = useState<string | null>(null)
-  const [ busy, setBusy ]           = useState(false)
-  const [ known, setKnown ]         = useState<{ name: string } | null>(null)
-
-  // The socket's `welcome` says who you are too, but only once it has connected
-  // and only by falling back to a guest when the token has expired. Asking
-  // outright means the panel does not flicker through "guest" on every load,
-  // and a week-old token is a visible sign-out rather than a silent demotion.
-  useEffect(() => {
-    let live = true
-    void me().then(found => {
-      if (!live)
-        return
-      if (found)
-        setKnown({ name: found.account.username })
-      else if (storedToken())
-        signOut().catch(() => {})
-    })
-
-    return () => {
-      live = false
-    }
-  }, [])
+  const { data: session, status } = useSession()
+  const [ open, setOpen ]         = useState(false)
+  const [ username, setUsername ] = useState('')
+  const [ password, setPassword ] = useState('')
+  const [ error, setError ]       = useState<string | null>(null)
+  const [ busy, setBusy ]         = useState(false)
 
   const submit = async (mode: 'login' | 'register') => {
     setBusy(true)
@@ -51,244 +48,135 @@ function Identity () {
     const result = await (mode === 'register' ? register : login)(username, password)
     setBusy(false)
 
-    if (!result.ok) {
+    if (result.ok)
+      setOpen(false)
+    else
       setError(result.error)
-      return
-    }
-
-    // The lobby socket authenticates on connect, so the simplest correct thing
-    // is to reload with the new token rather than re-authenticate in place.
-    globalThis.location?.reload()
   }
 
-  if (registered || known)
+  if (status === 'loading')
     return <p className={ styles.identity }>
-      <span>{ registered ? name : known?.name }</span>
-      { stats && <span>{ stats.matches } matches · { stats.kills }/{ stats.deaths } K/D</span> }
+      <span>…</span>
+    </p>
 
-      <button
-        type="button"
-        className={ styles.button }
-        onClick={ () => {
-          void signOut().finally(() => globalThis.location?.reload())
-        } }>
-        sign out
-      </button>
+  if (session?.user)
+    return <p className={ styles.identity }>
+      <span>{ session.user.name }</span>
+      <button type="button" className={ styles.button } onClick={ () => void logout() }>sign out</button>
     </p>
 
   if (!open)
     return <p className={ styles.identity }>
-      <span>playing as { name } (guest)</span>
+      <span>Flying as a guest</span>
       <button type="button" className={ styles.button } onClick={ () => setOpen(true) }>sign in</button>
     </p>
 
-  return <form
-    className={ styles.panel }
-    onSubmit={ event => {
-      event.preventDefault()
-      void submit('login')
-    } }>
-    <h2 className={ styles.panelTitle }>Sign in</h2>
-    { error && <p className={ styles.error }>{ error }</p> }
-
+  return <form className={ styles.identity } onSubmit={ event => event.preventDefault() }>
     <label className={ styles.field }>
-      Name
+      <span>Pilot</span>
+
       <input
-        className={ styles.input }
-        value={ username }
-        autoComplete="username"
+        className={ styles.input } value={ username } autoComplete="username"
         onChange={ e => setUsername(e.target.value) } />
     </label>
 
     <label className={ styles.field }>
-      Password
+      <span>Password</span>
+
       <input
-        className={ styles.input }
-        type="password"
-        value={ password }
+        className={ styles.input } type="password" value={ password }
         autoComplete="current-password"
         onChange={ e => setPassword(e.target.value) } />
     </label>
 
-    <div className={ styles.row }>
-      <button type="submit" className={ `${styles.button} ${styles.primary}` } disabled={ busy }>sign in</button>
-      <button type="button" className={ styles.button } disabled={ busy } onClick={ () => void submit('register') }>create account</button>
-      <button type="button" className={ styles.button } onClick={ () => setOpen(false) }>cancel</button>
-    </div>
+    <button type="submit" className={ styles.primary } disabled={ busy } onClick={ () => void submit('login') }>sign in</button>
+    <button type="button" className={ styles.button } disabled={ busy } onClick={ () => void submit('register') }>register</button>
+    <button type="button" className={ styles.button } onClick={ () => setOpen(false) }>cancel</button>
+    { error && <span className={ styles.error }>{ error }</span> }
   </form>
 }
 
-type MatchesProps = { client: LobbyClient }
-
-function Matches ({ client }: MatchesProps) {
-  const { matches }         = useLobbyStore()
-  const [ title, setTitle ] = useState('')
-
-  return <section className={ styles.panel }>
-    <h2 className={ styles.panelTitle }>Open matches</h2>
-
-    { matches.length === 0
-      ? <p className={ styles.empty }>Nothing running. Start one.</p>
-      : <ul className={ styles.matchList }>
-        { matches.map(match =>
-          <li key={ match.id } className={ styles.matchRow }>
-            <article>
-              <h3 className={ styles.matchName }>{ match.name }</h3>
-
-              <p className={ styles.matchMeta }>
-                { match.players }/{ match.maxPlayers } · { match.mode.toUpperCase() }
-                { match.live && ' · in progress' }
-              </p>
-            </article>
-
-            <button type="button" className={ styles.button } onClick={ () => client.join(match.id) }>
-              { match.live ? 'drop in' : 'join' }
-            </button>
-          </li>
-        ) }
-      </ul> }
-
-    <form
-      className={ styles.row }
-      onSubmit={ event => {
-        event.preventDefault()
-        client.create({ name: title.trim() || undefined })
-        setTitle('')
-      } }>
-      <input
-        className={ styles.input }
-        placeholder="New match name"
-        value={ title }
-        onChange={ e => setTitle(e.target.value) } />
-
-      <button type="submit" className={ `${styles.button} ${styles.primary}` }>create</button>
-    </form>
-  </section>
+type LiveRoom = {
+  roomId:   string;
+  name:     string;
+  clients:  number;
+  locked:   boolean;
+  metadata: Record<string, string>;
 }
 
-type RosterProps = { client: LobbyClient }
+type LiveRooms = { race: LiveRoom[]; battle: LiveRoom[] }
 
-function Roster ({ client }: RosterProps) {
-  const state             = useLobbyStore()
-  const [ line, setLine ] = useState('')
-  const me                = state.players.find(p => p.id === state.playerId)
-  const host              = state.hostId !== null && state.hostId === state.playerId
+/**
+ * What is already running, polled rather than streamed.
+ *
+ * The old lobby held a socket open purely to keep this list fresh. A room list
+ * changes when somebody starts a match — seconds apart, not frames — so an HTTP
+ * poll is the right shape and costs nothing when the tab is idle.
+ */
+function useLiveRooms (server?: string): LiveRooms {
+  const [ rooms, setRooms ] = useState<LiveRooms>({ race: [], battle: []})
 
-  if (!state.matchId)
-    return <section className={ styles.panel }>
-      <h2 className={ styles.panelTitle }>Roster</h2>
-      <p className={ styles.empty }>Join or create a match to pick a side.</p>
-    </section>
+  useEffect(() => {
+    // The socket URL with an http scheme: the game server serves both from one
+    // port, and this way `?sv=` overrides them together.
+    const base = resolveServerUrl(server).replace(/^ws/, 'http')
+    let live   = true
 
-  return <section className={ styles.panel }>
-    <h2 className={ styles.panelTitle }>{ state.config?.name ?? 'Match' }</h2>
+    const poll = async () => {
+      try {
+        const response = await fetch(`${base}/rooms`, { cache: 'no-store' })
+        const body     = await response.json() as { rooms: LiveRoom[] }
+        if (live)
+          setRooms({
+            race:   body.rooms.filter(r => r.name === 'race'),
+            battle: body.rooms.filter(r => r.name === 'battle'),
+          })
+      }
+      catch {
+        if (live)
+          setRooms({ race: [], battle: []})
+      }
+    }
 
-    <ul className={ styles.roster }>
-      { state.players.map(player =>
-        <li key={ player.id } className={ styles.rosterRow }>
-          <span className={ `${styles.team} ${player.team === 'red' ? styles.teamRed : styles.teamBlue}` } />
+    void poll()
 
-          <span className={ styles.rosterName }>
-            { player.name }
-            { player.id === state.hostId && ' ★' }
-          </span>
+    const timer = setInterval(() => void poll(), 4000)
 
-          { player.registered && <span className={ styles.badge }>account</span> }
+    return () => {
+      live = false
+      clearInterval(timer)
+    }
+  }, [ server ])
 
-          <span className={ `${styles.badge} ${player.ready ? styles.ready : ''}` }>
-            { player.ready ? 'ready' : 'waiting' }
-          </span>
-        </li>
-      ) }
-    </ul>
-
-    <div className={ styles.row }>
-      <button type="button" className={ styles.button } onClick={ () => client.setTeam('red') }>join red</button>
-      <button type="button" className={ styles.button } onClick={ () => client.setTeam('blue') }>join blue</button>
-
-      <button type="button" className={ styles.button } onClick={ () => client.ready(!me?.ready) }>
-        { me?.ready ? 'not ready' : 'ready' }
-      </button>
-
-      <button type="button" className={ styles.button } onClick={ () => client.leave() }>leave</button>
-    </div>
-
-    <div className={ styles.row }>
-      { /* Readiness is advisory: waiting on someone who wandered off is how a
-           lobby of friends never plays. */ }
-
-      <button
-        type="button"
-        className={ `${styles.button} ${styles.primary}` }
-        disabled={ !host }
-        title={ host ? undefined : 'only the host can start' }
-        onClick={ () => client.start() }>
-        { host ? 'launch match' : 'waiting for host' }
-      </button>
-    </div>
-
-    <ul className={ styles.chat }>
-      { state.chat.map(entry =>
-        <li key={ entry.key }>
-          <span className={ styles.chatFrom }>{ entry.from }</span>
-          { entry.text }
-        </li>
-      ) }
-    </ul>
-
-    <form
-      className={ styles.row }
-      onSubmit={ event => {
-        event.preventDefault()
-        if (line.trim()) {
-          client.chat(line.trim())
-          setLine('')
-        }
-      } }>
-      <input className={ styles.input } placeholder="Say something" value={ line } onChange={ e => setLine(e.target.value) } />
-      <button type="submit" className={ styles.button }>send</button>
-    </form>
-  </section>
+  return rooms
 }
 
 function LobbyContent () {
-  const params    = useSearchParams()
-  const router    = useRouter()
-  const server    = params.get('sv') ?? undefined
-  const state     = useLobbyStore()
-  const clientRef = useRef<LobbyClient | null>(null)
+  const params  = useSearchParams()
+  const router  = useRouter()
+  const server  = params.get('sv') ?? undefined
+  const rooms   = useLiveRooms(server)
+  const session = useSession()
 
-  // One socket for the life of the page. Opening it inside a render would
-  // reconnect every time somebody typed a character.
-  if (!clientRef.current)
-    clientRef.current = new LobbyClient()
+  const [ name, setName ] = useState('')
+  useEffect(() => setName(guestName()), [])
 
-  const client = clientRef.current
+  const go = useCallback((path: string) => {
+    if (!session.data?.user && name)
+      rememberGuestName(name)
 
-  useEffect(() => {
-    client.connect({ token: storedToken(), name: storedName() ?? 'Pilot', server })
-    return () => {
-      client.close()
-      useLobbyStore.getState().reset()
-    }
-  }, [ client, server ])
-
-  // A ticket is an admission to a match that has already started, so the page's
-  // job is done the moment one arrives.
-  useEffect(() => {
-    if (!state.ticket || !state.matchId)
-      return
-
-    storeName(state.name)
-
-    const query = new URLSearchParams({ match: state.matchId, ticket: state.ticket, n: state.name })
+    const query = new URLSearchParams()
     if (server)
       query.set('sv', server)
+    if (!session.data?.user && name)
+      query.set('n', name)
 
-    router.push(`/battle?${query.toString()}`)
-  }, [ state.ticket, state.matchId, state.name, router, server ])
+    const search = query.toString()
+    router.push(search ? `${path}?${search}` : path)
+  }, [ router, server, name, session.data ])
 
-  const dismiss = useCallback(() => useLobbyStore.getState().setError(null), [])
+  const playersOn = (list: LiveRoom[], key: string, value: string) =>
+    list.filter(r => r.metadata?.[key] === value).reduce((total, r) => total + r.clients, 0)
 
   return <main className={ styles.page }>
     <div aria-hidden className={ styles.wash } />
@@ -300,12 +188,43 @@ function LobbyContent () {
         <Link href="/" className={ styles.back }>‹ Back to menu</Link>
       </header>
 
-      { state.error && <p className={ styles.error } onClick={ dismiss }>{ state.error }</p> }
-      { state.status === 'connecting' && <p className={ styles.empty }>Connecting to the game server…</p> }
+      { !session.data?.user && <label className={ styles.field }>
+        <span>Callsign</span>
+
+        <input
+          className={ styles.input } value={ name } maxLength={ 24 }
+          placeholder="Pilot"
+          onChange={ e => setName(e.target.value) } />
+      </label> }
 
       <section className={ styles.columns }>
-        <Matches client={ client } />
-        <Roster client={ client } />
+        <div className={ styles.panel }>
+          <h2 className={ styles.panelTitle }>Race</h2>
+
+          <ul className={ styles.matchList }>
+            { TRACK_IDS.map(id => <li key={ id } className={ styles.matchRow }>
+              <span className={ styles.matchName }>{ TRACK_NAMES[id] ?? id }</span>
+              <span className={ styles.matchMeta }>{ playersOn(rooms.race, 'trackId', id) } on track</span>
+              <button type="button" className={ styles.primary } onClick={ () => go(`/levels/${id}`) }>race</button>
+            </li>) }
+          </ul>
+        </div>
+
+        <div className={ styles.panel }>
+          <h2 className={ styles.panelTitle }>Battle</h2>
+
+          <ul className={ styles.matchList }>
+            <li className={ styles.matchRow }>
+              <span className={ styles.matchName }>Apex Basin</span>
+              <span className={ styles.matchMeta }>{ playersOn(rooms.battle, 'arenaId', 'apex') } in the arena</span>
+              <button type="button" className={ styles.primary } onClick={ () => go('/battle') }>fight</button>
+            </li>
+          </ul>
+
+          <p className={ styles.empty }>
+            Rooms fill themselves: everyone who picks the same track or arena lands in the same match.
+          </p>
+        </div>
       </section>
     </section>
   </main>

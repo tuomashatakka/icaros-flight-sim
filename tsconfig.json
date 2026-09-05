@@ -35,6 +35,24 @@
       "@crash-velocity/physics/*": [
         "./packages/physics/src/*"
       ],
+      "@crash-velocity/net": [
+        "./packages/net/src/index.ts"
+      ],
+      "@crash-velocity/net/*": [
+        "./packages/net/src/*"
+      ],
+      "@crash-velocity/race": [
+        "./packages/race/src/index.ts"
+      ],
+      "@crash-velocity/race/*": [
+        "./packages/race/src/*"
+      ],
+      "@crash-velocity/battle": [
+        "./packages/battle/src/index.ts"
+      ],
+      "@crash-velocity/battle/*": [
+        "./packages/battle/src/*"
+      ],
       "@/*": [
         "./src/*"
       ],

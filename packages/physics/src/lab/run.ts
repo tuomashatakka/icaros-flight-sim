@@ -1,4 +1,4 @@
-import RAPIER from '@dimforge/rapier3d-compat'
+import RAPIER from '@dimforge/rapier3d-deterministic-compat'
 import { Euler, Quaternion, Vector3 } from 'three'
 import { vehicleConfig } from '../config'
 import { THRUSTER_RIG } from '../thrusters'

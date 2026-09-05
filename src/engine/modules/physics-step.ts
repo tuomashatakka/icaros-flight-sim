@@ -1,7 +1,7 @@
 import { defineModule } from 'threejs-scene'
 import type { AppModule } from 'threejs-scene'
 import type { RaceState } from '../state'
-import type { Physics } from '../physics/world'
+import type { Physics } from '@crash-velocity/physics/world'
 
 
 export type CollisionHandler = (handleA: number, handleB: number, started: boolean) => void

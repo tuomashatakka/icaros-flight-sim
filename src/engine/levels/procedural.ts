@@ -1,180 +1,51 @@
+/**
+ * The procedural sprint, drawn. The hand-walked ribbon — including the merge
+ * bridges that `ribbonBoxColliders` cannot infer — is generated in
+ * `@crash-velocity/race`; this only puts a material on it.
+ */
+
 import * as THREE from 'three'
-import { ribbonBoxColliders, boxColliderFromRing } from '@/lib/track/build-track'
+
 import { pointLight, roadMaterial } from './shared'
-import type { LevelSpec } from './types'
+
+import type { SceneContext } from 'threejs-scene'
+import type { TrackBundle } from '@crash-velocity/race'
+import type { EnvironmentOverrides } from '../scenes/environment'
+
 
 /**
- * The procedural sprint — a hand-walked ribbon with a branching shortcut, a
- * jump, and a hand-stitched merge. One lap, no loop.
+ * How this track differs from `DEFAULT_ENVIRONMENT`.
  *
- * The generation walk is lifted verbatim from the R3F component; only the
- * rendering half changed. In particular the explicit merge bridges below must
- * survive: `ribbonBoxColliders` only bridges array-adjacent rings, and the
- * junction stitches rings that are NOT adjacent in the vertex array.
+ * Sky colour, fog range and the fill tint are level identity; the key-to-fill
+ * ratio is not. Every track used to add its own hemisphere light on top of the
+ * base rig, which is what buried the ship's shadow — so a level states deltas
+ * here and never adds an ambient light of its own. Point lights placed in the
+ * build below are still fine: those are set dressing, not fill.
  */
-export function proceduralLevel (): LevelSpec {
-  const segmentLength               = 20
-  const verts: number[]             = []
-  const idxs: number[]              = []
-  const centerline: THREE.Vector3[] = []
-  let lastVertexIndex  = -1
-  let currentPosition  = new THREE.Vector3(-1, 1, 14)
-  let currentDirection = new THREE.Vector3(0, 0, -1)
+export const proceduralEnvironment: EnvironmentOverrides = {
+  background: '#171720',
 
-  // `record` collects centerline points for the main racing line only (skips
-  // the shortcut + jump), giving the race module an ordered branch-free
-  // checkpoint path.
-  const addSegment = (length: number, curve: number, ramp: number, width: number, record = false) => {
-    const segments = Math.max(1, Math.floor(length / segmentLength))
-    for (let i = 0; i < segments; i++) {
-      if (record)
-        centerline.push(currentPosition.clone())
+  // A ~3000-unit sprint: it needs far more range than the fixed decks.
+  fog:  [ '#171720', 120, 900 ],
+  hemi: { sky: '#8a9bff', ground: '#171720' },
+}
 
-      const sideVector = new THREE.Vector3()
-        .crossVectors(currentDirection, new THREE.Vector3(0, 1, 0))
-        .normalize()
-      const leftVertex  = currentPosition.clone().add(sideVector.clone().multiplyScalar(width / 2))
-      const rightVertex = currentPosition.clone().add(sideVector.clone().multiplyScalar(-width / 2))
+export function buildProcedural (ctx: SceneContext, bundle: TrackBundle): void {
+  const { geometry } = bundle
+  if (!geometry)
+    return
 
-      verts.push(leftVertex.x, leftVertex.y, leftVertex.z)
-      verts.push(rightVertex.x, rightVertex.y, rightVertex.z)
+  const road         = new THREE.Mesh(geometry, roadMaterial('#333333', 0.15, 0.85))
+  road.position.y    = -0.05
+  road.receiveShadow = true
+  ctx.scene.add(road)
 
-      if (lastVertexIndex >= 0) {
-        const i0 = lastVertexIndex
-        const i1 = i0 + 1
-        const i2 = i0 + 2
-        const i3 = i2 + 1
-        idxs.push(i0, i1, i2)
-        idxs.push(i1, i3, i2)
-      }
-      lastVertexIndex += 2
+  // This level carried no lights of its own under R3F — it leaned entirely
+  // on the Canvas ambient + directional + Sky + Environment. The engine's
+  // base layer is deliberately dim, so it needs its own fill here.
+  ctx.scene.add(new THREE.HemisphereLight('#8a9bff', '#171720', 0.8))
+  ctx.scene.add(pointLight('#aab4ff', 120, 500, [ 0, 80, -200 ]))
+  ctx.scene.add(pointLight('#c8b4ff', 90, 400, [ 400, 60, -800 ]))
 
-      currentDirection.applyAxisAngle(new THREE.Vector3(0, 1, 0), curve / segments)
-      currentPosition.add(currentDirection.clone().multiplyScalar(segmentLength))
-      currentPosition.y += ramp / segments
-    }
-  }
-
-  const addJump = (length: number, height: number, width: number) => {
-    addSegment(length, 0, height, width)
-    currentPosition.add(currentDirection.clone().multiplyScalar(length * 1.5))
-    lastVertexIndex = -1 // Create a gap
-    addSegment(length, 0, -height, width)
-  }
-
-  // --- Track generation ---
-  addSegment(200, 0, 0, 20, true)
-
-  // --- PATH SPLIT ---
-  const splitPosition  = currentPosition.clone()
-  const splitDirection = currentDirection.clone()
-  const splitLastIndex = lastVertexIndex
-
-  // Route 1: longer, safer curve.
-  addSegment(400, Math.PI / 2, 5, 20, true)
-  addSegment(200, 0, 0, 20, true)
-
-  const mergePosition1  = currentPosition.clone()
-  const mergeDirection1 = currentDirection.clone()
-  const mergeIndex1     = lastVertexIndex
-
-  // Reset for route 2.
-  currentPosition = splitPosition.clone()
-  currentDirection = splitDirection.clone()
-  lastVertexIndex = splitLastIndex
-
-  // Route 2: shorter, riskier shortcut with a jump.
-  addSegment(50, -Math.PI / 8, 0, 10)
-  addJump(100, 15, 10)
-  addSegment(50, Math.PI / 8, -5, 10)
-
-  // Manual merge connection — capture the rings being stitched before they are
-  // overwritten by the reset below.
-  const lastLeftVert    = new THREE.Vector3(verts[verts.length - 6], verts[verts.length - 5], verts[verts.length - 4])
-  const lastRightVert   = new THREE.Vector3(verts[verts.length - 3], verts[verts.length - 2], verts[verts.length - 1])
-  const merge1LeftVert  = new THREE.Vector3(verts[mergeIndex1 * 3 - 3], verts[mergeIndex1 * 3 - 2], verts[mergeIndex1 * 3 - 1])
-  const merge1RightVert = new THREE.Vector3(verts[mergeIndex1 * 3], verts[mergeIndex1 * 3 + 1], verts[mergeIndex1 * 3 + 2])
-
-  currentPosition = mergePosition1.clone()
-  currentDirection = mergeDirection1.clone()
-  lastVertexIndex = mergeIndex1
-
-  const sideVector = new THREE.Vector3()
-    .crossVectors(currentDirection, new THREE.Vector3(0, 1, 0))
-    .normalize()
-  const leftVertex  = currentPosition.clone().add(sideVector.clone().multiplyScalar(20 / 2))
-  const rightVertex = currentPosition.clone().add(sideVector.clone().multiplyScalar(-20 / 2))
-
-  verts.push(leftVertex.x, leftVertex.y, leftVertex.z)
-  verts.push(rightVertex.x, rightVertex.y, rightVertex.z)
-
-  const mergePointIndex = lastVertexIndex + 2
-
-  // Connect shortcut to merge point.
-  idxs.push(lastVertexIndex - 1, mergePointIndex + 1, lastVertexIndex)
-  idxs.push(lastVertexIndex - 1, mergePointIndex, mergePointIndex + 1)
-  // Connect main route to merge point.
-  idxs.push(mergeIndex1, mergeIndex1 + 1, mergePointIndex)
-  idxs.push(mergeIndex1 + 1, mergePointIndex + 1, mergePointIndex)
-
-  lastVertexIndex = mergePointIndex
-
-  // Bridge the non-adjacent junction rings explicitly, so the drivable surface
-  // has a collider everywhere the rendered mesh does.
-  const mergeBridgeColliders = [
-    boxColliderFromRing(merge1LeftVert, merge1RightVert, leftVertex, rightVertex),
-    boxColliderFromRing(lastLeftVert, lastRightVert, leftVertex, rightVertex),
-  ].filter((b): b is NonNullable<typeof b> => b !== null)
-
-  // --- Continue after merge ---
-  addSegment(500, 0, 0, 20, true)
-  addSegment(400, Math.PI / 2, 0, 20, true)
-  addSegment(500, 0, -5, 20, true)
-  addSegment(400, Math.PI / 2, 0, 20, true)
-  addSegment(700, 0, 0, 20, true)
-  addSegment(400, Math.PI / 2, 0, 20, true)
-
-  const vertices = new Float32Array(verts)
-  const indices  = new Uint32Array(idxs)
-
-  const geometry = new THREE.BufferGeometry()
-  geometry.setAttribute('position', new THREE.BufferAttribute(vertices, 3))
-  geometry.setIndex(new THREE.BufferAttribute(indices, 1))
-  geometry.computeVertexNormals()
-
-  // Decimate to ~12 evenly-spaced checkpoints along the main racing line.
-  const step      = Math.max(1, Math.floor(centerline.length / 12))
-  const waypoints = centerline.filter((_, i) => i % step === 0)
-
-  return {
-    id:          'procedural',
-    environment: {
-      background: '#171720',
-      // A ~3000-unit sprint: it needs far more range than the fixed decks.
-      fog:        [ '#171720', 120, 900 ],
-      hemi:       { sky: '#8a9bff', ground: '#171720' },
-    },
-
-    waypoints,
-    width: 20,
-    laps:  1,
-    loop:  false,
-
-    colliders:      [ ...ribbonBoxColliders(vertices, { stride: 1 }), ...mergeBridgeColliders ],
-    colliderOffset: [ 0, -0.05, 0 ],
-
-    bloom: { strength: 0.3, threshold: 0.9, radius: 0.45 },
-
-    build (ctx) {
-      const road         = new THREE.Mesh(geometry, roadMaterial('#333333', 0.15, 0.85))
-      road.position.y    = -0.05
-      road.receiveShadow = true
-      ctx.scene.add(road)
-
-      // Accents, not fill — the shared environment owns ambient and the key
-      // light. These two only pick out the ribbon against a very dark sky.
-      ctx.scene.add(pointLight('#aab4ff', 55, 500, [ 0, 80, -200 ]))
-      ctx.scene.add(pointLight('#c8b4ff', 45, 400, [ 400, 60, -800 ]))
-    },
-  }
+  ctx.scene.fog = new THREE.Fog('#171720', 120, 900)
 }

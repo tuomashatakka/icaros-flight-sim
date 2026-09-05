@@ -9,7 +9,7 @@
  *
  * Run: `bun run test:physics`
  */
-import RAPIER from '@dimforge/rapier3d-compat'
+import RAPIER from '@dimforge/rapier3d-deterministic-compat'
 import { Quaternion, Vector3 } from 'three'
 import { vehicleConfig } from '@/lib/utils'
 import { DEFAULT_TUNING } from 'Δengine/state'

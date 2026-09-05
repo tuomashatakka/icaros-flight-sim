@@ -1,0 +1,28 @@
+{
+  "name": "turn-response",
+  "track": "flats",
+  "ticks": 120,
+  "countdown": 0,
+  "note": "Steering authority in isolation: no throttle, so only yaw torque moves the ship.",
+  "racers": [
+    {
+      "name": "Probe",
+      "shipId": "icaras",
+      "at": [
+        0,
+        2,
+        0
+      ],
+      "yaw": 0
+    }
+  ],
+  "timeline": [
+    {
+      "tick": 0,
+      "racer": 0,
+      "input": {
+        "steer": 1
+      }
+    }
+  ]
+}

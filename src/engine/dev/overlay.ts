@@ -1,6 +1,6 @@
 import * as THREE from 'three'
-import type RAPIER from '@dimforge/rapier3d-compat'
-import RapierNS from '@dimforge/rapier3d-compat'
+import type RAPIER from '@dimforge/rapier3d-deterministic-compat'
+import RapierNS from '@dimforge/rapier3d-deterministic-compat'
 import { vehicleConfig } from '@/lib/utils'
 import {
   FORCE_COLOURS,

@@ -4,12 +4,12 @@ import type { App, AppModule, FrameContext } from 'threejs-scene'
 import { postProcessing } from 'threejs-scene/modules/post'
 import type { PostProcessingOptions } from 'threejs-scene/modules/post'
 import { useCameraView } from '@/hooks/use-camera-view'
-import { initRapier } from '../rapier'
-import { createSimClock } from '../clock'
-import { createPhysics } from '../physics/world'
-import type { Physics } from '../physics/world'
-import { attachBoxColliders } from '../physics/colliders'
-import type { BoxCollider } from '@/lib/track/build-track'
+import { initRapier } from '@crash-velocity/physics/rapier'
+import { createSimClock } from '@crash-velocity/physics/clock'
+import { createPhysics } from '@crash-velocity/physics/world'
+import type { Physics } from '@crash-velocity/physics/world'
+import { attachBoxColliders } from '@crash-velocity/physics/colliders'
+import type { BoxCollider } from '@crash-velocity/physics/colliders'
 import { createTelemetry } from '../telemetry'
 import type { Telemetry } from '../telemetry'
 import { createControls, attachControls } from '../input'
@@ -17,8 +17,7 @@ import type { Controls } from '../input'
 import { createCameraRig } from '../camera/rig'
 import type { CameraRig } from '../camera/rig'
 import type { HudHandle, HudViewFrame } from '../hud'
-import { vehicleModule } from '../modules/vehicle'
-import type { VehicleHandle } from '../modules/vehicle'
+import type { VehicleHandle } from '../vehicle'
 import { physicsStepModule } from '../modules/physics-step'
 import { shipVisualModule } from '../modules/ship-visual'
 import type { ShipVisualHandle } from '../modules/ship-visual'
@@ -90,13 +89,14 @@ export type BaseSceneConfig<TState extends object> = {
    *
    * Sky, fog, fill and the key light are one budget — a scene states its deltas
    * here rather than adding lights of its own, so the key-to-fill ratio that
-   * makes the ship's shadow readable survives every level.
+   * makes the ship's shadow readable survives every level. It replaces the old
+   * `background` outright: a bare clear colour with no fog to match it is what
+   * made every level state the same two values twice.
    */
-  environment?:             EnvironmentOverrides;
-  bloom?:                   { threshold: number; strength: number; radius: number };
-  colliders?:               readonly BoxCollider[];
-  colliderOffset?:          readonly [number, number, number];
-  useDefaultVehicleModule?: boolean;
+  environment?:    EnvironmentOverrides;
+  bloom?:          { threshold: number; strength: number; radius: number };
+  colliders?:      readonly BoxCollider[];
+  colliderOffset?: readonly [number, number, number];
 
   /**
    * Normalised vertical aim, -1..1, if the scene owns it.
@@ -163,7 +163,6 @@ export async function mountBaseScene<TState extends object> (
     bloom = { threshold: 0.8, strength: 0.4, radius: 0.4 },
     colliders,
     colliderOffset,
-    useDefaultVehicleModule = true,
     aimPitchSource,
     post,
     buildGeometry,
@@ -269,11 +268,6 @@ export async function mountBaseScene<TState extends object> (
 
   if (game?.module)
     modules.push(game.module)
-
-  if (useDefaultVehicleModule)
-    modules.push(
-      vehicleModule(physics, telemetry, vehicle, () => rig.requestSnap()) as unknown as AppModule<TState>
-    )
 
   modules.push(
     physicsStepModule(physics, game?.handleCollision) as unknown as AppModule<TState>,

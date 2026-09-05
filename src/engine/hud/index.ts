@@ -9,10 +9,10 @@ import { useStore } from '@/hooks/use-store'
 import { asSource } from '@/lib/tuning'
 import { vehicleConfig } from '@/lib/utils'
 import type { Controls } from '../input'
-import type { LevelSpec } from '../levels/types'
+import type { TrackSpec } from '@crash-velocity/race'
 import type { Telemetry } from '../telemetry'
 import { createSpatialHud } from './spatial-hud'
-import { LOCK } from '../battle/weapons'
+import { LOCK } from '@crash-velocity/battle/weapons'
 import type { HudData, HudFrame, HudSight, HudSource, HudViewFrame } from './types'
 
 
@@ -40,14 +40,20 @@ type SharedHudOptions<TState extends object> = {
  * this is what the closure bar is normalised against so a tight track reads
  * differently from a 600-unit sprint.
  */
-function averageGateSpacing (level: LevelSpec): number {
-  const points = level.waypoints
+function averageGateSpacing (track: TrackSpec): number {
+  const points = track.waypoints
   if (points.length < 2)
     return 600
 
+  // Plain tuples rather than `Vector3` — a track is serialisable now, because
+  //  the server builds the same one without three.js.
   let total = 0
   for (let i = 1; i < points.length; i++)
-    total += points[i].distanceTo(points[i - 1])
+    total += Math.hypot(
+      points[i][0] - points[i - 1][0],
+      points[i][1] - points[i - 1][1],
+      points[i][2] - points[i - 1][2],
+    )
   return Math.max(1, total / (points.length - 1))
 }
 
@@ -136,9 +142,11 @@ function sharedHudModule<TState extends object> ({
   })
 }
 
+const _target = new THREE.Vector3()
+
 export function raceHudModule<TState extends object> (
   canvas: HTMLCanvasElement,
-  level: LevelSpec,
+  track: TrackSpec,
   telemetry: Telemetry,
   controls: Controls,
   handle: HandleType
@@ -166,7 +174,9 @@ export function raceHudModule<TState extends object> (
     },
     actions: {
       menu,
-      raceAgain:    () => useRaceStore.getState().resetRace(),
+      // A client cannot restart a race any more — the server owns it. Rejoining
+      // is the honest equivalent, and it is what the room does on a finish.
+      raceAgain:    () => globalThis.location?.reload(),
       toggleTuning: () => {
         const store = useTuningStore.getState()
         store.setOpen(!store.open)
@@ -178,7 +188,7 @@ export function raceHudModule<TState extends object> (
     },
   }
 
-  const gateSpacing = averageGateSpacing(level)
+  const gateSpacing = averageGateSpacing(track)
 
   return sharedHudModule<TState>({
     canvas,
@@ -187,11 +197,16 @@ export function raceHudModule<TState extends object> (
     handle,
     source,
     target (frame) {
-      const race             = useRaceStore.getState()
-      const waypoints        = level.waypoints
-      const index            = waypoints.length > 0 ? race.nextCheckpoint % waypoints.length : 0
-      frame.target           = waypoints[index] ?? null
-      frame.targetLabel      = level.id.toUpperCase()
+      const race      = useRaceStore.getState()
+      const waypoints = track.waypoints
+      const index     = waypoints.length > 0 ? race.nextCheckpoint % waypoints.length : 0
+      const point     = waypoints[index]
+
+      // Waypoints are plain tuples now — a track is serialisable, because it
+      // goes over the wire on join — so the marker is built here rather than
+      // held as a `Vector3` the sim would have had to carry.
+      frame.target           = point ? _target.set(point[0], point[1], point[2]) : null
+      frame.targetLabel      = track.id.toUpperCase()
       frame.checkpointNumber = waypoints.length > 0 ? index + 1 : 0
       frame.checkpointCount  = waypoints.length
       frame.gateSpacing      = gateSpacing

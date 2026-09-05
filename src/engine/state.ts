@@ -46,7 +46,7 @@ export function initialRaceState (shipConfig: ShipConfig | null = null): RaceSta
     brake:       false,
     boost:       false,
     resetSeq:    0,
-    status:      'idle',
+    status:      'lobby',
     targetSpeed: vehicleConfig.maxSpeed,
     shipConfig,
     tuning:      { ...DEFAULT_TUNING },

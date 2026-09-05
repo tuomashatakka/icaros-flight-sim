@@ -1,0 +1,30 @@
+{
+  "name": "boost-jump",
+  "track": "flats",
+  "ticks": 840,
+  "countdown": 0,
+  "note": "Boost off the deck; checks the hull comes back down level rather than tumbling.",
+  "racers": [
+    {
+      "name": "Probe",
+      "shipId": "icaras"
+    }
+  ],
+  "timeline": [
+    {
+      "tick": 0,
+      "racer": 0,
+      "input": {
+        "throttle": true,
+        "boost": true
+      }
+    },
+    {
+      "tick": 480,
+      "racer": 0,
+      "input": {
+        "boost": false
+      }
+    }
+  ]
+}
