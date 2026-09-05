@@ -5,11 +5,12 @@ import { useTuningStore } from '@/hooks/use-tuning-store'
 import { STEP } from '../clock'
 import { DEFAULT_TUNING } from '../state'
 import type { ShipTuning } from '../state'
+import { createLegend } from './legend'
 import { createOverlays } from './overlay'
 import { readDevParams } from './params'
 import { runScenario } from './scenario'
 import { installTrace, readTrace, recordFrame, watchContextLoss } from './trace'
-import type { DevApi, DevDeps, ScenarioScript, TeleportArgs } from './types'
+import type { DevApi, DevDeps, OverlayFlags, ScenarioScript, TeleportArgs } from './types'
 
 
 /**
@@ -52,13 +53,62 @@ export type DevHarness = {
   detach (): void;
 }
 
+/**
+ * What a dev build draws before anyone asks.
+ *
+ * `colliders` is deliberately NOT in here: it is the expensive layer, it redraws
+ * the whole world's wireframe, and it hides the ship inside its own box.
+ */
+const DEFAULT_OVERLAYS: OverlayFlags = {
+  rays:      true,
+  forces:    true,
+  netForce:  true,
+  thrusters: true,
+  com:       true,
+  velocity:  true,
+  inertia:   false,
+  contacts:  false,
+  path:      false,
+  colliders: false,
+  frustum:   false,
+}
+
 export function attachDevHarness (deps: DevDeps): DevHarness {
   installTrace()
 
   const { app, clock, controls, telemetry, vehicle, rig } = deps
   const overlays                                          = createOverlays(deps)
+  const legend                                            = createLegend(rig.camera, app.ctx.scene)
   const params                                            = readDevParams()
-  const detachers: Array<() => void>                      = [ overlays.dispose ]
+  const detachers: Array<() => void>                      = [ overlays.dispose, legend.dispose ]
+
+  // Number keys toggle one layer each, 0 clears the lot. Bound here rather than
+  // in `input.ts` because `input.ts` ships and these do not.
+  const onKey = (event: KeyboardEvent) => {
+    if (event.metaKey || event.ctrlKey || event.altKey)
+      return
+
+    const target = event.target as HTMLElement | null
+    if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable))
+      return
+
+    if (event.key === '0') {
+      const cleared: OverlayFlags = {}
+      for (const layer of legend.layers)
+        cleared[layer] = false
+      overlays.set(cleared)
+      return
+    }
+
+    const index = Number(event.key) - 1
+    if (!Number.isInteger(index) || index < 0 || index >= legend.layers.length)
+      return
+
+    const layer = legend.layers[index]
+    overlays.set({ [layer]: !overlays.flags()[layer] })
+  }
+  window.addEventListener('keydown', onKey)
+  detachers.push(() => window.removeEventListener('keydown', onKey))
 
   const canvas = app.ctx.renderer.domElement
   if (canvas)
@@ -131,6 +181,7 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
           boostMeter: round(telemetry.boostMeter, 3),
           boosting:   telemetry.boosting,
           grounded:   telemetry.grounded,
+          airbrake:   round(telemetry.airbrake, 3),
           crashSeq:   telemetry.crashSeq,
         },
 
@@ -320,8 +371,16 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
   // --- boot-time URL overrides -------------------------------------------
   if (params.tuning)
     api.setTuning(params.tuning)
-  if (Object.keys(params.overlay).length > 0)
-    api.overlay(params.overlay)
+  // Physics layers are ON by default in dev. The whole point of drawing the
+  // forces is that you see the wrong one without having gone looking for it, and
+  // a layer you have to remember to switch on is a layer you find the bug
+  // without. An explicit `?overlay=` still wins outright, including `?overlay=`
+  // with nothing after it, which turns the lot off.
+  api.overlay(
+    Object.keys(params.overlay).length > 0 || params.overlayExplicit
+      ? params.overlay
+      : DEFAULT_OVERLAYS
+  )
   if (params.paused)
     clock.paused = true
   window.__dev   = api
@@ -365,6 +424,7 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
     onFrame (shipPosition, frameDelta) {
       markReady()
       overlays.update(shipPosition)
+      legend.render(overlays.flags())
       recordFrame({
         ms:        +(frameDelta * 1000).toFixed(2),
         speed:     telemetry.speed,

@@ -61,8 +61,8 @@ describe('continuous hud visor', () => {
   })
 
   it('keeps every traced cockpit silhouette inside its interactive uv surface', () => {
-    const traces = Object.values(HUD_PANEL_TRACES)
-    const open   = traces.filter(trace => trace.variant === 'open')
+    const traces  = Object.values(HUD_PANEL_TRACES)
+    const open    = traces.filter(trace => trace.variant === 'open')
     const screens = traces.filter(trace => trace.variant === 'screen')
 
     expect(open).toHaveLength(3)
@@ -76,7 +76,8 @@ describe('continuous hud visor', () => {
 
     for (const trace of traces) {
       expect(trace.contour.length).toBeGreaterThanOrEqual(4)
-      const points = [ ...trace.contour, ...(trace.frame?.flat() ?? []) ]
+
+      const points = [ ...trace.contour, ...trace.frame?.flat() ?? [] ]
       for (const point of points) {
         expect(point[0]).toBeGreaterThanOrEqual(0)
         expect(point[0]).toBeLessThanOrEqual(1)

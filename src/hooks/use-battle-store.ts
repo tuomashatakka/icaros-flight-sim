@@ -81,52 +81,81 @@ export type BattleSessionState = {
   lockOn:    LockOnState;
 
   /** Normalised R/F vertical aim, -1..1. Drives where the reticle sits. */
-  aimPitch:         number;
-  primary:          WeaponView | null;
-  secondary:        WeaponView | null;
-  countdown:        number;
-  timeLeft:         number;
-  scores:           Record<BattleTeam, number>;
-  scoreTarget:      number;
-  roster:           BattleRosterEntry[];
-  zones:            BattleZoneView[];
-  flags:            BattleFlagView[];
-  toasts:           string[];
-  killFeed:         KillFeedEntry[];
-  verifiedTicks:    number;
-  lastVerifiedHash: string | null;
-  hashMatchStatus:  'ok' | 'mismatch' | 'unverified';
+  aimPitch:    number;
+  primary:     WeaponView | null;
+  secondary:   WeaponView | null;
+  countdown:   number;
+  timeLeft:    number;
+  scores:      Record<BattleTeam, number>;
+  scoreTarget: number;
+  roster:      BattleRosterEntry[];
+  zones:       BattleZoneView[];
+  flags:       BattleFlagView[];
+  toasts:      string[];
+  killFeed:    KillFeedEntry[];
+
+  /**
+   * Connection health.
+   *
+   * Replaces a hash-verification readout that compared the local sim's events
+   * against a hash the local sim had just computed from the same state — it
+   * always matched, and proved nothing. With a real authority there is nothing
+   * left for event hashing to establish; how far behind the server the client
+   * is, and how hard prediction is being corrected, are the numbers that
+   * actually say whether the netcode is healthy.
+   */
+  net: NetHealth;
+}
+
+export type NetHealth = {
+  rttMs:         number;
+  jitterMs:      number;
+  synced:        boolean;
+  snapshotAgeMs: number;
+
+  /** Metres the last reconciliation moved the predicted ship. */
+  correctionM: number;
+
+  /** Input frames sent but not yet acknowledged. */
+  pending: number;
+}
+
+export const IDLE_NET: NetHealth = {
+  rttMs:         0,
+  jitterMs:      0,
+  synced:        false,
+  snapshotAgeMs: 0,
+  correctionM:   0,
+  pending:       0,
 }
 
 const initial: BattleSessionState = {
-  status:           'idle',
-  error:            null,
-  playerId:         null,
-  myName:           null,
-  myTeam:           null,
-  myShip:           null,
-  myHealth:         100,
-  maxHealth:        100,
-  myBoost:          1,
-  myKills:          0,
-  myDeaths:         0,
-  carrying:         null,
-  lockOn:           IDLE_LOCK,
-  aimPitch:         0,
-  primary:          null,
-  secondary:        null,
-  countdown:        0,
-  timeLeft:         0,
-  scores:           { red: 0, blue: 0 },
-  scoreTarget:      25,
-  roster:           [],
-  zones:            [],
-  flags:            [],
-  toasts:           [],
-  killFeed:         [],
-  verifiedTicks:    0,
-  lastVerifiedHash: null,
-  hashMatchStatus:  'unverified',
+  status:      'idle',
+  error:       null,
+  playerId:    null,
+  myName:      null,
+  myTeam:      null,
+  myShip:      null,
+  myHealth:    100,
+  maxHealth:   100,
+  myBoost:     1,
+  myKills:     0,
+  myDeaths:    0,
+  carrying:    null,
+  lockOn:      IDLE_LOCK,
+  aimPitch:    0,
+  primary:     null,
+  secondary:   null,
+  countdown:   0,
+  timeLeft:    0,
+  scores:      { red: 0, blue: 0 },
+  scoreTarget: 25,
+  roster:      [],
+  zones:       [],
+  flags:       [],
+  toasts:      [],
+  killFeed:    [],
+  net:         IDLE_NET,
 }
 
 let toastSeq = 0
@@ -160,13 +189,13 @@ export const useBattleStore = create<BattleSessionState & {
     deaths:    number;
     carrying:  BattleTeam | null;
   }) => void;
-  setLockOn:       (lock: LockOnState) => void;
-  setAimPitch:     (aim: number) => void;
-  setWeapons:      (primary: WeaponView, secondary: WeaponView) => void;
-  setVerification: (v: { tick: number; hash: string; matched: boolean }) => void;
-  applyEvent:      (e: import('@/engine/battle/sim').BattleEvent, names?: Map<string, string>) => void;
-  clearToast:      (key: string) => void;
-  resetSession:    () => void;
+  setLockOn:    (lock: LockOnState) => void;
+  setAimPitch:  (aim: number) => void;
+  setWeapons:   (primary: WeaponView, secondary: WeaponView) => void;
+  setNetStats:  (net: NetHealth) => void;
+  applyEvent:   (e: import('@/engine/battle/sim').BattleEvent, names?: Map<string, string>) => void;
+  clearToast:   (key: string) => void;
+  resetSession: () => void;
 }>(set => ({
   ...initial,
 
@@ -274,11 +303,19 @@ export const useBattleStore = create<BattleSessionState & {
     }
   }),
 
-  setVerification: ({ hash, matched }) => set(state => ({
-    verifiedTicks:    matched ? state.verifiedTicks + 1 : state.verifiedTicks,
-    lastVerifiedHash: hash,
-    hashMatchStatus:  matched ? 'ok' : 'mismatch',
-  })),
+  // Quantised before comparing, so a round trip wobbling by fractions of a
+  // millisecond cannot force a React commit 30 times a second.
+  setNetStats: next => set(state => {
+    const now  = state.net
+    const same = now.rttMs === next.rttMs &&
+      now.jitterMs === next.jitterMs &&
+      now.synced === next.synced &&
+      now.pending === next.pending &&
+      Math.abs(now.snapshotAgeMs - next.snapshotAgeMs) < 8 &&
+      Math.abs(now.correctionM - next.correctionM) < 0.05
+
+    return same ? state : { net: next }
+  }),
 
   applyEvent: (e, names) => set(state => {
     const who = (id: string) => names?.get(id) ?? id

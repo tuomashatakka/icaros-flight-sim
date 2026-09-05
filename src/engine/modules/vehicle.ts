@@ -6,8 +6,9 @@ import type { Transform } from '@/hooks/use-race-store'
 import type { RaceState } from '../state'
 import type { Physics } from '../physics/world'
 import { BodyInterpolator } from '../interpolation'
-import { stepHovercraft, createHovercraft, createHovercraftState } from '../sim/vehicle-step'
-import type { HovercraftState, HovercraftStepResult } from '../sim/vehicle-step'
+import { stepHovercraft, createHovercraft, createHovercraftState } from '@crash-velocity/physics/vehicle-step'
+import type { HovercraftState, HovercraftStepResult } from '@crash-velocity/physics/vehicle-step'
+import type { ForceSample } from '@crash-velocity/physics/thrusters'
 import type { Telemetry } from '../telemetry'
 
 
@@ -18,12 +19,22 @@ export type VehicleDebug = {
   targetSpeed:  number;
   contacts:     number;
   dt:           number;
+
+  /** Every force applied on the last tick, world space. Dev builds only. */
+  forces:    readonly ForceSample[];
+  netForce:  readonly [number, number, number];
+  netTorque: readonly [number, number, number];
 }
+
+/**
+ * Force collection allocates a sample per nozzle per tick, so it is gated on the
+ * same flag that keeps the whole dev harness out of the production bundle.
+ */
+const COLLECT_FORCES = process.env.NODE_ENV !== 'production'
 
 export type VehicleHandle = {
   readonly body:         RAPIER.RigidBody | null;
   readonly interpolator: BodyInterpolator | null;
-  readonly controller:   RAPIER.DynamicRayCastVehicleController | null;
   readonly debug:        VehicleDebug | null;
 
   /** Cut the ship to a transform. Suppresses interpolation across the jump. */
@@ -57,9 +68,8 @@ export function vehicleModule (
 ): AppModule<RaceState> {
   const { world } = physics
 
-  let chassis: RAPIER.RigidBody | null                          = null
-  let controller: RAPIER.DynamicRayCastVehicleController | null = null
-  let interpolator: BodyInterpolator | null                     = null
+  let chassis: RAPIER.RigidBody | null      = null
+  let interpolator: BodyInterpolator | null = null
 
   const simState: HovercraftState = createHovercraftState()
 
@@ -91,9 +101,7 @@ export function vehicleModule (
     name: 'vehicle',
 
     build () {
-      const rig                    = createHovercraft(world)
-      chassis                      = rig.chassis
-      controller                   = rig.controller
+      chassis = createHovercraft(world).chassis
 
       interpolator = new BodyInterpolator(chassis)
       physics.interpolators.push(interpolator)
@@ -105,9 +113,6 @@ export function vehicleModule (
         get interpolator () {
           return interpolator
         },
-        get controller () {
-          return controller
-        },
         get debug () {
           return lastDebug
         },
@@ -116,7 +121,7 @@ export function vehicleModule (
     },
 
     update (state, frame) {
-      if (!controller || !chassis)
+      if (!chassis)
         return
 
       const dt = frame.delta
@@ -141,7 +146,7 @@ export function vehicleModule (
 
       const result = stepHovercraft({
         chassis,
-        controller,
+        world,
         input: {
           steer:    state.steer,
           throttle: state.throttle,
@@ -149,14 +154,15 @@ export function vehicleModule (
           strafe:   state.strafe,
           boost:    state.boost,
         },
-        tuning:      state.tuning,
-        state:       simState,
+        tuning:        state.tuning,
+        state:         simState,
         dt,
-        allowDrive:  racing,
-        spawn:       useRaceStore.getState().respawn,
+        allowDrive:    racing,
+        spawn:         useRaceStore.getState().respawn,
         resetRequested,
-        boostMeter:  telemetry.boostMeter,
-        targetSpeed: state.targetSpeed,
+        boostMeter:    telemetry.boostMeter,
+        targetSpeed:   state.targetSpeed,
+        collectForces: COLLECT_FORCES,
       })
 
       writeTelemetry(result)
@@ -167,6 +173,9 @@ export function vehicleModule (
         targetSpeed:  state.targetSpeed,
         contacts:     result.contacts,
         dt,
+        forces:       result.forces,
+        netForce:     result.netForce,
+        netTorque:    result.netTorque,
       }
     },
 
@@ -176,10 +185,6 @@ export function vehicleModule (
         if (index >= 0)
           physics.interpolators.splice(index, 1)
         interpolator = null
-      }
-      if (controller) {
-        world.removeVehicleController(controller)
-        controller = null
       }
       if (chassis) {
         world.removeRigidBody(chassis)
@@ -193,6 +198,7 @@ export function vehicleModule (
     telemetry.speed      = result.speed
     telemetry.boostMeter = result.boostMeter
     telemetry.grounded   = result.grounded
+    telemetry.airbrake   = result.airbrake
     telemetry.boosting   = result.boosting
 
     if (result.crashDelta > 0) {

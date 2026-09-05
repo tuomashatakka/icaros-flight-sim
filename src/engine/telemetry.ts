@@ -12,6 +12,9 @@ export type Telemetry = {
   boosting:   boolean;
   grounded:   boolean;
 
+  /** Air-brake deployment 0..1 — drives the wing panels AND the drag force. */
+  airbrake: number;
+
   /** Monotonic crash counter — `publish` fires one flash per unseen increment. */
   crashSeq: number;
 
@@ -25,6 +28,7 @@ export function createTelemetry (): Telemetry {
     boostMeter: 1,
     boosting:   false,
     grounded:   false,
+    airbrake:   0,
     crashSeq:   0,
     shake:      0,
   }

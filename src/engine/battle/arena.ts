@@ -61,7 +61,7 @@ export type PlateauDef = {
  *
  * Deliberately NOT the race `LevelSpec` (which carries waypoints/laps): battle
  * is objective-based, so the arena describes bases, control zones and spawn
- * points instead. Colliders stay box strips for the raycast wheels. The module
+ * points instead. Colliders stay box strips, for the hover rays. The module
  * is Node-safe — `SceneContext` is type-only, so the headless server can import
  * the collider/shape data without dragging in the renderer.
  */
@@ -144,7 +144,7 @@ const box = (
 /**
  * Turn a plateau into its collider set: one solid mesa plus one wedge per ramp.
  *
- * The wedge is a rotated cuboid, not a trimesh, because the raycast wheels only
+ * The wedge is a rotated cuboid, not a trimesh, because the hover rays only
  * collide with cuboids. Its top face is the drivable surface, so the box is
  * placed by taking the surface centreline and pushing it DOWN along the surface
  * normal by the slab thickness — offsetting the box centre directly would sink
@@ -584,7 +584,7 @@ function buildPlateauMeshes (scene: THREE.Object3D, plateaus: PlateauDef[]): voi
     }
 
     // The ramps reuse the collider maths, so the mesh cannot drift from the
-    // surface the wheels actually ride on.
+    // surface the hover pads actually ride on.
     for (const collider of plateauColliders(p).slice(1)) {
       const [ ax, ay, az ] = collider.args
       const ramp           = new THREE.Mesh(new THREE.BoxGeometry(ax * 2, ay * 2, az * 2), rampMat)

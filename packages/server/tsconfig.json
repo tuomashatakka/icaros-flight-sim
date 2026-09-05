@@ -1,0 +1,24 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    // Bun's runtime resolver only honours `paths` when a baseUrl is present;
+    // the app's own tsconfig gets away without one because bundlers do not need
+    // it. TypeScript 6 deprecates the option, so the deprecation is
+    // acknowledged rather than worked around — dropping baseUrl would break
+    // `bun run dev:server` at runtime, which is worse than a stale option.
+    "baseUrl":            ".",
+    "ignoreDeprecations": "6.0",
+    "plugins":         [],
+    "types":           [ "bun" ],
+    "noEmit":          true,
+    "resolveJsonModule": true,
+    "paths": {
+      "@crash-velocity/physics":   [ "../physics/src/index.ts" ],
+      "@crash-velocity/physics/*": [ "../physics/src/*" ],
+      "Δ*":                        [ "../../src/*" ],
+      "@/*":                       [ "../../src/*" ]
+    }
+  },
+  "include": [ "src/**/*.ts", "test/**/*.ts" ],
+  "exclude": [ "node_modules" ]
+}

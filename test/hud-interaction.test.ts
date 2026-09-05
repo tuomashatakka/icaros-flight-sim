@@ -6,6 +6,7 @@ import {
   shapeHudAxis,
 } from '@/engine/hud/interaction'
 
+
 describe('hud interaction transforms', () => {
   it('removes stick drift and preserves signed full-scale input', () => {
     expect(shapeHudAxis(0.1)).toBe(0)

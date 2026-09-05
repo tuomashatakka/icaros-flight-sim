@@ -2,6 +2,9 @@
 
 # dependencies
 /node_modules
+# Workspaces get their own hoisted installs; the root rule is anchored and
+# would not catch them.
+node_modules/
 /.pnp
 .pnp.*
 .yarn/*
@@ -39,6 +42,9 @@ next-env.d.ts
 
 .genkit/*
 .env*
+# ...except the documented template, which carries no secrets and is the only
+# record of what the server reads.
+!.env.example
 
 # firebase
 firebase-debug.log
@@ -51,3 +57,7 @@ firestore-debug.log
 
 # Claude Code: share skills, keep personal permissions local
 .claude/settings.local.json
+
+# Battle server sqlite and crash-lab trace dumps. Both are generated; the traces
+# are reproducible from `bun run lab --dump` and run to megabytes apiece.
+data/

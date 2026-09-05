@@ -19,12 +19,17 @@ function BattleContent () {
     // stay referentially stable or SceneCanvas tears the WebGL context down and
     // rebuilds the whole match on every livery tweak.
     const config = useShipStore.getState().currentConfig
-    return mountBattle(
-      canvas,
-      name || 'nuller',
-      (ship as ShipId) || config.shipId,
-      { primary: config.primaryWeapon, secondary: config.secondaryWeapon }
-    )
+    return mountBattle(canvas, {
+      name:    name || 'nuller',
+      shipId:  (ship as ShipId) || config.shipId,
+      loadout: { primary: config.primaryWeapon, secondary: config.secondaryWeapon },
+
+      // Battle is network-only. `?match=` picks a room (the lobby hands one
+      // out); `?sv=` overrides the server for local debugging, which the old
+      // transport documented but never implemented.
+      match:  params.get('match') ?? undefined,
+      server: params.get('sv') ?? undefined,
+    })
   }, [ params ])
 
   return <div className={ styles.page }>

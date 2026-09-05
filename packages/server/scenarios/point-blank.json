@@ -1,0 +1,16 @@
+{
+  "name": "point-blank",
+  "note": "Two ships facing each other across an OPEN LANE at z=-230, behind the red ridges. The obvious setup - both on the centreline - buries them inside the Apex Spire, whose footprint is 164x148 around the origin, and then every shot fails line-of-sight for the wrong reason. Ship-forward is +z, so yaw +pi/2 faces +x. Exercises fire, lock, hit and kill.",
+  "ticks": 900,
+  "players": [
+    { "name": "Red One",  "team": "red",  "at": [-60, 1, -230], "yaw": 1.5707963 },
+    { "name": "Blue One", "team": "blue", "at": [60, 1, -230],  "yaw": -1.5707963 }
+  ],
+  "timeline": [
+    { "tick": 60,  "player": 0, "input": { "fire": true } },
+    { "tick": 60,  "player": 1, "input": { "fire": true } },
+    { "tick": 300, "player": 0, "input": { "fireSecondary": true } },
+    { "tick": 450, "player": 1, "input": { "throttle": true, "steer": 0.3 } },
+    { "tick": 600, "player": 0, "input": { "fireSecondary": false, "aimPitch": 0.4 } }
+  ]
+}

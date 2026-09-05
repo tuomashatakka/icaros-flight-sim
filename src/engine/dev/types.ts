@@ -147,10 +147,31 @@ export type ScenarioScript = {
 
 export type OverlayFlags = {
   colliders?: boolean;
-  wheels?:    boolean;
   contacts?:  boolean;
   path?:      boolean;
   frustum?:   boolean;
+
+  // --- physics layers -----------------------------------------------------
+  /** The four hover rays, their hit points and the surface normals. */
+  rays?: boolean;
+
+  /** One arrow per applied force, at its application point, coloured by system. */
+  forces?: boolean;
+
+  /** The sum: net force (white) and net torque (red) from the centre of mass. */
+  netForce?: boolean;
+
+  /** Static rig markers — every nozzle mount and direction, firing or not. */
+  thrusters?: boolean;
+
+  /** Centre of mass and the body axis triad. */
+  com?: boolean;
+
+  /** Linear and angular velocity vectors. */
+  velocity?: boolean;
+
+  /** Inertia ellipsoid — the other half of `tau = I * alpha`. */
+  inertia?: boolean;
 }
 
 export type TeleportArgs = {

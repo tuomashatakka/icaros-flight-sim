@@ -1,0 +1,95 @@
+{
+  "name": "straight-fight",
+  "note": "Free flight from the arena's own spawn lanes, with bots on the deck. Covers driving, steering, boost and the bot AI rather than combat geometry - see point-blank for hits and kills.",
+  "ticks": 600,
+  "players": [
+    {
+      "name": "Red One",
+      "team": "red"
+    },
+    {
+      "name": "Blue One",
+      "team": "blue"
+    }
+  ],
+  "bots": 2,
+  "timeline": [
+    {
+      "tick": 30,
+      "player": 0,
+      "input": {
+        "throttle": true
+      }
+    },
+    {
+      "tick": 30,
+      "player": 1,
+      "input": {
+        "throttle": true
+      }
+    },
+    {
+      "tick": 90,
+      "player": 0,
+      "input": {
+        "steer": 0.4,
+        "boost": true
+      }
+    },
+    {
+      "tick": 120,
+      "player": 1,
+      "input": {
+        "steer": -0.35
+      }
+    },
+    {
+      "tick": 180,
+      "player": 0,
+      "input": {
+        "steer": 0,
+        "fire": true
+      }
+    },
+    {
+      "tick": 240,
+      "player": 1,
+      "input": {
+        "fire": true,
+        "aimPitch": 0.5
+      }
+    },
+    {
+      "tick": 300,
+      "player": 0,
+      "input": {
+        "boost": false,
+        "fireSecondary": true
+      }
+    },
+    {
+      "tick": 360,
+      "player": 0,
+      "input": {
+        "brake": true,
+        "fire": false
+      }
+    },
+    {
+      "tick": 420,
+      "player": 1,
+      "input": {
+        "steer": 0.6
+      }
+    },
+    {
+      "tick": 480,
+      "player": 0,
+      "input": {
+        "brake": false,
+        "throttle": true,
+        "steer": -0.5
+      }
+    }
+  ]
+}

@@ -1,6 +1,8 @@
 import type * as THREE from 'three'
 import { defineModule } from 'threejs-scene'
 import type { AppModule } from 'threejs-scene'
+import { createAirbrakes } from '../fx/airbrakes'
+import type { Airbrakes } from '../fx/airbrakes'
 import { loadShip } from '../assets/ship-loader'
 import type { ShipInstance } from '../assets/ship-loader'
 import type { RaceState } from '../state'
@@ -51,6 +53,7 @@ export function shipVisualModule (
   let instance: ShipInstance | null               = null
   let lastConfig: ShipConfig | null               = null
   let glowMaterials: THREE.MeshStandardMaterial[] = []
+  let airbrakes: Airbrakes | null                 = null
 
   /** Guards against a slow load for ship A landing after the user picked B. */
   let generation = 0
@@ -71,6 +74,7 @@ export function shipVisualModule (
       return
     }
 
+    airbrakes?.dispose()
     instance?.dispose()
     instance = next
     next.applyConfig(config)
@@ -79,6 +83,10 @@ export function shipVisualModule (
     // Negative: a +X rotation swings +Z (forward) toward -Y, i.e. nose DOWN.
     next.root.rotation.x = -aimPitch
     shipRoot.add(next.root)
+
+    // Built AFTER the hull is parented and fitted, so the bounding box the flap
+    // placement is measured from is the fitted one.
+    airbrakes = createAirbrakes(next.root)
 
     // Cache the glow materials once instead of traversing the hull every frame,
     // which is what the R3F build did.
@@ -134,6 +142,8 @@ export function shipVisualModule (
           instance?.applyConfig(config)
       }
 
+      airbrakes?.setDeploy(telemetry.airbrake)
+
       // Pulse the engine glow while boosting.
       const intensity = telemetry.boosting ? 3.6 : 1.6
       for (const material of glowMaterials)
@@ -152,6 +162,8 @@ export function shipVisualModule (
 
     dispose () {
       generation++ // orphan any in-flight load
+      airbrakes?.dispose()
+      airbrakes = null
       instance?.dispose()
       instance = null
       glowMaterials = []

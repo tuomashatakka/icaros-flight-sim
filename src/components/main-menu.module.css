@@ -187,3 +187,9 @@
 
 .editorLink { padding: .75rem 1.5rem; border: 1px solid hsl(var(--editor-accent-hsl) / .6); border-radius: var(--radius); background: hsl(var(--editor-accent-hsl) / .08); font-size: .875rem; font-weight: 600; transition: background .2s, box-shadow .2s; }
 .editorLink:hover { background: hsl(var(--editor-accent-hsl) / .18); box-shadow: 0 0 24px -6px hsl(var(--editor-accent-hsl) / .7); }
+
+/* The crash lab: deterministic physics cases, played back frame by frame. Cyan
+   rather than an accent variable — it is a diagnostic, not a game mode, and it
+   should read as one next to the three that are. */
+.labLink { padding: .75rem 1.5rem; border: 1px solid hsl(187 92% 55% / .5); border-radius: var(--radius); background: hsl(187 92% 55% / .07); font-size: .875rem; font-weight: 600; transition: background .2s, box-shadow .2s; }
+.labLink:hover { background: hsl(187 92% 55% / .17); box-shadow: 0 0 24px -6px hsl(187 92% 55% / .7); }

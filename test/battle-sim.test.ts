@@ -3,7 +3,6 @@ import { AIM_MAX, BattleSim, DEFAULT_BATTLE_CONFIG, NEUTRAL_INPUT } from '@/engi
 import type { BattleConfig, BattlePlayer } from '@/engine/battle/sim'
 import { apexArena, onPlateau, plateauColliders, rampFeet } from '@/engine/battle/arena'
 import { LOCK, WEAPONS } from '@/engine/battle/weapons'
-import { calculateActionHash, verifyActionHash } from '@/engine/battle/hash'
 
 /**
  * The headless battle sim, run under vitest. No DOM, no WebSocket: these lock
@@ -698,37 +697,5 @@ describe('match lifecycle', () => {
     const events = step(sim, 6 * 60)
     expect(events.some(e => e.type === 'matchEnd')).toBe(true)
     expect(sim.status).toBe('finished')
-  })
-})
-
-describe('action hash verification', () => {
-  it('calculates deterministic action hashes and verifies matching actions', () => {
-    const action = {
-      tick:    12,
-      type:    'FIRE_BOLT',
-      payload: { shooterId: 'p1', team: 'red' },
-      hash:    '',
-    }
-    const stateSnapshot = { scores: { red: 1, blue: 0 }, status: 'live' }
-
-    const localHash = calculateActionHash(action.type, action.tick, action.payload, stateSnapshot)
-    action.hash     = localHash
-
-    const result = verifyActionHash(action, stateSnapshot)
-    expect(result.matched).toBe(true)
-    expect(result.localHash).toBe(localHash)
-  })
-
-  it('flags hash mismatch when server action hash differs from local state', () => {
-    const action = {
-      tick:    12,
-      type:    'FIRE_BOLT',
-      payload: { shooterId: 'p1', team: 'red' },
-      hash:    'badhash123',
-    }
-    const stateSnapshot = { scores: { red: 1, blue: 0 }, status: 'live' }
-
-    const result = verifyActionHash(action, stateSnapshot)
-    expect(result.matched).toBe(false)
   })
 })

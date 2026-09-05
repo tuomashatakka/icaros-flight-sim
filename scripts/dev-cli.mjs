@@ -36,6 +36,17 @@ const READY_TIMEOUT = 60_000
 /** How long to wait for a dev server we spawned ourselves. */
 const SERVER_TIMEOUT = 90_000
 
+/**
+ * The battle server's port and how long to wait for it.
+ *
+ * Battle mode is network-only, so `--level battle` needs a second process. It
+ * starts far faster than `next dev` — no bundler, just a bun entry point — so
+ * the timeout is a fraction of the client's.
+ */
+const BATTLE_PORT    = Number(process.env.BATTLE_PORT ?? 9003)
+const BATTLE_ORIGIN  = `http://localhost:${BATTLE_PORT}`
+const BATTLE_TIMEOUT = 15_000
+
 // ---------------------------------------------------------------- argv
 
 function parseArgs (argv) {
@@ -86,6 +97,50 @@ async function serverIsUp () {
  * hit, which would dominate every single command. Reusing the running server
  * also means what the CLI sees is what the human sees in their browser.
  */
+async function battleServerIsUp () {
+  try {
+    const response = await fetch(`${BATTLE_ORIGIN}/health`, { signal: AbortSignal.timeout(1000) })
+    return response.ok
+  }
+  catch {
+    return false
+  }
+}
+
+/**
+ * Bring up the battle server for `--level battle`, reusing one already running.
+ *
+ * `DEV_COMMANDS=1` is what makes `window.__devBattle.place()` and `.face()`
+ * work: they are server requests now, and the server ignores them without it.
+ */
+async function ensureBattleServer () {
+  if (await battleServerIsUp())
+    return { spawned: false, stop: async () => {} }
+
+  process.stderr.write(`[dev-cli] no battle server on ${BATTLE_ORIGIN}, starting one…\n`)
+
+  const child = spawn('bun', [ 'run', 'dev:server' ], {
+    cwd:   ROOT,
+    stdio: 'ignore',
+    env:   { ...process.env, DEV_COMMANDS: '1' },
+  })
+
+  const deadline = Date.now() + BATTLE_TIMEOUT
+  while (Date.now() < deadline) {
+    await new Promise(r => setTimeout(r, 250))
+    if (await battleServerIsUp())
+      return {
+        spawned: true,
+        stop:    async () => {
+          child.kill('SIGTERM')
+        },
+      }
+  }
+
+  child.kill('SIGTERM')
+  fail(`battle server did not come up on ${BATTLE_ORIGIN} within ${BATTLE_TIMEOUT / 1000}s`)
+}
+
 async function ensureServer () {
   if (await serverIsUp())
     return { spawned: false, stop: async () => {} }
@@ -134,8 +189,10 @@ function buildUrl (args, extra = {}) {
     query.set(key, String(value))
 
   const search = query.toString()
-  // `--level battle` targets the arena route, which is not under /levels.
-  const path   = level === 'battle' ? '/battle' : `/levels/${level}`
+  // Two routes live outside /levels: the arena, and the crash lab.
+  const path = level === 'battle'
+    ? '/battle'
+    : level === 'crash-lab' ? '/crash-lab' : `/levels/${level}`
   return `${ORIGIN}${path}${search ? `?${search}` : ''}`
 }
 
@@ -147,7 +204,14 @@ function buildUrl (args, extra = {}) {
  * mounts — which surfaces as an unhelpful `__dev.ready` timeout.
  */
 async function withPage (args, fn, { urlExtra = {}} = {}) {
-  const server  = await ensureServer()
+  const server = await ensureServer()
+
+  // Battle is network-only: without the authoritative server the scene mounts
+  // an empty arena and `__dev.ready` never sees a match.
+  const battle = args.level === 'battle'
+    ? await ensureBattleServer()
+    : { spawned: false, stop: async () => {} }
+
   // Sandboxes and CI images often ship a chromium that does not match the build
   // playwright pinned; point at it with CHROMIUM_PATH rather than re-downloading
   // half a gigabyte on every run.
@@ -173,7 +237,13 @@ async function withPage (args, fn, { urlExtra = {}} = {}) {
 
   try {
     await page.goto(buildUrl(args, urlExtra), { waitUntil: 'domcontentloaded' })
-    await page.waitForFunction(() => window.__dev?.ready === true, null, { timeout: READY_TIMEOUT })
+
+    // The crash lab is not the race scene and has no `__dev` harness — it runs
+    // eight headless worlds before it can draw anything, so it signals its own.
+    const readyProbe = args.level === 'crash-lab'
+      ? () => window.__crashLab?.ready === true
+      : () => window.__dev?.ready === true
+    await page.waitForFunction(readyProbe, null, { timeout: READY_TIMEOUT })
       .catch(async () => {
         // A ready timeout is nearly always a mount failure, and the console is
         // where the reason is. Surfacing it here saves an entire second run.
@@ -186,6 +256,7 @@ async function withPage (args, fn, { urlExtra = {}} = {}) {
   finally {
     await browser.close()
     await server.stop()
+    await battle.stop()
   }
 }
 
@@ -257,6 +328,19 @@ const commands = {
     await mkdir(dirname(path), { recursive: true })
 
     const probe = await withPage(args, async page => {
+      // The crash lab has no `__dev`: it is playback, not a live sim, so
+      // "freeze and step" is `--step` frames into a recorded trace. Everything
+      // below that drives the vehicle harness is skipped for it.
+      const isLab = args.level === 'crash-lab'
+      if (isLab) {
+        await page.evaluate(
+          n => window.__crashLab?.setFrame?.(n),
+          Number(args.step ?? 0)
+        )
+        await page.screenshot({ path, animations: 'disabled' })
+        return { lab: true, frame: Number(args.step ?? 0) }
+      }
+
       // Freeze first, then advance a known number of ticks. Two runs of the same
       // command land on the same tick with the same seed, so the images are
       // comparable — an unpaused screenshot is at the mercy of frame timing.
@@ -290,7 +374,10 @@ const commands = {
       return result
     }, { urlExtra: args.nohud ? {} : {}})
 
-    out({ path, tick: probe.sim.tick, ship: probe.ship, overlay: probe.overlay })
+    // The lab returns its own shape — it has no ship and no overlay flags.
+    out(probe.lab
+      ? { path, frame: probe.frame, lab: true }
+      : { path, tick: probe.sim.tick, ship: probe.ship, overlay: probe.overlay })
   },
 
   async console (args) {

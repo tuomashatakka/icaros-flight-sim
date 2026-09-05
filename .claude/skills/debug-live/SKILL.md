@@ -20,6 +20,8 @@ Cold start (spawning a server) is ~30 s; against a warm server each command is
 bun run dev:probe [--level flats]
 bun run dev:scenario <name|path.json> [--json] [--out FILE] [--level L]
 bun run dev:shot <out.png> [--step N] [--overlay a,b] [--size 1280x720] [--nohud]
+bun run dev:shot <out.png> --level crash-lab [--query lane=N]   # the crash lab
+bun run lab [case] [--dump] [--twice]                           # headless dummies
 bun run dev:console [--seconds 5]
 bun run dev:eval -e '<javascript>'
 ```
@@ -38,7 +40,9 @@ Handling baselines: `bun run dev:scenario turn-response` isolates full steering;
 | Does the ship handle correctly through X? | `dev:scenario` |
 | Did my change break handling? | `dev:scenario … --out` twice, diff |
 | Where are the colliders really? | `dev:shot --overlay colliders` |
-| Is the suspension reaching the ground? | `dev:shot --overlay wheels` |
+| Are the hover rays reaching the ground? | `dev:shot --overlay rays` |
+| Which nozzle is firing, and how hard? | `dev:shot --overlay forces` |
+| Why is the ship drifting? | `dev:shot --overlay netForce` (white = sum force, red = net torque) |
 | Did the ship leave the shadow frustum? | `dev:shot --overlay frustum` |
 | Any errors? Is it slow? | `dev:console` |
 | One specific value | `dev:eval -e '…'` |
@@ -126,14 +130,18 @@ respawn() / toggleView()
 setTuning(partial) / resetTuning()
 setStatus('idle'|'countdown'|'racing'|'finished')
 scenario(script)            → Promise<trace>
-overlay({ colliders, wheels, contacts, path, frustum })
+overlay({ colliders, contacts, path, frustum,
+          rays, forces, netForce, thrusters, com, velocity, inertia })
+
+// Physics layers default to ON in a dev build; number keys 1-9 toggle one each
+// and 0 clears them. An explicit ?overlay= wins, including an empty one.
 trace()                     frame-time percentiles, errors, WebGL context state
 raw                         live handles: app, physics, clock, controls, vehicle, rig
 ```
 
 ## URL overrides (dev only)
 
-`?seed=` `?paused=1` `?overlay=colliders,wheels` `?nohud=1` `?tuning=<base64>`
+`?seed=` `?paused=1` `?overlay=colliders,forces` `?nohud=1` `?tuning=<base64>`
 `?scenario=<name>`
 
 Any reproduction can be handed over as a URL rather than a procedure.

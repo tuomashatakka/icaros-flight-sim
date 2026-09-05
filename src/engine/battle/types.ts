@@ -50,8 +50,7 @@ export type BattlePlayer = {
   health:     number;
   maxHealth:  number;
   chassis:    import('@dimforge/rapier3d-compat').RigidBody;
-  controller: import('@dimforge/rapier3d-compat').DynamicRayCastVehicleController;
-  sim:        import('../sim/vehicle-step').HovercraftState;
+  sim:        import('@crash-velocity/physics/vehicle-step').HovercraftState;
   controls:   BattleInput;
   boostMeter: number;
   stun:       number;
@@ -166,6 +165,25 @@ export type BattleSnapshot = {
     lockPhase:   LockPhase;
     lockTarget:  string | null;
     lockMeter:   number;
+
+    /**
+     * Vertical aim trim, radians.
+     *
+     * Authoritative because the sim integrates it from the input stream rather
+     * than assigning it — so a client that predicts the trim locally (it must,
+     * or the reticle waits a round trip to move) has something to correct
+     * against, and remote ships aim where the server says they do.
+     */
+    aimAngle: number;
+
+    /**
+     * Bumped by every respawn. The client watches it to tell a teleport apart
+     * from movement: a kill relocates the chassis across the arena, and an
+     * interpolator blended across that draws a ship streaking through the
+     * level. Carried in the snapshot rather than inferred from the `kill`
+     * event so a dropped event cannot cause the smear.
+     */
+    respawnIndex: number;
   }>;
   zones: Array<{ id: string; owner: BattleTeam | null; progress: number; capturing: BattleTeam | null; contested: boolean }>;
   flags: Array<{

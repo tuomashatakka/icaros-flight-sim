@@ -2,7 +2,7 @@ import { Quaternion, Vector3 } from 'three'
 import { initRapier } from '../rapier'
 import { createPhysics } from '../physics/world'
 import { attachBoxColliders } from '../physics/colliders'
-import { stepHovercraft, createHovercraft, createHovercraftState } from '../sim/vehicle-step'
+import { stepHovercraft, createHovercraft, createHovercraftState } from '@crash-velocity/physics/vehicle-step'
 import type { Physics } from '../physics/world'
 import type { ShipId } from '@/lib/ship/registry'
 import { vehicleConfig } from '@/lib/utils'
@@ -10,6 +10,8 @@ import { DEFAULT_TUNING } from '../state'
 import { apexArena } from './arena'
 import type { ArenaTransform, BattleArena, BattleTeam, ControlPointDef } from './arena'
 import { botInput } from './bot'
+import { resolveBeamHits, resolveBlastHits } from './hitscan'
+import type { HitCandidate, Vec3 } from './hitscan'
 import {
   DEFAULT_LOADOUT,
   LOCK,
@@ -65,7 +67,9 @@ export const NEUTRAL_INPUT: BattleInput = {
 }
 
 /** Vertical aim travel, radians/sec, and its clamp. */
-const AIM_RATE = 0.62
+// Radians per second the vertical trim wheel travels while held. Exported so
+//  the client can predict the same trim rather than wait a round trip for it.
+export const AIM_RATE = 0.62
 
 export const AIM_MAX = 0.35
 
@@ -169,6 +173,65 @@ export class BattleSim {
   /** One reusable ray — line-of-sight runs per player AND per missile per tick. */
   private ray: import('@dimforge/rapier3d-compat').Ray
 
+  /**
+   * Where hit tests believe each ship is.
+   *
+   * Defaults to the live chassis, which is what a local run and every existing
+   * test expect. The SERVER swaps it for a rewound pose while resolving a shot,
+   * so the hit lands against what the shooter actually saw rather than against
+   * where the target has moved to during the round trip — "favour the shooter",
+   * the same trick Source and Overwatch use.
+   */
+  private poseSource: ((player: BattlePlayer) => Vec3) | null = null
+
+  /**
+   * Optional lag compensation, installed by the server.
+   *
+   * Given the shooter, returns the pose source their shots should resolve
+   * against — a rewound view of the world — or null to use live poses. Called
+   * once per player per tick, around the fire pass only, so the physics step
+   * and everything else still run on the present.
+   *
+   * Null by default, which keeps a local run and every existing test on exactly
+   * the code path they had before.
+   */
+  lagCompensation: ((shooter: BattlePlayer) => ((player: BattlePlayer) => Vec3) | null) | null = null
+
+  /**
+   * Resolve `resolve()` against poses from `source`.
+   *
+   * Scoped rather than settable so it cannot leak past the shot it belongs to:
+   * a rewound pose left installed would make the NEXT tick's physics disagree
+   * with its own hit tests.
+   */
+  withPoses<T> (source: (player: BattlePlayer) => Vec3, resolve: () => T): T {
+    const previous  = this.poseSource
+    this.poseSource = source
+    try {
+      return resolve()
+    }
+    finally {
+      this.poseSource = previous
+    }
+  }
+
+  private poseOf (player: BattlePlayer): Vec3 {
+    if (this.poseSource)
+      return this.poseSource(player)
+
+    const t = player.chassis.translation()
+    return { x: t.x, y: t.y, z: t.z }
+  }
+
+  /** Everything a hit test may touch, at the poses currently in force. */
+  private hitCandidates (): HitCandidate[] {
+    return this.players.map(player => ({
+      id:       player.id,
+      team:     player.team,
+      position: this.poseOf(player),
+    }))
+  }
+
   private constructor (arena: BattleArena, config: BattleConfig, physics: Physics) {
     this.arena   = arena
     this.config  = config
@@ -267,7 +330,6 @@ export class BattleSim {
       health:       100,
       maxHealth:    100,
       chassis:      rig.chassis,
-      controller:   rig.controller,
       sim:          createHovercraftState(),
       controls:     { ...NEUTRAL_INPUT },
       boostMeter:   1,
@@ -285,7 +347,6 @@ export class BattleSim {
   }
 
   private deleteShell (player: BattlePlayer): void {
-    this.physics.world.removeVehicleController(player.controller)
     this.physics.world.removeRigidBody(player.chassis)
   }
 
@@ -370,7 +431,7 @@ export class BattleSim {
 
       const stepOut  = stepHovercraft({
         chassis:     player.chassis,
-        controller:  player.controller,
+        world:       this.physics.world,
         input:       controls,
         tuning:      DEFAULT_TUNING,
         state:       player.sim,
@@ -404,10 +465,23 @@ export class BattleSim {
       for (const player of this.players) {
         if (player.stun > 0)
           continue
-        if (player.controls.fire)
-          this.tryFire(player, 'primary')
-        if (player.controls.fireSecondary)
-          this.tryFire(player, 'secondary')
+
+        // Only the fire pass is rewound. A missile already in flight travelled
+        // in server time, so its splash resolves against the present — and the
+        // physics step above must never see a rewound pose or the world itself
+        // would disagree with where it just put things.
+        const rewound = this.lagCompensation?.(player) ?? null
+        const fire    = () => {
+          if (player.controls.fire)
+            this.tryFire(player, 'primary')
+          if (player.controls.fireSecondary)
+            this.tryFire(player, 'secondary')
+        }
+
+        if (rewound)
+          this.withPoses(rewound, fire)
+        else
+          fire()
       }
 
     this.ageBeams(dt)
@@ -662,29 +736,17 @@ export class BattleSim {
     const range   = spec.range
     const blocker = this.staticBlockerAt(_origin, _dir, range)
     const reach   = Math.min(range, blocker)
-    const radius  = this.config.hullRadius + (spec.beamWidth ?? 0.1)
 
-    // Every enemy whose centre is within `radius` of the ray, nearest first.
-    const hits: Array<{ p: BattlePlayer; t: number }> = []
-    for (const other of this.players) {
-      if (other.team === player.team)
-        continue
+    const struck = resolveBeamHits({
+      origin:    _origin,
+      direction: _dir,
+      reach,
+      radius:    this.config.hullRadius + (spec.beamWidth ?? 0.1),
+      team:      player.team,
+      pierce:    spec.pierce,
+    }, this.hitCandidates())
 
-      const t = other.chassis.translation()
-      _toTarget.set(t.x - _origin.x, t.y + 0.5 - _origin.y, t.z - _origin.z)
-
-      const along = _toTarget.dot(_dir)
-      if (along < 0 || along > reach)
-        continue
-
-      const perpSq = _toTarget.lengthSq() - along * along
-      if (perpSq <= radius * radius)
-        hits.push({ p: other, t: along })
-    }
-    hits.sort((a, b) => a.t - b.t)
-
-    const struck = spec.pierce ? hits : hits.slice(0, 1)
-    const end    = struck.length && !spec.pierce ? struck[0].t : reach
+    const end = struck.length && !spec.pierce ? struck[0].distance : reach
 
     this.beams.push({
       id:        this.shotSeq++,
@@ -697,8 +759,11 @@ export class BattleSim {
       hit:       struck.length > 0,
     })
 
-    for (const { p } of struck)
-      this.applyDamage(p, player.id, spec.damage, spec.id)
+    for (const { candidate } of struck) {
+      const victim = this.getPlayer(candidate.id)
+      if (victim)
+        this.applyDamage(victim, player.id, spec.damage, spec.id)
+    }
   }
 
   private launchMissiles (player: BattlePlayer, spec: WeaponSpec): void {
@@ -835,17 +900,13 @@ export class BattleSim {
 
   /** Splash everything hostile inside the blast radius. */
   private detonate (m: Missile, spec: WeaponSpec): void {
-    const reach = this.config.hullRadius + (spec.blastRadius ?? 4)
-    for (const p of this.players) {
-      if (p.team === m.team)
-        continue
+    const reach  = this.config.hullRadius + (spec.blastRadius ?? 4)
+    const centre = { x: m.position[0], y: m.position[1], z: m.position[2] }
 
-      const t  = p.chassis.translation()
-      const dx = t.x - m.position[0]
-      const dy = t.y + 0.5 - m.position[1]
-      const dz = t.z - m.position[2]
-      if (dx * dx + dy * dy + dz * dz <= reach * reach)
-        this.applyDamage(p, m.shooterId, spec.damage, spec.id)
+    for (const candidate of resolveBlastHits(centre, reach, m.team, this.hitCandidates())) {
+      const victim = this.getPlayer(candidate.id)
+      if (victim)
+        this.applyDamage(victim, m.shooterId, spec.damage, spec.id)
     }
   }
 
@@ -1157,28 +1218,30 @@ export class BattleSim {
         const t = p.chassis.translation()
         const q = p.chassis.rotation()
         return {
-          id:          p.id,
-          team:        p.team,
-          name:        p.name,
-          shipId:      p.shipId,
-          health:      p.health,
-          maxHealth:   p.maxHealth,
-          x:           t.x,
-          y:           t.y,
-          z:           t.z,
-          qx:          q.x,
-          qy:          q.y,
-          qz:          q.z,
-          qw:          q.w,
-          boost:       p.boostMeter,
-          stun:        p.stun,
-          kills:       p.kills,
-          deaths:      p.deaths,
-          primaryCd:   p.cooldown.primary / WEAPONS[p.loadout.primary].cooldown,
-          secondaryCd: p.cooldown.secondary / WEAPONS[p.loadout.secondary].cooldown,
-          lockPhase:   p.lock.phase,
-          lockTarget:  p.lock.targetId,
-          lockMeter:   p.lock.progress,
+          id:           p.id,
+          team:         p.team,
+          name:         p.name,
+          shipId:       p.shipId,
+          health:       p.health,
+          maxHealth:    p.maxHealth,
+          x:            t.x,
+          y:            t.y,
+          z:            t.z,
+          qx:           q.x,
+          qy:           q.y,
+          qz:           q.z,
+          qw:           q.w,
+          boost:        p.boostMeter,
+          stun:         p.stun,
+          kills:        p.kills,
+          deaths:       p.deaths,
+          primaryCd:    p.cooldown.primary / WEAPONS[p.loadout.primary].cooldown,
+          secondaryCd:  p.cooldown.secondary / WEAPONS[p.loadout.secondary].cooldown,
+          lockPhase:    p.lock.phase,
+          lockTarget:   p.lock.targetId,
+          lockMeter:    p.lock.progress,
+          aimAngle:     p.aimAngle,
+          respawnIndex: p.respawnIndex,
         }
       }),
       zones: this.zones.map(z => ({

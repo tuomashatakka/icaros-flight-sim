@@ -3,22 +3,31 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "packages/*"
+  ],
   "scripts": {
     "dev": "next dev -p 9002",
     "build": "next build",
     "start": "next start",
-    "lint": "eslint src",
-    "typecheck": "tsc --noEmit",
-    "test": "vitest run",
-    "test:physics": "node test/vehicle-physics.mjs",
+    "lint": "eslint src packages scripts",
+    "typecheck": "tsc --noEmit && tsc --noEmit -p packages/physics && tsc --noEmit -p packages/server",
+    "test": "vitest run && bun test packages/server/test-bun",
+    "test:physics": "bun test/vehicle-physics.ts",
     "dev:cli": "node scripts/dev-cli.mjs",
     "dev:probe": "node scripts/dev-cli.mjs probe",
     "dev:scenario": "node scripts/dev-cli.mjs scenario",
     "dev:shot": "node scripts/dev-cli.mjs shot",
     "dev:console": "node scripts/dev-cli.mjs console",
-    "dev:eval": "node scripts/dev-cli.mjs eval"
+    "dev:eval": "node scripts/dev-cli.mjs eval",
+    "dev:server": "bun --watch packages/server/src/index.ts",
+    "dev:all": "node scripts/dev-all.mjs",
+    "dev:replay": "bun packages/server/src/dev/replay-cli.ts",
+    "lab": "bun scripts/crash-lab.ts",
+    "test:lab": "bun scripts/crash-lab.ts --twice"
   },
   "dependencies": {
+    "@crash-velocity/physics": "workspace:*",
     "@dimforge/rapier3d-compat": "0.19.2",
     "next": "16.2.9",
     "react": "^19.2.7",

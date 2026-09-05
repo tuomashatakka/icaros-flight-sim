@@ -23,6 +23,12 @@
       }
     ],
     "paths": {
+      "@crash-velocity/physics": [
+        "./packages/physics/src/index.ts"
+      ],
+      "@crash-velocity/physics/*": [
+        "./packages/physics/src/*"
+      ],
       "@/*": [
         "./src/*"
       ],
@@ -40,6 +46,7 @@
   ],
   "exclude": [
     "node_modules",
+    "packages",
     "src/ai",
     "src/components/ui"
   ]

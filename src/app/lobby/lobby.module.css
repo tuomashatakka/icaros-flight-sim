@@ -1,0 +1,250 @@
+.page {
+  position: relative;
+  min-height: 100%;
+  padding: 2.5rem 1.5rem 4rem;
+  background: var(--background);
+  overflow-y: auto;
+}
+
+.wash {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom right,
+    hsl(347 82% 46% / 0.16),
+    var(--background) 45%,
+    hsl(187 86% 40% / 0.18)
+  );
+}
+
+.inner {
+  position: relative;
+  z-index: 1;
+  max-width: 62rem;
+  margin: 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 2rem;
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(2rem, 6vw, 3.25rem);
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+}
+
+.identity {
+  margin: 0;
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+.back {
+  font-size: 0.85rem;
+  opacity: 0.7;
+}
+
+.columns {
+  display: grid;
+  gap: 1.5rem;
+}
+
+/* Two columns only once the roster can sit beside the list without either
+   becoming a sliver. */
+@media (min-width: 900px) {
+  .columns {
+    grid-template-columns: 1fr 1fr;
+    align-items: start;
+  }
+}
+
+.panel {
+  padding: 1.25rem;
+  border: 1px solid hsl(0 0% 100% / 0.1);
+  border-radius: 0.75rem;
+  background: hsl(0 0% 100% / 0.03);
+  display: flex;
+  flex-direction: column;
+  gap: 0.85rem;
+}
+
+.panelTitle {
+  margin: 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+
+.matchList {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.matchRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  padding: 0.7rem 0.85rem;
+  border: 1px solid hsl(0 0% 100% / 0.08);
+  border-radius: 0.5rem;
+  background: hsl(0 0% 100% / 0.02);
+}
+
+.matchName {
+  margin: 0;
+  font-size: 1rem;
+  font-weight: 600;
+}
+
+.matchMeta {
+  margin: 0.15rem 0 0;
+  font-size: 0.78rem;
+  opacity: 0.6;
+}
+
+.roster {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.rosterRow {
+  display: flex;
+  align-items: center;
+  gap: 0.6rem;
+  padding: 0.5rem 0.7rem;
+  border-radius: 0.4rem;
+  background: hsl(0 0% 100% / 0.03);
+}
+
+.team {
+  width: 0.55rem;
+  height: 1.4rem;
+  border-radius: 0.15rem;
+  flex-shrink: 0;
+}
+
+.teamRed {
+  background: #ff4d6d;
+}
+
+.teamBlue {
+  background: #4dc4ff;
+}
+
+.rosterName {
+  flex: 1;
+}
+
+.badge {
+  font-size: 0.7rem;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  opacity: 0.65;
+}
+
+.ready {
+  color: #b7f34a;
+  opacity: 1;
+}
+
+.row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.6rem;
+}
+
+.button {
+  padding: 0.6rem 1.1rem;
+  border: 1px solid hsl(0 0% 100% / 0.18);
+  border-radius: 0.4rem;
+  background: hsl(0 0% 100% / 0.05);
+  color: inherit;
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.button:hover:not(:disabled) {
+  background: hsl(0 0% 100% / 0.1);
+}
+
+.button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.primary {
+  border-color: hsl(347 82% 60% / 0.6);
+  background: hsl(347 82% 46% / 0.25);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.8rem;
+}
+
+.input {
+  padding: 0.55rem 0.7rem;
+  border: 1px solid hsl(0 0% 100% / 0.15);
+  border-radius: 0.4rem;
+  background: hsl(0 0% 0% / 0.3);
+  color: inherit;
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.error {
+  padding: 0.6rem 0.8rem;
+  border-radius: 0.4rem;
+  border: 1px solid hsl(347 82% 60% / 0.5);
+  background: hsl(347 82% 46% / 0.15);
+  font-size: 0.85rem;
+}
+
+.empty {
+  padding: 1rem 0;
+  opacity: 0.5;
+  font-size: 0.88rem;
+}
+
+.chat {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  max-height: 9rem;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  font-size: 0.85rem;
+}
+
+.chatFrom {
+  opacity: 0.6;
+  margin-right: 0.4rem;
+}
