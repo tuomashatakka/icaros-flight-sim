@@ -7,6 +7,7 @@ import { HUD_AXIS_GATE, hudSliderValue, shapeHudAxis } from './interaction'
 import { drawHudOverlay, isHudBlockingOverlay } from './overlay'
 import { HudPanel } from './panel'
 import { createTouchGestures } from './pointers'
+import { createHudReveal } from './transition'
 import { HUD_OVERLAY_PERIOD, HUD_PANEL_PERIOD, HUD_REFERENCE_FOV } from './tokens'
 import { NO_INSETS, touchLayout } from './touch-layout'
 import type { SafeAreaInsets } from './touch-layout'
@@ -151,6 +152,25 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
     currentBlend: () => lastFrame?.cameraBlend ?? 0,
   })
 
+  // The visor scans itself in on mount. `mountedAt` is the first frame's clock
+  // reading rather than 0, because a scene mounted mid-session inherits an
+  // elapsed time that is already well past the transition window.
+  const visorReveal              = createHudReveal(false)
+
+  /**
+   * Blocking layers and the touch controls each carry their own arrival.
+   *
+   * Separately, because they open and close for unrelated reasons — a finish
+   * screen must not restart the touch rail's wipe, and the rail must stay put
+   * while a popover comes and goes over it.
+   */
+  const modalReveal = createHudReveal(false)
+  const touchReveal = createHudReveal(false)
+  let mountedAt: number | null   = null
+
+  /** The data a closing modal was drawn from — see `DrawHudOverlayOptions.modalData`. */
+  let modalData: HudData | null = null
+
   let lastFrame: HudFrame | null = null
   let lastData: HudData          = source.read()
   let panelDrawAt                = -Infinity
@@ -246,7 +266,11 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
       stickY,
       insets,
       cssSize,
-      held: heldActions,
+      held:         heldActions,
+      modalPhase:   modalReveal.value(frame.elapsed),
+      modalData,
+      modalClosing: modalReveal.closing(),
+      touchPhase:   touchReveal.value(frame.elapsed),
     })
     overlayDirty = false
   }
@@ -257,7 +281,18 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
 
     lastFrame = frame
     syncPose(frame)
-    tickHudPanelMesh(panelMesh, frame.elapsed)
+
+    if (mountedAt === null) {
+      mountedAt = frame.elapsed
+      visorReveal.set(true, frame.elapsed)
+    }
+
+    const revealPhase = visorReveal.value(frame.elapsed)
+    tickHudPanelMesh(panelMesh, frame.elapsed, revealPhase)
+    // The visor is still assembling, so it needs a frame every frame — the
+    // panel cadence would draw the wipe in four steps.
+    if (revealPhase < 1)
+      overlayDirty = true
 
     if (frame.telemetry.crashSeq !== lastCrashSeq) {
       lastCrashSeq = frame.telemetry.crashSeq
@@ -273,7 +308,26 @@ export function createSpatialHud ({ canvas, controls, source }: SpatialHudOption
       overlayDirty = true
     }
 
-    const overlayLive = activePointers.size > 0 || isTouch || isHudBlockingOverlay(lastData) ||
+    const blocking = isHudBlockingOverlay(lastData)
+    modalReveal.set(blocking, frame.elapsed)
+    if (blocking)
+      modalData = lastData
+    else if (!modalReveal.live(frame.elapsed))
+      modalData = null
+    // The touch rail waits for the visor: both arriving at once is a wall of
+    // motion, and the controls are the thing you look at last anyway.
+    touchReveal.set(isTouch && revealPhase > 0.5 && !blocking, frame.elapsed)
+
+    // A layer mid-transition needs every frame. `isHudBlockingOverlay` alone
+    // would stop redrawing the moment a modal closed and freeze its exit wipe
+    // on screen.
+    const transitioning = modalReveal.live(frame.elapsed) && modalReveal.value(frame.elapsed) < 0.999 ||
+      touchReveal.value(frame.elapsed) < 0.999 && touchReveal.live(frame.elapsed)
+    if (transitioning)
+      overlayDirty = true
+
+    const overlayLive = activePointers.size > 0 || isTouch || transitioning ||
+      modalReveal.live(frame.elapsed) ||
       frame.elapsed < crashUntil ||
       lastData.mode === 'race' && lastData.race.status === 'countdown' ||
       lastData.mode === 'battle' && lastData.battle.toasts.length > 0

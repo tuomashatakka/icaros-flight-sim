@@ -173,15 +173,28 @@ export function touchLayout (input: TouchLayoutInput): TouchLayout {
   )
 
   // --- centre cluster -------------------------------------------------------
-  // Between the two sticks, stacked upward from the bottom margin, so the
-  // thumbs reach it by rolling inward rather than lifting off.
-  const clusterLeft  = left + margin * 2 + stickRadius * 2
-  const clusterRight = right - margin * 2 - stickRadius * 2
-  const clusterW     = Math.max(minTouch * 2, clusterRight - clusterLeft)
-  const clusterX     = (clusterLeft + clusterRight) * 0.5 - clusterW * 0.5
+  // Between the two sticks by default, stacked upward from the bottom margin,
+  // so the thumbs reach it by rolling inward rather than lifting off.
+  const gapLeft  = left + margin * 2 + stickRadius * 2
+  const gapRight = right - margin * 2 - stickRadius * 2
 
-  const utilityW = Math.max(minTouch, clusterW * 0.5 - gap * 0.5)
-  const utilityY = bottom - margin - buttonH
+  // The widest row the cluster has to hold: three triggers in battle, two
+  // utility buttons everywhere. Deciding on THIS rather than on a round number
+  // is the point — clamping a column to `minTouch` inside a container too
+  // narrow for it is what drove the cluster straight through the sticks.
+  const columns = mode === 'battle' ? 3 : 2
+  const needed  = minTouch * columns + gap * (columns - 1)
+
+  // On a narrow phone the two sticks leave no usable gap. Above the stick row
+  // is worse for the thumbs and the only thing that fits.
+  const inGap    = gapRight - gapLeft >= needed
+  const clusterX = inGap ? gapLeft : left + margin
+  const clusterW = inGap ? gapRight - gapLeft : right - left - margin * 2
+
+  const utilityW = clusterW * 0.5 - gap * 0.5
+  const utilityY = inGap
+    ? bottom - margin - buttonH
+    : stickY - stickRadius - gap - buttonH
 
   buttons.push(
     {
@@ -206,7 +219,7 @@ export function touchLayout (input: TouchLayoutInput): TouchLayout {
   const primaryY = utilityY - gap - primaryH
 
   if (mode === 'battle') {
-    const third = Math.max(minTouch, (clusterW - gap * 2) / 3)
+    const third = (clusterW - gap * 2) / 3
     buttons.push(
       {
         id:     'touch-secondary',
@@ -235,7 +248,7 @@ export function touchLayout (input: TouchLayoutInput): TouchLayout {
     )
   }
   else {
-    const boostW = Math.max(minTouch, clusterW * 0.62)
+    const boostW = clusterW * 0.62
     buttons.push({
       id:     'touch-boost',
       label:  'boost',

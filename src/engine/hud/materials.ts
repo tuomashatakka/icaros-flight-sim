@@ -100,6 +100,9 @@ export type HudFacetUniforms = {
   uTime:    { value: number };
   uAccent:  { value: THREE.Color };
   uOpacity: { value: number };
+
+  /** 0 = not yet arrived, 1 = fully present. Driven by `hud/transition.ts`. */
+  uReveal: { value: number };
 }
 
 export type HudFacetMaterial = THREE.ShaderMaterial & { uniforms: HudFacetUniforms }
@@ -123,6 +126,7 @@ uniform sampler2D uMap;
 uniform float uTime;
 uniform vec3 uAccent;
 uniform float uOpacity;
+uniform float uReveal;
 
 varying vec2 vUv;
 varying vec3 vViewPosition;
@@ -133,9 +137,18 @@ float hash (vec2 p) {
 }
 
 void main () {
+  // Panels scan in from the bottom of their own surface. Everything below the
+  // front is discarded outright rather than faded, so the arrival reads as the
+  // surface being written rather than as an opacity ramp.
+  float front = uReveal * 1.16 - 0.08;
+  if (vUv.y > front) discard;
+  float sweep = smoothstep(0.075, 0.0, front - vUv.y) * step(uReveal, 0.999);
+
   float facing = abs(dot(normalize(vViewNormal), normalize(vViewPosition)));
   vec2 radial = normalize(vUv - 0.5 + vec2(0.00001));
-  float split = mix(0.0028, 0.0011, facing);
+  // The chromatic split widens while the panel is arriving and resolves as it
+  // settles — the same separation the settled facet carries, just overdriven.
+  float split = mix(0.0028, 0.0011, facing) + (1.0 - uReveal) * 0.02;
 
   vec4 source = texture2D(uMap, vUv);
   vec3 signal = vec3(
@@ -152,8 +165,10 @@ void main () {
 
   vec3 color = signal * (scan + grain * 0.055);
   color += uAccent * glyph * (0.08 + edgeGain * 0.18);
+  color += uAccent * sweep * 2.2;
   float alpha = source.a * uOpacity * mix(0.28, 1.0, glyph);
   alpha *= 0.96 + grain * 0.08;
+  alpha = max(alpha, sweep * 0.75);
 
   if (alpha < 0.002)
     discard;
@@ -178,6 +193,7 @@ export function createHudFacetMaterial ({
       uTime:    { value: 0 },
       uAccent:  { value: new THREE.Color(accent) },
       uOpacity: { value: opacity },
+      uReveal:  { value: 0 },
     } satisfies HudFacetUniforms,
     vertexShader:   HUD_VERTEX,
     fragmentShader: HUD_FRAGMENT,

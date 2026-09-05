@@ -8,27 +8,59 @@ import { touchLayout } from './touch-layout'
 import type { SafeAreaInsets } from './touch-layout'
 import { formatHudRaceTime } from './interaction'
 import { HUD_COLORS as COLORS, HUD_FONT as FONT, HUD_SURFACES as SURFACES, HUD_TUNING_SPECS } from './tokens'
+import { clipReveal, revealAlpha } from './transition'
 import type { BattleHudData, HudActionId, HudData, HudFrame, RaceHudData } from './types'
 
 
 const TAU = Math.PI * 2
 
-/** A modal surface, in the same cut-corner language as the visor's facets. */
+/** The drawing surface in CSS pixels — what a finger and an inset are measured in. */
+type CssSizeType = { width: number; height: number }
+
+/**
+ * A modal surface, in the same cut-corner language as the visor's facets.
+ *
+ * `phase` scans it in. The caller has already installed the clip via
+ * `beginModal`, so this only has to carry the alpha.
+ */
 function fillPanel (
   context: CanvasRenderingContext2D,
   x: number,
   y: number,
   width: number,
   height: number,
-  accent: string = COLORS.cyan
+  accent: string = COLORS.cyan,
+  phase = 1
 ): void {
   const rect = { x, y, width, height }
   context.save()
   chamferPath(context, rect, Math.min(width, height) * 0.06)
-  context.fillStyle = SURFACES.inkSolid
+  context.fillStyle   = SURFACES.inkSolid
+  context.globalAlpha = revealAlpha(phase)
   context.fill()
   context.restore()
-  drawPlate(context, rect, { accent, chamfer: 0.06, alpha: 0.9 })
+  drawPlate(context, rect, { accent, chamfer: 0.06, alpha: 0.9 * revealAlpha(phase) })
+}
+
+/**
+ * Open a modal's transition.
+ *
+ * Clips to the arrived part of the surface and draws the leading edge, so the
+ * panel is scanned in rather than cut in. Always paired with `context.restore`.
+ */
+function beginModal (
+  context: CanvasRenderingContext2D,
+  rect: Rect,
+  phase: number,
+  accent: string = COLORS.cyan
+): void {
+  context.save()
+  clipReveal(context, {
+    x:      rect.x - 24,
+    y:      rect.y - 24,
+    width:  rect.width + 48,
+    height: rect.height + 48,
+  }, phase, accent)
 }
 
 function overlayText (
@@ -102,8 +134,6 @@ function overlayButton (
  * The modals sized themselves off the raw canvas, so on a phone they ran under
  * the notch and the home indicator at both ends.
  */
-type CssSizeType = { width: number; height: number }
-
 function modalRect (
   overlay: HudPanel,
   insets: SafeAreaInsets,
@@ -219,21 +249,21 @@ function drawCountdown (overlay: HudPanel, data: HudData): void {
   context.shadowBlur = 0
 }
 
-type CssSizeType = { width: number; height: number }
-
 function drawRaceFinish (
   overlay: HudPanel,
   data: RaceHudData,
   insets: SafeAreaInsets,
-  cssSize: CssSizeType
+  cssSize: CssSizeType,
+  phase: number
 ): void {
   const { context, canvas } = overlay
-  context.fillStyle         = 'rgba(1, 4, 8, .72)'
+  context.fillStyle         = `rgba(1, 4, 8, ${0.72 * phase})`
   context.fillRect(0, 0, canvas.width, canvas.height)
 
   const { x, y, width, height } = modalRect(overlay, insets, cssSize, 620, 520)
   const midX                    = x + width * 0.5
-  fillPanel(context, x, y, width, height)
+  beginModal(context, { x, y, width, height }, phase)
+  fillPanel(context, x, y, width, height, COLORS.cyan, phase)
   overlayText(context, 'COURSE COMPLETE', midX, y + 58, 28, COLORS.cyan)
   overlayText(context, `TOTAL ${formatHudRaceTime(data.clocks.elapsed)}`, midX, y + 122, 20)
   overlayText(context, `BEST ${data.race.bestLap === null ? '--:--.---' : formatHudRaceTime(data.race.bestLap)}`, midX, y + 158, 17, COLORS.amber)
@@ -246,22 +276,23 @@ function drawRaceFinish (
     { id: 'race-again', label: 'race again', action: 'race-again', color: COLORS.cyan },
     { id: 'finish-menu', label: 'menu', action: 'menu', color: COLORS.magenta },
   ])
+  context.restore()
 }
-
-type CssSizeType = { width: number; height: number }
 
 function drawBattleFinish (
   overlay: HudPanel,
   data: BattleHudData,
   insets: SafeAreaInsets,
-  cssSize: CssSizeType
+  cssSize: CssSizeType,
+  phase: number
 ): void {
   const { context, canvas } = overlay
-  context.fillStyle         = 'rgba(1, 4, 8, .76)'
+  context.fillStyle         = `rgba(1, 4, 8, ${0.76 * phase})`
   context.fillRect(0, 0, canvas.width, canvas.height)
 
   const { x, y, width, height } = modalRect(overlay, insets, cssSize, 860, 570)
-  fillPanel(context, x, y, width, height)
+  beginModal(context, { x, y, width, height }, phase)
+  fillPanel(context, x, y, width, height, COLORS.cyan, phase)
   overlayText(context, 'MATCH OVER', x + width * 0.5, y + 52, 28, COLORS.white)
   overlayText(context, `${data.battle.scores.red}`, x + width * 0.25, y + 100, 34, TEAM_COLORS.red)
   overlayText(context, `${data.battle.scores.blue}`, x + width * 0.75, y + 100, 34, TEAM_COLORS.blue)
@@ -279,30 +310,30 @@ function drawBattleFinish (
   footerButtons(overlay, x, y + height - 74, width, [
     { id: 'battle-finish-menu', label: 'return to menu', action: 'menu', color: COLORS.cyan },
   ])
+  context.restore()
 }
-
-type CssSizeType = { width: number; height: number }
 
 function drawBattleError (
   overlay: HudPanel,
   data: BattleHudData,
   insets: SafeAreaInsets,
-  cssSize: CssSizeType
+  cssSize: CssSizeType,
+  phase: number
 ): void {
   const { context, canvas } = overlay
-  context.fillStyle         = 'rgba(1, 4, 8, .78)'
+  context.fillStyle         = `rgba(1, 4, 8, ${0.78 * phase})`
   context.fillRect(0, 0, canvas.width, canvas.height)
 
   const { x, y, width, height } = modalRect(overlay, insets, cssSize, 620, 260)
-  fillPanel(context, x, y, width, height, COLORS.red)
+  beginModal(context, { x, y, width, height }, phase, COLORS.red)
+  fillPanel(context, x, y, width, height, COLORS.red, phase)
   overlayText(context, 'CONNECTION FAILURE', x + width * 0.5, y + 58, 24, COLORS.red)
   overlayText(context, (data.battle.error ?? 'connection lost').toUpperCase(), x + width * 0.5, y + 112, 14, COLORS.white)
   footerButtons(overlay, x, y + height - 68, width, [
     { id: 'battle-error-menu', label: 'menu', action: 'menu', color: COLORS.red },
   ])
+  context.restore()
 }
-
-type CssSizeType = { width: number; height: number }
 
 function drawTuning (
   overlay: HudPanel,
@@ -310,14 +341,16 @@ function drawTuning (
   frame: HudFrame,
   copyUntil: number,
   insets: SafeAreaInsets,
-  cssSize: CssSizeType
+  cssSize: CssSizeType,
+  phase: number
 ): void {
   const { context, canvas } = overlay
-  context.fillStyle         = 'rgba(1, 4, 8, .80)'
+  context.fillStyle         = `rgba(1, 4, 8, ${0.8 * phase})`
   context.fillRect(0, 0, canvas.width, canvas.height)
 
   const { x, y, width, height } = modalRect(overlay, insets, cssSize, 900, 700)
-  fillPanel(context, x, y, width, height)
+  beginModal(context, { x, y, width, height }, phase)
+  fillPanel(context, x, y, width, height, COLORS.cyan, phase)
   overlayText(context, 'SHIP PHYSICS · LIVE TUNING', x + 34, y + 42, 20, COLORS.cyan, 'left')
 
   // Below this the label column and the track cannot both fit on one line, so
@@ -366,6 +399,7 @@ function drawTuning (
     { id: 'tuning-reset', label: 'reset', action: 'tuning-reset', color: COLORS.amber },
     { id: 'tuning-copy', label: frame.elapsed < copyUntil ? 'copied' : 'copy as ts', action: 'tuning-copy', color: COLORS.magenta },
   ])
+  context.restore()
 }
 
 const ACCENTS = {
@@ -383,8 +417,6 @@ const ACCENTS = {
  * that record is the single source for the drawing AND — because regions are
  * emitted while drawing — for the hitboxes, so the two cannot drift.
  */
-type CssSizeType = { width: number; height: number }
-
 function drawTouchControls (
   overlay: HudPanel,
   data: HudData,
@@ -394,7 +426,8 @@ function drawTouchControls (
   cssSize: CssSizeType,
   stickX: Record<'move' | 'aim', number>,
   stickY: Record<'move' | 'aim', number>,
-  held: ReadonlySet<HudActionId>
+  held: ReadonlySet<HudActionId>,
+  phase: number
 ): void {
   const { context, canvas } = overlay
   const layout              = touchLayout({
@@ -405,6 +438,14 @@ function drawTouchControls (
     insets,
     mode:      data.mode,
   })
+
+  // The controls slide up from the edge they live on as they arrive, so the
+  // rail comes in from the sides and the thumb cluster from the bottom.
+  const rise = (1 - phase) * canvas.height * 0.06
+
+  context.save()
+  context.globalAlpha = revealAlpha(phase)
+  context.translate(0, rise)
 
   for (const stick of layout.sticks) {
     drawStick(context, stick.centerX, stick.centerY, stick.radius, {
@@ -444,12 +485,17 @@ function drawTouchControls (
       id:     button.id,
       kind:   button.hold ? 'hold' : 'button',
       x:      button.rect.x,
+      // Regions are the SETTLED positions, not the animated ones: a control
+      // that has to be chased while it slides in is worse than one that is
+      // tappable a beat before it looks ready.
       y:      button.rect.y,
       width:  button.rect.width,
       height: button.rect.height,
       action: button.action,
     })
   }
+
+  context.restore()
 }
 
 /**
@@ -489,6 +535,24 @@ export type DrawHudOverlayOptions = {
 
   /** Hold actions with a finger on them, for the ones `Controls` cannot report. */
   held: ReadonlySet<HudActionId>;
+
+  /** Arrival phase of whichever blocking layer is up, 0..1. */
+  modalPhase: number;
+
+  /**
+   * The data the blocking layer was drawn from.
+   *
+   * Retained by the caller across the close: by the time a popover is
+   * dismissed, `tuningOpen` is already false and `data` no longer describes the
+   * thing that is still on screen finishing its exit.
+   */
+  modalData: HudData | null;
+
+  /** True while the blocking layer is on its way out rather than in. */
+  modalClosing: boolean;
+
+  /** Arrival phase of the touch controls, 0..1. */
+  touchPhase: number;
 }
 
 export function drawHudOverlay ({
@@ -504,6 +568,10 @@ export function drawHudOverlay ({
   insets,
   cssSize,
   held,
+  modalPhase,
+  modalData,
+  modalClosing,
+  touchPhase,
 }: DrawHudOverlayOptions): void {
   const { context, canvas } = overlay
   const { width, height }   = canvas
@@ -528,23 +596,35 @@ export function drawHudOverlay ({
 
   drawToasts(overlay, data, frame)
 
-  if (data.mode === 'race' && data.tuningOpen)
-    drawTuning(overlay, data, frame, copyUntil, insets, cssSize)
-  else if (data.mode === 'race' && data.race.status === 'finished')
-    drawRaceFinish(overlay, data, insets, cssSize)
-  else if (data.mode === 'battle' && data.battle.status === 'finished')
-    drawBattleFinish(overlay, data, insets, cssSize)
-  else if (data.mode === 'battle' && data.battle.status === 'error')
-    drawBattleError(overlay, data, insets, cssSize)
-  else {
+  const modal = modalPhase > 0.001 ? modalData : null
+
+  // A layer on its way out is a picture, not a control. Without this a
+  // dismissed popover keeps swallowing taps for the length of its exit.
+  const regionMark = overlay.regions.length
+
+  if (modal?.mode === 'race' && modal.tuningOpen)
+    drawTuning(overlay, modal, frame, copyUntil, insets, cssSize, modalPhase)
+  else if (modal?.mode === 'race' && modal.race.status === 'finished')
+    drawRaceFinish(overlay, modal, insets, cssSize, modalPhase)
+  else if (modal?.mode === 'battle' && modal.battle.status === 'finished')
+    drawBattleFinish(overlay, modal, insets, cssSize, modalPhase)
+  else if (modal?.mode === 'battle' && modal.battle.status === 'error')
+    drawBattleError(overlay, modal, insets, cssSize, modalPhase)
+  else
+    drawLiveLayers()
+
+  if (modalClosing)
+    overlay.regions.length = regionMark
+
+  overlay.texture.needsUpdate = true
+
+  function drawLiveLayers (): void {
     // The sight is screen space by necessity — see `hud/sight.ts`. It draws
     // under the countdown and the touch controls so neither is ever occluded
     // by a reticle that happens to swing across them.
     drawHudSight(overlay, data, frame)
     drawCountdown(overlay, data)
-    if (isTouch)
-      drawTouchControls(overlay, data, frame, controls, insets, cssSize, stickX, stickY, held)
+    if (isTouch && touchPhase > 0.001)
+      drawTouchControls(overlay, data, frame, controls, insets, cssSize, stickX, stickY, held, touchPhase)
   }
-
-  overlay.texture.needsUpdate = true
 }
