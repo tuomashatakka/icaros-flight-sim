@@ -206,9 +206,21 @@ export function touchLayout (input: TouchLayoutInput): TouchLayout {
 
   // On a narrow phone the two sticks leave no usable gap. Above the stick row
   // is worse for the thumbs and the only thing that fits.
-  const inGap    = gapRight - gapLeft >= needed
-  const clusterX = inGap ? gapLeft : left + margin
-  const clusterW = inGap ? gapRight - gapLeft : right - left - margin * 2
+  const inGap = gapRight - gapLeft >= needed
+
+  // Capped in THUMB units, then centred in whatever space it was given.
+  //
+  // The cluster used to be exactly as wide as the gap between the sticks. On a
+  // phone that gap is barely wider than the buttons, so it read as designed —
+  // but the gap grows with the LONG edge while a thumb does not, and on a 16:9
+  // desktop it came out at 790 px, better than half the screen, with the boost
+  // plate laid straight across the reticle. Now the rail is drawn everywhere
+  // that is not a phone-shaped bug any more, it is the desktop's.
+  const clusterCap  = Math.max(needed, unit * 0.62)
+  const available   = inGap ? gapRight - gapLeft : right - left - margin * 2
+  const clusterW    = Math.min(available, clusterCap)
+  const clusterHome = inGap ? gapLeft : left + margin
+  const clusterX    = clusterHome + (available - clusterW) * 0.5
 
   const utilityW = clusterW * 0.5 - gap * 0.5
   const utilityY = inGap

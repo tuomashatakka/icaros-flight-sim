@@ -104,6 +104,38 @@ describe('touch layout', () => {
     expect(actions).toContain('airbrake')
   })
 
+  it.each(VIEWPORTS)('keeps the thumb cluster thumb-sized at %s', (_name, cssWidth, cssHeight) => {
+    // The cluster used to be exactly the gap between the two sticks, which
+    // grows with the LONG edge while a thumb does not: on 16:9 the boost plate
+    // came out at 490 px and lay across the reticle. A control is reachable in
+    // physical units, so it is bounded in them.
+    for (const mode of [ 'race', 'battle' ] as const) {
+      const input     = surface(cssWidth, cssHeight, mode)
+      const layout    = touchLayout(input)
+      const shortEdge = Math.min(input.width, input.height)
+
+      for (const button of layout.buttons)
+        expect(
+          button.rect.width,
+          `${mode} ${cssWidth}x${cssHeight}: ${button.id} is wider than a thumb`
+        ).toBeLessThanOrEqual(shortEdge * 0.63)
+    }
+  })
+
+  it('centres the thumb cluster in the space it was given', () => {
+    // A capped cluster must sit between the sticks, not shoved against the
+    // left-hand one.
+    const layout  = touchLayout(surface(1600, 900))
+    const sticks  = layout.sticks
+    const cluster = layout.buttons.filter(button => button.id.startsWith('touch-') &&
+      [ 'touch-view', 'touch-reset', 'touch-boost' ].includes(button.id))
+    const midpoint = (sticks[0].centerX + sticks[1].centerX) * 0.5
+    const spanLeft  = Math.min(...cluster.map(button => button.rect.x))
+    const spanRight = Math.max(...cluster.map(button => button.rect.x + button.rect.width))
+
+    expect((spanLeft + spanRight) * 0.5).toBeCloseTo(midpoint, 0)
+  })
+
   it('gives the stick the travel it is drawn at', () => {
     const layout = touchLayout(surface(1024, 768))
     const stick  = layout.sticks[0]
