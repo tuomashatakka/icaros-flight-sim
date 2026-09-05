@@ -60,4 +60,6 @@ firestore-debug.log
 
 # Battle server sqlite and crash-lab trace dumps. Both are generated; the traces
 # are reproducible from `bun run lab --dump` and run to megabytes apiece.
-data/
+# Anchored: an unanchored `data/` matches a directory of that name at ANY depth,
+# which silently swallowed `packages/data/`.
+/data/

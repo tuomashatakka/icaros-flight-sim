@@ -10,6 +10,9 @@
     "typecheck": "tsc --noEmit",
     "test": "bun test test-bun"
   },
+  "dependencies": {
+    "@crash-velocity/data": "workspace:*"
+  },
   "devDependencies": {
     "@types/bun": "^1.4.0",
     "vitest": "^4.1.11"

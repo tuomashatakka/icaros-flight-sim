@@ -332,7 +332,41 @@ build.
 
 ## Deploying
 
-Nothing special — all dependencies are public. `bun install && bun run build` on any host.
+Two halves, and they are not the same shape.
+
+**The client and the account endpoints go on Vercel.** `bun install && bun run
+build`; all dependencies are public. Install **Neon** from the Vercel
+Marketplace and it injects `DATABASE_URL` (pooled), `DATABASE_URL_UNPOOLED`, the
+`PG*` pieces and the legacy `POSTGRES_*` aliases — nothing to configure by hand.
+Turn on preview branching while you are there, or every preview deployment
+writes to the production database, registrations included.
+
+Then apply the schema once, against the direct connection:
+
+```bash
+DATABASE_URL_UNPOOLED='postgres://…' bun run db:push
+```
+
+It is `CREATE TABLE IF NOT EXISTS` throughout, so it is safe to re-run — and it
+has to be re-run for each preview branch that needs a schema the parent did not
+have. It is deliberately *not* in the build command: a migration that fails
+should not fail an otherwise-fine build, and there is no rollback.
+
+**The battle server goes anywhere that runs a long-lived process** — Fly,
+Railway, a box. It is a persistent stateful simulation, which is exactly what a
+serverless host cannot run. Give it:
+
+- `DATABASE_URL` — the *same* Neon database as Vercel. Sessions are minted by
+  the Next app and read by this process; two different databases means every
+  sign-in succeeds and every lobby connection still lands as a guest.
+- `ORIGIN_ALLOWLIST` — optional, and matched exactly, so listing only the
+  production origin locks every Vercel preview out of the lobby socket.
+
+And tell the client where it is, with `NEXT_PUBLIC_BATTLE_SERVER_URL=wss://…`
+on Vercel. `wss://`, not `ws://`, or the browser blocks the socket as mixed
+content.
+
+`.env.example` documents every variable either half reads.
 
 > If an install ever starts failing with `401 Unauthorized` from `npm.pkg.github.com`, the cause is
 > a resurrected `package-lock.json` carrying old `@tuomashatakka`-scoped entries. This project uses

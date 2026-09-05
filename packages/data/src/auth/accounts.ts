@@ -6,10 +6,12 @@
  * play without any of it — signing in must never be a gate in front of the
  * game, only a way to be remembered by it.
  *
- * Password hashing is `Bun.password`, which is argon2id by default and built
- * into the runtime, so this stays dependency-free like the rest of the server.
+ * Hashing lives in `./hash`: scrypt from `node:crypto`, not `Bun.password`.
+ * This module runs both in the battle server and in a Next route handler on
+ * Vercel's Node runtime, and only one of those two has `Bun`.
  */
 
+import { dummyHash, hashPassword, verifyPassword } from './hash'
 import { SESSION_TTL_MS } from '../store/store'
 import type { Account, Store } from '../store/store'
 
@@ -32,7 +34,7 @@ export async function register (store: Store, username: string, password: string
   if (!validCredentials(username, password))
     return { ok: false, reason: 'malformed' }
 
-  const account = await store.createAccount(username, await Bun.password.hash(password))
+  const account = await store.createAccount(username, await hashPassword(password))
   if (!account)
     return { ok: false, reason: 'taken' }
 
@@ -49,8 +51,8 @@ export async function login (store: Store, username: string, password: string): 
   // Verify against a dummy hash when the account does not exist, so a missing
   // username and a wrong password take the same time to answer. Otherwise the
   // response time enumerates who is registered.
-  const hash  = found?.passwordHash ?? DUMMY_HASH
-  const valid = await Bun.password.verify(password, hash)
+  const hash  = found?.passwordHash ?? await dummyHash()
+  const valid = await verifyPassword(password, hash)
 
   if (!found || !valid)
     return { ok: false, reason: 'invalid' }
@@ -62,11 +64,3 @@ export async function login (store: Store, username: string, password: string): 
     token:   session.token,
   }
 }
-
-/**
- * A real argon2id hash of a value nothing can match.
- *
- * Computed once at load rather than per request: hashing is deliberately slow,
- * and doing it on every failed login would be a denial-of-service lever.
- */
-const DUMMY_HASH = await Bun.password.hash(crypto.randomUUID())

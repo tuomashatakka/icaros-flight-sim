@@ -1,0 +1,15 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    // A leaf, and a strict one: this package runs under Node on Vercel as well
+    // as under Bun, so `types` is node's and ONLY node's — a stray `Bun.*` is a
+    // compile error here rather than a runtime surprise on one of the two
+    // hosts. `bun:sqlite` is why the SQLite adapter stayed in `packages/server`.
+    // Empty `paths` does the same job for `@/…` and `Δ…`.
+    "types":  [ "node" ],
+    "paths":  {},
+    "noEmit": true
+  },
+  "include": [ "src/**/*.ts", "test/**/*.ts" ],
+  "exclude": [ "node_modules" ]
+}

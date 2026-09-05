@@ -4,6 +4,12 @@
  * Every value has a localhost default so `bun run dev:server` works with no
  * setup, and nothing here is specific to a host or a cloud — the whole point of
  * running this as its own process is that it can be moved.
+ *
+ * Which database to open is deliberately NOT here. `@crash-velocity/data`'s
+ * `openStore` reads that from the environment itself, because the other thing
+ * reading it is a Next route handler on Vercel, which has no `loadConfig()` —
+ * and the two must resolve the same database or a token minted by one is
+ * invisible to the other.
  */
 
 import { STEP } from 'Δengine/clock'
@@ -60,8 +66,6 @@ export type ServerConfig = {
 
   /** Enables the `dev` message family used by `window.__devBattle`. */
   devCommands: boolean;
-
-  dbPath: string;
 }
 
 export function loadConfig (): ServerConfig {
@@ -83,7 +87,6 @@ export function loadConfig (): ServerConfig {
     reconnectGraceSec: int('RECONNECT_GRACE_SEC', 15),
     originAllowlist:   list('ORIGIN_ALLOWLIST'),
     devCommands:       flag('DEV_COMMANDS'),
-    dbPath:            process.env.DB_PATH ?? './data/battle.sqlite',
   }
 }
 

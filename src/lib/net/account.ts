@@ -1,17 +1,19 @@
 /**
  * Account access from the browser.
  *
- * The game server owns identity, not Next — it is the process that holds the
- * database. So these are plain fetches to the server's HTTP side, and the token
- * lives in `localStorage` because a hobby game does not need a cookie session
- * spanning two origins.
+ * Next owns identity now, not the game server: these are same-origin fetches to
+ * route handlers that sit next to the Neon database. The game server is a
+ * long-lived process on another host, and all it does with identity is read a
+ * token to decide whether a lobby connection is a pilot or a guest.
+ *
+ * The token stays in `localStorage` rather than an httpOnly cookie, even though
+ * these are same-origin now. The lobby WebSocket sends it in a message body to
+ * a *different* origin, so JavaScript has to be able to read it — a cookie the
+ * page cannot see would just mean signing in twice.
  *
  * Guests are first class throughout. Nothing here is required to play; signing
  * in only buys a remembered name and a record.
  */
-
-import { resolveServerUrl } from 'Δengine/battle/transport'
-
 
 const TOKEN_KEY = 'crash-velocity.token'
 const NAME_KEY  = 'crash-velocity.name'
@@ -22,14 +24,16 @@ export type AccountSummary = {
   createdAt: number;
 }
 
+export type AccountStats = {
+  matches:  number;
+  kills:    number;
+  deaths:   number;
+  captures: number;
+}
+
 export type AuthOutcome =
   | { ok: true; account: AccountSummary; token: string } |
   { ok: false; error: string }
-
-/** The server's HTTP origin, derived from the same setting the socket uses. */
-function httpBase (override?: string): string {
-  return resolveServerUrl(override).replace(/^ws/, 'http')
-}
 
 function describe (reason: string | undefined, status: number): string {
   switch (reason) {
@@ -44,19 +48,17 @@ function describe (reason: string | undefined, status: number): string {
   }
 }
 
-async function submit (path: string, username: string, password: string, override?: string): Promise<AuthOutcome> {
+async function submit (path: string, username: string, password: string): Promise<AuthOutcome> {
   let response: Response
   try {
-    response = await fetch(`${httpBase(override)}${path}`, {
+    response = await fetch(path, {
       method:  'POST',
       headers: { 'content-type': 'application/json' },
       body:    JSON.stringify({ username, password }),
     })
   }
   catch {
-    // The server is a separate process and may simply not be running, which is
-    // a routine state in development rather than an error worth a stack trace.
-    return { ok: false, error: 'cannot reach the game server' }
+    return { ok: false, error: 'cannot reach the server' }
   }
 
   const body = await response.json().catch(() => ({})) as { token?: string; account?: AccountSummary; error?: string }
@@ -69,11 +71,35 @@ async function submit (path: string, username: string, password: string, overrid
   return { ok: true, account: body.account, token: body.token }
 }
 
-export const register = (username: string, password: string, server?: string) =>
-  submit('/api/auth/register', username, password, server)
+export const register = (username: string, password: string) =>
+  submit('/api/auth/register', username, password)
 
-export const login = (username: string, password: string, server?: string) =>
-  submit('/api/auth/login', username, password, server)
+export const login = (username: string, password: string) =>
+  submit('/api/auth/login', username, password)
+
+/**
+ * Who the stored token belongs to, or null.
+ *
+ * Lets the lobby render a signed-in identity before the socket connects, and —
+ * more usefully — tell an expired token apart from no token, which the socket's
+ * silent fall back to guest cannot.
+ */
+export async function me (): Promise<{ account: AccountSummary; stats: AccountStats } | null> {
+  const token = storedToken()
+  if (!token)
+    return null
+
+  try {
+    const response = await fetch('/api/auth/me', { headers: { authorization: `Bearer ${token}` }})
+    if (!response.ok)
+      return null
+
+    return await response.json() as { account: AccountSummary; stats: AccountStats }
+  }
+  catch {
+    return null
+  }
+}
 
 /**
  * Storage access is wrapped because it throws outright in some contexts — a
@@ -112,9 +138,21 @@ export function storeName (name: string): void {
   catch { /* as above */ }
 }
 
-export function signOut (): void {
+export async function signOut (): Promise<void> {
+  const token = storedToken()
+
+  // Cleared regardless of what the request does. Signing out must never fail
+  // because the network did; the worst case is a row that expires on its own.
   try {
     globalThis.localStorage?.removeItem(TOKEN_KEY)
   }
   catch { /* as above */ }
+
+  if (!token)
+    return
+
+  try {
+    await fetch('/api/auth/logout', { method: 'POST', headers: { authorization: `Bearer ${token}` }})
+  }
+  catch { /* the session expires by itself within the week */ }
 }

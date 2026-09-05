@@ -9,7 +9,7 @@
 import { beforeEach, describe, expect, it } from 'vitest'
 import { Matchmaker } from '../src/lobby/matchmaker'
 import { dropLobbySocket, routeLobbyMessage } from '../src/lobby/lobby-socket'
-import { MemoryStore } from '../src/store/memory'
+import { MemoryStore } from '@crash-velocity/data'
 import { createBucket } from '../src/net/session'
 import type { LobbyDeps, LobbySocket } from '../src/lobby/lobby-socket'
 import type { LobbyServerMessage, LobbyState } from 'Δengine/battle/protocol'

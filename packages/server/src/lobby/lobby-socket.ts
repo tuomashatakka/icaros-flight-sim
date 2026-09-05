@@ -15,8 +15,7 @@ import { takeToken } from '../net/session'
 import { DEFAULT_MATCH_CONFIG } from './matchmaker'
 import type { Matchmaker, PendingMatch } from './matchmaker'
 import type { RateBucket } from '../net/session'
-import type { Store } from '../store/store'
-import type { Account } from '../store/store'
+import type { Account, Store } from '@crash-velocity/data'
 import type {
   LobbyClientMessage,
   LobbyErrorCode,

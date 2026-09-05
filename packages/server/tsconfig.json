@@ -13,6 +13,8 @@
     "noEmit":          true,
     "resolveJsonModule": true,
     "paths": {
+      "@crash-velocity/data":      [ "../data/src/index.ts" ],
+      "@crash-velocity/data/*":    [ "../data/src/*" ],
       "@crash-velocity/physics":   [ "../physics/src/index.ts" ],
       "@crash-velocity/physics/*": [ "../physics/src/*" ],
       "Δ*":                        [ "../../src/*" ],
