@@ -12,6 +12,24 @@ export type HoloUniforms = {
   uGain:    { value: number };
 }
 
+
+/**
+ * The two chunks a HUD shader has to end with, and why.
+ *
+ * The HUD is drawn AFTER the composer now — see `mountBaseScene` — so nothing
+ * downstream tone-maps it any more. Inside the composer it was written raw into
+ * a linear HDR buffer and `OutputPass` applied ACES and the sRGB encode to the
+ * sum; drawn straight to the canvas the same raw value is read as sRGB, which
+ * lifts every dark in the visor and turns the panels into pale washes. A
+ * `ShaderMaterial` does not get these appended for it the way a built-in
+ * material does, so they are spelled out — with `toneMapped: true`, which is
+ * what makes three define them at all.
+ */
+const OUTPUT = /* glsl */`
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+`
+
 const VERTEX = /* glsl */`
 varying vec2 vUv;
 
@@ -170,6 +188,7 @@ void main () {
   if (alpha < 0.002)
     discard;
   gl_FragColor = vec4(color * (1.08 + edgeGain * 0.22), alpha);
+${OUTPUT}
 }
 `
 
@@ -197,7 +216,7 @@ export function createHudFacetMaterial ({
     transparent:    true,
     depthTest:      false,
     depthWrite:     false,
-    toneMapped:     false,
+    toneMapped:     true,
     side:           THREE.DoubleSide,
   }) as HudFacetMaterial
 }
@@ -223,6 +242,7 @@ void main () {
   float sweep = 0.5 + 0.5 * sin((vUv.y * 8.0 - uTime * 0.08) * 6.2831853);
   float alpha = 0.018 + fresnel * 0.16 + sweep * 0.008;
   gl_FragColor = vec4(uColor * (0.42 + fresnel * 1.35), alpha);
+${OUTPUT}
 }
 `
 
@@ -238,7 +258,7 @@ export function createHudGlassMaterial (): HudGlassMaterial {
     blending:       THREE.AdditiveBlending,
     depthTest:      false,
     depthWrite:     false,
-    toneMapped:     false,
+    toneMapped:     true,
     side:           THREE.DoubleSide,
   }) as HudGlassMaterial
 }

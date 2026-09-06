@@ -130,7 +130,9 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
     transparent: true,
     depthTest:   false,
     depthWrite:  false,
-    toneMapped:  false,
+    // Tone-mapped, because the HUD is drawn after the composer and nothing
+    // downstream will do it. See the note in `hud/materials.ts`.
+    toneMapped:  true,
   })
   const overlayMesh         = new THREE.Mesh(overlayGeometry, overlayMaterial)
   overlayMesh.name          = 'spatial-cockpit-hud-screen-layer'

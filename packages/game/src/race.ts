@@ -21,6 +21,7 @@ import { toRaceInput } from 'Λinput'
 import { trackBundle } from 'Λ'
 
 import { raceHudModule } from 'Σhud/index'
+import { createScenePost } from 'Σrender/post'
 import { initialRaceState, raceActions, raceTimers, resetRaceTimers } from 'Ƨ'
 import { LocalPrediction } from 'Σnet/prediction'
 import { publishTelemetry } from 'Σnet/telemetry-publish'
@@ -147,12 +148,22 @@ export async function mountRace (
         dropOpponent(id)
   }
 
+  // The same chain battle runs, graded warmer: a track is lit by its own neon
+  // and a sky, not by an arena floor.
+  const post = createScenePost({ tint: '#f2ecff', saturation: 1.1, vignette: 0.24 })
+
   const app = await mountBaseScene<RaceState>({
     canvas,
-    levelId:        trackId,
-    levelSpec:      track,
-    initialState:   initialRaceState(),
-    bloom:          track.bloom,
+    levelId:      trackId,
+    levelSpec:    track,
+    initialState: initialRaceState(),
+    bloom:        track.bloom,
+    post:         post.options,
+    onQuality:    level => post.setQuality(level),
+    onPostView:   view => {
+      post.setFocus(view.focusDistance)
+      post.setMotion(view.speed, view.accel)
+    },
     colliders:      track.colliders,
     colliderOffset: track.colliderOffset,
     environment:    TRACK_VISUALS[trackId].environment,
@@ -318,8 +329,8 @@ export async function mountRace (
       return { module: raceNetModule }
     },
 
-    hudModuleFactory: (_shipRoot, telemetry, hudRef, hudControls) =>
-      raceHudModule(canvas, track, telemetry, hudControls, hudRef, options.forcedTouch),
+    hudModuleFactory: (_shipRoot, telemetry, hudRef, hudControls, hudScene) =>
+      raceHudModule(canvas, track, telemetry, hudControls, hudRef, hudScene, options.forcedTouch),
 
     extraModules: [
       defineModule<RaceState>({

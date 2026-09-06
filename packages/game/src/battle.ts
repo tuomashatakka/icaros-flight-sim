@@ -371,8 +371,12 @@ export async function mountBattle (
     buildGeometry:  ctx => {
       scenery = buildArenaVisual(ctx, arena)
     },
-    post:      post.options,
-    onQuality: level => post.setQuality(level),
+    post:       post.options,
+    onQuality:  level => post.setQuality(level),
+    onPostView: view => {
+      post.setFocus(view.focusDistance)
+      post.setMotion(view.speed, view.accel)
+    },
 
     gameModuleFactory: (physics, telemetry, controls, vehicleRef, rig) => {
       // The sight casts against the same world the sim does, through one reused
@@ -483,8 +487,8 @@ export async function mountBattle (
       return { module: battleGameModule }
     },
 
-    hudModuleFactory: (_shipRoot, telemetry, hudRef, controls) =>
-      battleHudModule(canvas, telemetry, controls, hudRef, readSight, options.forcedTouch),
+    hudModuleFactory: (_shipRoot, telemetry, hudRef, controls, hudScene) =>
+      battleHudModule(canvas, telemetry, controls, hudRef, readSight, hudScene, options.forcedTouch),
 
     extraModules: [
       defineModule<BattleState>({

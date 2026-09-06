@@ -37,40 +37,40 @@ describe('hud anchor', () => {
     expect(station.position.toArray()).toEqual([ 0, 3.4, -9 ])
   })
 
-  it('frames the visor on the hull at full chase blend', () => {
-    const station = hudStation(createHudStation(), input(0))
-    // The halo rides the ship, not the eye — this is the whole point of the
-    // chase anchor, and it is what puts the panels around the hull.
-    expect(station.position.x).toBe(0)
-    expect(station.position.z).toBe(0)
-    expect(station.position.y).toBeGreaterThan(0)
+  it('keeps the visor on the eye at every blend', () => {
+    // The visor used to cross-fade onto a hull-framed halo as the camera fell
+    // back. Chase is the default view and the hull sits nine units off the eye,
+    // so that halo rendered every readout too small to read — which is the only
+    // job the visor has. It is worn at both ends now.
+    for (const blend of [ 0, 0.25, 0.5, 0.75, 1 ]) {
+      const station = hudStation(createHudStation(), input(blend))
+      expect(station.position.toArray(), `blend ${blend}`).toEqual([ 0, 3.4, -9 ])
+    }
   })
 
-  it('puts the chase panels further from the eye than the seated ones', () => {
-    const eye  = new THREE.Vector3(0, 3.4, -9)
-    const near = facetCentre(1).distanceTo(eye)
-    const far  = facetCentre(0).distanceTo(eye)
-    expect(far).toBeGreaterThan(near)
-  })
-
-  it('moves the anchor monotonically across the blend', () => {
+  it('holds the panels at one distance from the eye whatever the camera does', () => {
     const eye       = new THREE.Vector3(0, 3.4, -9)
-    const distances = [ 0, 0.25, 0.5, 0.75, 1 ].map(b => facetCentre(b).distanceTo(eye))
-    for (let i = 1; i < distances.length; i++)
-      expect(distances[i]).toBeLessThan(distances[i - 1])
+    const distances = [ 0, 0.5, 1 ].map(blend => facetCentre(blend).distanceTo(eye))
+    for (const distance of distances)
+      expect(distance).toBeCloseTo(distances[0], 6)
   })
 
-  it('orbits the halo with the hull yaw', () => {
-    // The ship's forward is +Z, so the halo hangs off the nose and the camera
-    // — 9 units behind the hull — sees the hull framed inside it.
-    const ahead = facetCentre(0, 0)
-    const right = facetCentre(0, Math.PI / 2)
-    expect(ahead.z).toBeGreaterThan(1)
-    expect(Math.abs(ahead.x)).toBeLessThan(1e-6)
+  it('ignores the hull pose entirely', () => {
+    // The halo orbited the hull. A worn visor cannot: it faces wherever the
+    // CAMERA station does, so a hard turn — which swings the hull long before
+    // the damped chase camera follows it — must not move the instruments.
+    const level = input(0)
+    const rolled = {
+      ...level,
+      hullQuaternion: new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), Math.PI / 2),
+      shipPosition:   new THREE.Vector3(120, -40, 260),
+    }
 
-    // A quarter turn swings the panels onto the ship's new forward axis.
-    expect(right.x).toBeGreaterThan(1)
-    expect(Math.abs(right.z)).toBeLessThan(1e-6)
+    const a = hudStation(createHudStation(), level)
+    const b = hudStation(createHudStation(), rolled)
+
+    expect(b.position.toArray()).toEqual(a.position.toArray())
+    expect(b.quaternion.toArray()).toEqual(a.quaternion.toArray())
   })
 
   it('never scales the visor to nothing', () => {
@@ -100,20 +100,6 @@ describe('hud anchor', () => {
     // Landscape is untouched: the visor already fills the frame there.
     expect(seated.toArray()).toEqual([ 0, 3.4, -9 ])
     expect(portrait.y).toBeLessThan(seated.y)
-  })
-
-  it('wears the visor on a narrow frame even while the camera is in chase', () => {
-    // A halo hung around the hull is unreadable on a phone held upright: the
-    // seated station is screen-locked and fills the frame's width instead. The
-    // camera has not moved — only the anchor.
-    const chaseWide     = hudStation(createHudStation(), input(0))
-    const chasePortrait = hudStation(createHudStation(), input(0, 0, 390 / 844))
-
-    // Wide: the halo rides the ship at the origin, as it always has.
-    expect(chaseWide.position.z).toBe(0)
-    // Narrow: it has slid onto the camera.
-    expect(chasePortrait.position.z).toBeCloseTo(-9, 6)
-    expect(chasePortrait.position.y).toBeLessThan(3.4)
   })
 
   it('leaves the visor centred on frames at least as wide as it was authored for', () => {
