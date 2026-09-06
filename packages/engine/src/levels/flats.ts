@@ -28,7 +28,7 @@ export const flatsEnvironment: EnvironmentOverrides = {
   background: '#0a0c14',
 
   // The shared 150-500 default already suits a 400-unit deck.
-  hemi: { sky: '#8a9bff', ground: '#0a0c14', intensity: 1.08 },
+  hemi: { sky: '#8a9bff', ground: '#0a0c14', intensity: 0.4 },
 }
 
 export function buildFlats (ctx: SceneContext, bundle: TrackBundle): void {

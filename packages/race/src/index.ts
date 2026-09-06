@@ -21,7 +21,7 @@ export type { GateResult, RaceProgress, RaceRules, RaceStatus } from './rules'
 export { buildCheckpoints, crossedGate } from './track'
 export type { Checkpoint, TrackSpec, Vec3Tuple } from './track'
 
-export { boxColliderFromRing, buildTrack, ribbonBoxColliders } from './track-geometry'
+export { boxColliderFromRing, buildTrack, ribbonBoxColliders, ribbonWallColliders } from './track-geometry'
 export type { TrackConfig, TrackGeometry } from './track-geometry'
 
 export { FLATS_HALF, FLATS_WALLS, TRACK_IDS, isTrackId, trackBundle } from './levels'

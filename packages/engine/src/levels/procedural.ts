@@ -1,12 +1,11 @@
 /**
- * The procedural sprint, drawn. The hand-walked ribbon — including the merge
- * bridges that `ribbonBoxColliders` cannot infer — is generated in
- * `@crash-velocity/race`; this only puts a material on it.
+ * The procedural sprint, drawn. The hand-walked ribbon is generated in
+ * `@crash-velocity/race`; this puts a material on it and stands its barriers up.
  */
 
 import * as THREE from 'three'
 
-import { finaliseStaticScene, pointLight, roadMaterial } from './shared'
+import { finaliseStaticScene, pointLight, ribbonWalls, roadMaterial } from './shared'
 
 import type { SceneContext } from 'threejs-scene'
 import type { TrackBundle } from 'Λ'
@@ -23,26 +22,29 @@ import type { EnvironmentOverrides } from '../environment'
  * build below are still fine: those are set dressing, not fill.
  */
 export const proceduralEnvironment: EnvironmentOverrides = {
-  background: '#171720',
+  background: '#0d0d16',
 
-  // A ~3000-unit sprint: it needs far more range than the fixed decks.
-  fog:  [ '#171720', 120, 900 ],
-  hemi: { sky: '#8a9bff', ground: '#171720', intensity: 1.18 },
+  // A ~3500-unit sprint: it needs far more range than the fixed decks.
+  fog:  [ '#0d0d16', 140, 950 ],
+  hemi: { sky: '#8a9bff', ground: '#0d0d16', intensity: 0.42 },
 }
 
 export function buildProcedural (ctx: SceneContext, bundle: TrackBundle): void {
-  const root         = new THREE.Group()
-  const { geometry } = bundle
+  const root                   = new THREE.Group()
+  const { geometry, vertices } = bundle
   if (!geometry)
     return
 
-  const road         = new THREE.Mesh(geometry, roadMaterial('#333333', 0.15, 0.85))
+  const road         = new THREE.Mesh(geometry, roadMaterial('#23232e', 0.15, 0.85))
   road.position.y    = -0.05
   road.receiveShadow = true
   root.add(road)
 
-  root.add(pointLight('#aab4ff', 120, 500, [ 0, 80, -200 ]))
-  root.add(pointLight('#c8b4ff', 90, 400, [ 400, 60, -800 ]))
+  if (vertices)
+    root.add(ribbonWalls(vertices, { height: 6, face: '#191922', cap: '#8a9bff' }))
+
+  root.add(pointLight('#aab4ff', 40, 520, [ 0, 80, -200 ]))
+  root.add(pointLight('#c8b4ff', 34, 420, [ 400, 60, -800 ]))
 
   finaliseStaticScene('procedural sprint', root)
   ctx.scene.add(root)
