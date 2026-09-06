@@ -1,5 +1,10 @@
 import { BATTLE_TEAMS } from 'Ψarena'
 import type { BattleTeam, RampSide } from 'Ψarena'
+import { isPropKind } from 'Ȼprops'
+import type { PropPlacement } from 'Ȼprops'
+
+
+export type { PropPlacement }
 
 
 /**
@@ -22,7 +27,7 @@ import type { BattleTeam, RampSide } from 'Ψarena'
  * `Λlevels` are actually built from.
  */
 
-export const DOCUMENT_VERSION = 2
+export const DOCUMENT_VERSION = 3
 
 export type MapKind = 'race' | 'battle'
 
@@ -142,6 +147,15 @@ export type EditorDocument = {
   environment: MapEnvironment;
   race:        RaceDocument;
   battle:      BattleDocument;
+
+  /**
+   * Set dressing and obstacles, shared by both kinds.
+   *
+   * Outside `race` and `battle` deliberately: a pylon is a pylon whichever map
+   * it is standing on, and duplicating the list per kind would mean losing it
+   * every time somebody flipped the toggle.
+   */
+  props: PropPlacement[];
 }
 
 /** Stable ids without a `Date.now()` collision the moment two land in one tick. */
@@ -228,6 +242,7 @@ export function createDocument (kind: MapKind = 'race'): EditorDocument {
     environment: { ...DEFAULT_ENVIRONMENT },
     race:        { nodes: defaultRoute(), loop: true, laps: 3, segments: 16, banking: 0.4 },
     battle:      defaultBattle(),
+    props:       [],
   }
 }
 
@@ -255,7 +270,17 @@ export function normaliseDocument (input: unknown): EditorDocument {
     environment: { ...base.environment, ...raw.environment },
     race:        { ...base.race, ...raw.race, nodes: nodes.length >= 2 ? nodes : base.race.nodes },
     battle:      normaliseBattle(raw.battle, base.battle),
+    // Anything the catalogue does not recognise is dropped rather than trusted:
+    // import is the one place a hand-edited file reaches the reducer, and an
+    // unknown kind is a crash in the geometry builder later.
+    props:       Array.isArray(raw.props) ? raw.props.filter(isPropPlacement) : [],
   }
+}
+
+function isPropPlacement (value: unknown): value is PropPlacement {
+  const prop = value as PropPlacement
+  return Boolean(prop) && isPropKind(prop.kind) &&
+    Number.isFinite(prop.x) && Number.isFinite(prop.y) && Number.isFinite(prop.z)
 }
 
 const text = (value: unknown, fallback: string): string =>

@@ -127,13 +127,62 @@ describe('touch layout', () => {
     // left-hand one.
     const layout  = touchLayout(surface(1600, 900))
     const sticks  = layout.sticks
-    const cluster = layout.buttons.filter(button => button.id.startsWith('touch-') &&
-      [ 'touch-view', 'touch-reset', 'touch-boost' ].includes(button.id))
+    const cluster = layout.buttons.filter(button => [ 'touch-view', 'touch-reset' ].includes(button.id))
     const midpoint  = (sticks[0].centerX + sticks[1].centerX) * 0.5
     const spanLeft  = Math.min(...cluster.map(button => button.rect.x))
     const spanRight = Math.max(...cluster.map(button => button.rect.x + button.rect.width))
 
     expect((spanLeft + spanRight) * 0.5).toBeCloseTo(midpoint, 0)
+  })
+
+  it.each(VIEWPORTS)('puts every shared control on the same pixels in both modes at %s', (_name, cssWidth, cssHeight) => {
+    // The whole point of one layout: a player who learns the controls racing
+    // has learned them in battle. Only the weapons are allowed to differ, and
+    // only by being present.
+    const race   = touchLayout(surface(cssWidth, cssHeight, 'race'))
+    const battle = touchLayout(surface(cssWidth, cssHeight, 'battle'))
+
+    expect(battle.sticks).toEqual(race.sticks)
+    expect(battle.stickTravel).toBe(race.stickTravel)
+
+    const shared = (layout: TouchLayout) => layout.buttons
+      .filter(button => ![ 'touch-fire', 'touch-secondary' ].includes(button.id))
+    expect(shared(battle)).toEqual(shared(race))
+
+    const weapons = battle.buttons.filter(button => [ 'touch-fire', 'touch-secondary' ].includes(button.id))
+    expect(weapons).toHaveLength(2)
+    expect(race.buttons.map(button => button.id)).not.toContain('touch-fire')
+  })
+
+  it('offers the same hold rail in either mode', () => {
+    for (const mode of [ 'race', 'battle' ] as const) {
+      const actions = touchLayout(surface(390, 844, mode)).buttons.map(button => button.action)
+      // Boost moved onto the starboard rail so it stops changing places with
+      // the mode: it used to live in the thumb cluster, which battle rebuilt.
+      expect(actions).toContain('boost')
+      expect(actions).toContain('airbrake')
+      expect(actions).toContain('view')
+      expect(actions).toContain('respawn')
+    }
+  })
+
+  it('keeps the shoulder rails within thumb reach in portrait', () => {
+    // Portrait is a one-handed grip: nothing above the middle of the phone can
+    // be pressed without letting go of it. The rails belong beside the sticks
+    // there, not hung off the top edge where a landscape index finger goes.
+    const input = surface(390, 844)
+    const rails = touchLayout(input).buttons
+      .filter(button => button.id !== 'touch-view' && button.id !== 'touch-reset')
+
+    for (const rail of rails)
+      expect(rail.rect.y, `${rail.id} sits in the unreachable half`).toBeGreaterThan(input.height * 0.5)
+  })
+
+  it('leaves the shoulder rails on the top edge in landscape', () => {
+    const input = surface(1600, 900)
+    const rail  = touchLayout(input).buttons.find(button => button.id === 'touch-strafe-left')
+
+    expect(rail?.rect.y).toBeLessThan(input.height * 0.3)
   })
 
   it('gives the stick the travel it is drawn at', () => {

@@ -39,6 +39,19 @@ describe.each(TRACK_IDS.map(id => [ id ] as const))('track: %s', id => {
       expect(p.every(n => Number.isFinite(n))).toBe(true)
   })
 
+  it('walls the road in, not just surfaces it', () => {
+    // Every track but The Flats used to have a drivable deck and nothing else,
+    // so the first corner you overshot dropped you into the void. Deck boxes
+    // are thin slabs; a barrier is anything tall enough to stop a hull.
+    const walls = level.colliders.filter(box => box.args[1] > 1)
+    expect(walls.length).toBeGreaterThan(0)
+
+    // Two per segment, so a track is never fenced down one side only.
+    const decks = level.colliders.filter(box => box.args[1] <= 1)
+    if (decks.length > 1)
+      expect(walls.length).toBeGreaterThanOrEqual(decks.length)
+  })
+
   it('declares sane bloom', () => {
     // UnrealBloomPass threshold is a HARD knee, so a low value blows out the
     // whole hull — see the port notes. Nothing should drop back near 0.7.

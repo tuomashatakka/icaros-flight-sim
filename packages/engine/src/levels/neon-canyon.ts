@@ -6,7 +6,7 @@
 
 import * as THREE from 'three'
 
-import { finaliseStaticScene, guideRail, pointLight, roadMaterial } from './shared'
+import { finaliseStaticScene, guideRail, pointLight, gatePosts, ribbonWalls, roadMaterial } from './shared'
 
 import type { SceneContext } from 'threejs-scene'
 import type { TrackBundle } from 'Λ'
@@ -23,28 +23,33 @@ import type { EnvironmentOverrides } from '../environment'
  * build below are still fine: those are set dressing, not fill.
  */
 export const neonCanyonEnvironment: EnvironmentOverrides = {
-  background: '#1a0a14',
-  fog:        [ '#1a0a14', 140, 620 ],
-  hemi:       { sky: '#ff6a4d', ground: '#1a0a14', intensity: 1.28 },
+  background: '#12060f',
+  fog:        [ '#12060f', 160, 640 ],
+  hemi:       { sky: '#ff6a4d', ground: '#12060f', intensity: 0.44 },
 }
 
 export function buildNeonCanyon (ctx: SceneContext, bundle: TrackBundle): void {
-  const root                = new THREE.Group()
-  const { geometry, curve } = bundle
+  const root                          = new THREE.Group()
+  const { geometry, curve, vertices } = bundle
   if (!geometry || !curve)
     return
 
-  const road         = new THREE.Mesh(geometry, roadMaterial('#3a1c24', 0.3, 0.6))
+  const road         = new THREE.Mesh(geometry, roadMaterial('#160a11', 0.2, 0.75))
   road.position.y    = -0.05
   road.receiveShadow = true
   root.add(road)
 
-  root.add(guideRail(curve.getSpacedPoints(420), '#ff2d6f', 0.7, 0.2))
+  // The barriers, from the same strip the colliders come from.
+  if (vertices)
+    root.add(ribbonWalls(vertices, { height: 6, face: '#1d0d16', cap: '#ff2d6f' }))
 
-  root.add(pointLight('#ff5a7a', 60, 140, [ 0, 18, 10 ]))
-  root.add(pointLight('#ff3b5c', 150, 320, [ 150, 30, -90 ]))
-  root.add(pointLight('#ff8a3d', 150, 320, [ 190, 30, 20 ]))
-  root.add(pointLight('#ff2d6f', 130, 300, [ -130, 30, 70 ]))
+  root.add(gatePosts(bundle.spec.waypoints, bundle.spec.width / 2 + 1.2, '#ff2d6f'))
+  root.add(guideRail(curve.getSpacedPoints(420), '#ff2d6f', 0.35, 0.2))
+
+  root.add(pointLight('#ff5a7a', 24, 150, [ 0, 18, 10 ]))
+  root.add(pointLight('#ff3b5c', 46, 300, [ 130, 30, -100 ]))
+  root.add(pointLight('#ff8a3d', 46, 300, [ 190, 30, 20 ]))
+  root.add(pointLight('#ff2d6f', 40, 280, [ -70, 30, 90 ]))
 
   finaliseStaticScene('neon canyon', root)
   ctx.scene.add(root)

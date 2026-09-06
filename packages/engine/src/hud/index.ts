@@ -27,6 +27,14 @@ type SharedHudOptions<TState extends object> = {
   handle:    HandleType;
   source:    HudSource;
 
+  /**
+   * Where the visor's objects go — the shell's HUD scene, never `ctx.scene`.
+   *
+   * It is rendered after the post chain has finished with the world. See
+   * `BaseSceneConfig.hudModuleFactory`.
+   */
+  hudScene: THREE.Scene;
+
   /** The route's `touch` parameter, from the page's `useSearchParams`. */
   forcedTouch?: string | null;
   target(frame: HudFrame): void;
@@ -78,6 +86,7 @@ function sharedHudModule<TState extends object> ({
   controls,
   handle,
   source,
+  hudScene,
   forcedTouch,
   target,
 }: SharedHudOptions<TState>): AppModule<TState> {
@@ -93,6 +102,7 @@ function sharedHudModule<TState extends object> ({
     hudQuaternion:    new THREE.Quaternion(),
     hudLead:          new THREE.Quaternion(),
     aimPitch:         0,
+    focusDistance:    40,
     drawHz:           60,
     steer:            0,
     strafe:           0,
@@ -107,8 +117,8 @@ function sharedHudModule<TState extends object> ({
   return defineModule<TState>({
     name: 'spatial-cockpit-hud',
 
-    build (context) {
-      context.scene.add(spatial.object)
+    build () {
+      hudScene.add(spatial.object)
 
       // When the mode's own fields were last refreshed. The pose below is
       // copied every frame — it is what the visor is anchored by — but
@@ -130,8 +140,9 @@ function sharedHudModule<TState extends object> ({
           frame.camera         = view.camera
           frame.hudQuaternion.copy(view.hudQuaternion)
           frame.hudLead.copy(view.hudLead)
-          frame.aimPitch = view.aimPitch
-          frame.drawHz   = view.drawHz
+          frame.aimPitch      = view.aimPitch
+          frame.focusDistance = view.focusDistance
+          frame.drawHz        = view.drawHz
           frame.steer    = controls.steer
           frame.strafe   = controls.strafe
 
@@ -150,6 +161,7 @@ function sharedHudModule<TState extends object> ({
 
     dispose () {
       handle.current = null
+      hudScene.remove(spatial.object)
       spatial.dispose()
     },
   })
@@ -163,6 +175,7 @@ export function raceHudModule<TState extends object> (
   telemetry: Telemetry,
   controls: Controls,
   handle: HandleType,
+  hudScene: THREE.Scene,
   forcedTouch?: string | null
 ): AppModule<TState> {
   const source: HudSource = {
@@ -209,6 +222,7 @@ export function raceHudModule<TState extends object> (
     controls,
     handle,
     source,
+    hudScene,
     forcedTouch,
     target (frame) {
       const race      = raceStore.get()
@@ -241,6 +255,7 @@ export function battleHudModule<TState extends object> (
   controls: Controls,
   handle: HandleType,
   readSight: () => HudSight | null,
+  hudScene: THREE.Scene,
   forcedTouch?: string | null
 ): AppModule<TState> {
   const source: HudSource = {
@@ -263,6 +278,7 @@ export function battleHudModule<TState extends object> (
     controls,
     handle,
     source,
+    hudScene,
     forcedTouch,
     target (frame) {
       const battle = battleStore.get()

@@ -4,6 +4,7 @@ import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'r
 
 import { compileBattle, compileRace, validate } from './compile'
 import { deckHeightAt, editorReducer, initialEditorState } from './reducer'
+import { DRAFT_LEVEL, storeDraft } from './draft-handoff'
 import type { EditorAction, EditorState } from './reducer'
 import { frame, INITIAL_CAMERA } from './projection'
 import type { Camera } from './projection'
@@ -48,13 +49,22 @@ export type Editor = {
   exportDocument: () => void;
   exportCompiled: () => void;
   importFile:     (file: File) => Promise<void>;
+
+  /**
+   * Open the current circuit in the real game, in a new tab.
+   *
+   * Returns false when the browser refused the handoff — a private window with
+   * site data blocked — so the caller can say so rather than opening a tab onto
+   * an empty track.
+   */
+  testDrive: () => boolean;
 }
 
 export function useEditor (): Editor {
   const [ state, dispatch ]   = useReducer(editorReducer, undefined, () => initialEditorState('race'))
   const [ camera, setCamera ] = useState<Camera>(INITIAL_CAMERA)
 
-  const { document: doc, tool, team } = state
+  const { document: doc, tool, team, prop } = state
 
   const compiled = useMemo(() => doc.kind === 'race' ? compileRace(doc) : null, [ doc ])
   const arena    = useMemo(() => doc.kind === 'battle' ? compileBattle(doc) : null, [ doc ])
@@ -78,10 +88,16 @@ export function useEditor (): Editor {
       dispatch({ type: 'zone.add', x, z })
     else if (tool === 'spawn')
       dispatch({ type: 'spawn.add', x, z, team })
-  }, [ tool, team ])
+    else if (tool === 'prop')
+      dispatch({ type: 'prop.add', kind: prop, x, z })
+  }, [ tool, team, prop ])
 
   const dragItem = useCallback((id: string, x: number, z: number) => {
-    if (doc.kind === 'race')
+    // Props are draggable in both kinds, and they are checked first because a
+    // prop id is not a node id and the race branch would silently no-op on it.
+    if (doc.props.some(item => item.id === id))
+      dispatch({ type: 'prop.patch', id, patch: { x, z }})
+    else if (doc.kind === 'race')
       dispatch({ type: 'node.patch', id, patch: { x, z }})
     else if (doc.battle.plateaus.some(p => p.id === id))
       dispatch({ type: 'plateau.patch', id, patch: { centreX: x, centreZ: z }})
@@ -106,6 +122,15 @@ export function useEditor (): Editor {
     place,
     dragItem,
     exportDocument: () => download(doc, `${doc.id}.forge.json`),
+    testDrive:      () => {
+      if (!storeDraft(doc))
+        return false
+
+      // A new tab, not this one: the forge holds unsaved work, and a test drive
+      // that discards it is a test drive nobody takes twice.
+      window.open(`/levels/${DRAFT_LEVEL}`, '_blank', 'noopener')
+      return true
+    },
     exportCompiled: () => download(
       doc.kind === 'race' ? compiled?.spec : arena,
       `${doc.id}.${doc.kind === 'race' ? 'track' : 'arena'}.json`

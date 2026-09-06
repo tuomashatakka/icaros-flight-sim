@@ -39,6 +39,23 @@ import type { RaceEvent, RaceInput, RaceSnapshot, RacerSnapshot } from './types'
 export const AIM_MAX  = Math.PI / 4
 export const AIM_RATE = 1.1
 
+/** Hull integrity a racer starts, and respawns, with. */
+export const MAX_HEALTH = 100
+
+/**
+ * The impact that costs nothing, in m/s of speed lost.
+ *
+ * `stepHovercraft` already decides what counts as a crash — a sharp enough drop
+ * in speed from a fast enough run, with a cooldown so one wall does not fire
+ * three times. This is the second threshold on top of that: brushing a barrier
+ * at a shallow angle scrubs speed and should not cost hull, while burying the
+ * nose in it should cost most of it.
+ */
+const DAMAGE_FLOOR = 9
+
+/** Hull points per m/s of speed lost above the floor. */
+const DAMAGE_PER_MS = 3.4
+
 export type Racer = {
   id:       string;
   name:     string;
@@ -53,6 +70,19 @@ export type Racer = {
   speed:        number;
   grounded:     boolean;
   lastResetSeq: number;
+
+  /** Hull integrity, 0..`MAX_HEALTH`. Zero is a wreck. */
+  health: number;
+
+  /**
+   * Set the tick the hull failed, cleared by the respawn on the next one.
+   *
+   * The wreck reuses `stepHovercraft`'s own respawn path rather than teleporting
+   * the body here: that path already zeroes the velocities, clears the hover
+   * state and bumps the respawn index the interpolator watches, and a second
+   * way of putting a ship back on the grid is a second way of getting it wrong.
+   */
+  wrecked: boolean;
 
   // Where the hull was at the END of the previous tick. The gate test is a
   //  segment against a plane, so it needs both ends of the move.
@@ -157,6 +187,8 @@ export class RaceSim {
       speed:        0,
       grounded:     false,
       lastResetSeq: 0,
+      health:       MAX_HEALTH,
+      wrecked:      false,
       previous:     [ ...spawn.position ] as Vec3Tuple,
       progress:     createProgress(this.rules, spawn),
       position:     this.racers.length + 1,
@@ -235,6 +267,14 @@ export class RaceSim {
         resetRequested = true
       }
 
+      // A wreck respawns on the tick AFTER it is reported, so the event and the
+      // pose the client draws the explosion at describe the same moment.
+      if (racer.wrecked) {
+        racer.wrecked = false
+        racer.health  = MAX_HEALTH
+        resetRequested = true
+      }
+
       // A trim wheel, not a spring: it keeps climbing while the axis is held.
       if (resetRequested)
         racer.aimAngle = 0
@@ -245,6 +285,8 @@ export class RaceSim {
       racer.previous[0] = t.x
       racer.previous[1] = t.y
       racer.previous[2] = t.z
+
+      const wasMoving   = racer.speed
 
       const out = stepHovercraft({
         chassis:     racer.chassis,
@@ -263,6 +305,9 @@ export class RaceSim {
       racer.boostMeter = out.boostMeter
       racer.speed      = out.speed
       racer.grounded   = out.grounded
+
+      if (out.crashDelta > 0 && racing)
+        this.damage(racer, wasMoving - out.speed)
 
       if (out.respawned) {
         racer.progress.respawnIndex = racer.progress.respawnIndex + 1 & 0xff
@@ -284,6 +329,28 @@ export class RaceSim {
 
     this.rankRacers()
     this.checkEnd()
+  }
+
+  /**
+   * Take hull off a racer for an impact, and wreck it if that empties the bar.
+   *
+   * Deterministic by construction: the severity is the speed the solver actually
+   * removed this tick, which both halves of a rewind compute identically.
+   */
+  private damage (racer: Racer, lostSpeed: number): void {
+    if (racer.progress.finished || racer.health <= 0)
+      return
+
+    const cost = Math.max(0, lostSpeed - DAMAGE_FLOOR) * DAMAGE_PER_MS
+    if (cost <= 0)
+      return
+
+    racer.health = Math.max(0, racer.health - cost)
+    if (racer.health > 0)
+      return
+
+    racer.wrecked = true
+    this.events.push({ type: 'wrecked', id: racer.id })
   }
 
   private testGates (racer: Racer): void {
@@ -359,6 +426,7 @@ export class RaceSim {
     return {
       id:             racer.id,
       name:           racer.name,
+      health:         racer.health,
       shipId:         racer.shipId,
       isBot:          racer.isBot,
       x:              t.x,

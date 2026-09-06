@@ -669,3 +669,141 @@ export function drawStick (
 
   context.restore()
 }
+
+/**
+ * A hex tint at a given alpha.
+ *
+ * The palette is authored as `#rrggbb`, and everything holographic is drawn as
+ * a translucent wash of it. Concatenating `'33'` onto the hex is the same idea
+ * spelled out eight ways across the painters; this is that, with the alpha as
+ * a number the caller can reason about.
+ */
+export function tint (hex: string, alpha: number): string {
+  const value = Math.max(0, Math.min(255, Math.round(alpha * 255)))
+  return `${hex}${value.toString(16).padStart(2, '0')}`
+}
+
+/**
+ * A touch control, in the visor's own material.
+ *
+ * `drawPlate` fills with `THEME.ink` — a near-opaque dark wash that is exactly
+ * right for a readout sitting on glass and exactly wrong for a control floating
+ * in front of the world: on a phone the rail came out as a row of grey slabs
+ * with no relationship to the holographic panels an inch behind it. This fills
+ * with the accent instead, as a gradient that is brightest along the edge the
+ * light comes from, and carries the same corner brackets and glow the facets
+ * do. Same silhouette, same chamfer, same vocabulary — one HUD rather than a
+ * HUD with buttons stuck on it.
+ */
+export function drawHoloPlate (
+  context: CanvasRenderingContext2D,
+  rect: Rect,
+  style: PlateStyle = {}
+): void {
+  const accent  = style.accent ?? THEME.primary
+  const chamfer = (style.chamfer ?? 0.24) * Math.min(rect.width, rect.height)
+  const active  = style.active ?? false
+
+  context.save()
+  context.globalAlpha = style.alpha ?? 1
+
+  const wash = context.createLinearGradient(rect.x, rect.y, rect.x, rect.y + rect.height)
+  wash.addColorStop(0, tint(accent, active ? 0.42 : 0.15))
+  wash.addColorStop(0.55, tint(accent, active ? 0.24 : 0.07))
+  wash.addColorStop(1, tint(accent, active ? 0.34 : 0.12))
+
+  chamferPath(context, rect, chamfer)
+  context.fillStyle = wash
+  context.fill()
+
+  // A dark underlay only where the plate has to stay readable over bright sky,
+  // and under the wash rather than over it, so the accent still reads as light.
+  context.globalCompositeOperation = 'destination-over'
+  context.fillStyle                = 'rgba(3, 10, 16, .34)'
+  context.fill()
+  context.globalCompositeOperation = 'source-over'
+
+  glowStroke(context, ctx => chamferPath(ctx, rect, chamfer), accent, active ? 2.4 : 1.6, active ? 0.95 : 0.55)
+  drawCornerBrackets(context, rect, accent, {
+    len:   Math.min(rect.width, rect.height) * 0.3,
+    inset: 3,
+    width: active ? 2 : 1.4,
+    alpha: active ? 0.95 : 0.6,
+  })
+
+  context.restore()
+}
+
+/**
+ * A twin-stick pad in the same material as the plates above.
+ *
+ * The gate ring, the cardinal ticks and the chamfered knob are `drawStick`'s,
+ * because they were already right. What changes is the body — glass rather than
+ * ink — plus a deflection vector while a thumb owns it, which is the one piece
+ * of feedback a stick with no physical detent cannot do without.
+ */
+export function drawHoloStick (
+  context: CanvasRenderingContext2D,
+  centerX: number,
+  centerY: number,
+  radius: number,
+  style: StickStyle
+): void {
+  const accent = style.accent ?? THEME.primary
+
+  context.save()
+
+  const glass = context.createRadialGradient(centerX, centerY, radius * 0.1, centerX, centerY, radius)
+  glass.addColorStop(0, tint(accent, style.engaged ? 0.2 : 0.09))
+  glass.addColorStop(0.72, tint(accent, 0.05))
+  glass.addColorStop(1, 'rgba(3, 10, 16, .42)')
+
+  context.beginPath()
+  context.arc(centerX, centerY, radius, 0, TAU)
+  context.fillStyle = glass
+  context.fill()
+
+  // Four arcs with cardinal gaps — the gaps are where the ticks go, and the
+  // break is what keeps a 200 px circle from reading as a button.
+  context.strokeStyle = accent
+  context.globalAlpha = style.engaged ? 0.9 : 0.48
+  context.lineWidth   = 2
+  for (let i = 0; i < 4; i++) {
+    const start = 0.22 + i * Math.PI * 0.5
+    context.beginPath()
+    context.arc(centerX, centerY, radius, start, start + Math.PI * 0.5 - 0.44)
+    context.stroke()
+  }
+
+  context.globalAlpha = 0.24
+  context.lineWidth   = 1.5
+  context.beginPath()
+  for (const [ dx, dy ] of [[ -1, 0 ], [ 1, 0 ], [ 0, -1 ], [ 0, 1 ]] as Array<[number, number]>) {
+    context.moveTo(centerX + dx * radius * 0.24, centerY + dy * radius * 0.24)
+    context.lineTo(centerX + dx * radius * 0.82, centerY + dy * radius * 0.82)
+  }
+  context.stroke()
+
+  const knobRadius = radius * 0.3
+  const knobX      = centerX + style.offsetX * radius * 0.66
+  const knobY      = centerY + style.offsetY * radius * 0.66
+
+  context.globalAlpha = 1
+  if (style.engaged)
+    glowStroke(context, ctx => {
+      ctx.moveTo(centerX, centerY)
+      ctx.lineTo(knobX, knobY)
+    }, accent, 2, 0.8)
+
+  drawHoloPlate(context, {
+    x:      knobX - knobRadius,
+    y:      knobY - knobRadius,
+    width:  knobRadius * 2,
+    height: knobRadius * 2,
+  }, { accent, active: style.engaged, chamfer: 0.34 })
+
+  if (style.label)
+    drawPlateLabel(context, style.label, centerX, centerY - radius - 13, { size: 11, alpha: 0.55, color: accent })
+
+  context.restore()
+}

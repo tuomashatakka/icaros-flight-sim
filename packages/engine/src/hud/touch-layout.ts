@@ -17,6 +17,15 @@ import type { HudActionId, HudMode } from './types'
  * Everything here derives from one physical unit and the safe-area insets, and
  * this record is the single source for BOTH the drawing and the hit regions —
  * which stay coupled because regions are still emitted while drawing.
+ *
+ * ONE LAYOUT, EVERY MODE. Race and battle put every control they share in the
+ * same place: two sticks in the bottom corners, a shoulder rail up each side
+ * carrying strafe and one hold, and the view/reset pair between the thumbs.
+ * Battle adds its two weapon plates directly above that pair and changes
+ * nothing else, so a player who learns the controls in one mode has learned
+ * them in the other. The layout used to branch on the mode for the whole thumb
+ * cluster, which moved boost between two different places depending on which
+ * room you had joined.
  */
 
 export type SafeAreaInsets = {
@@ -101,6 +110,16 @@ const MIN_TOUCH_CSS = 44
 const CLUSTER_MAX_CSS = 300
 
 /**
+ * Below this aspect the frame is held in one hand and driven with two thumbs.
+ *
+ * The shoulder rails assume an index finger over the top edge, which is true of
+ * a landscape grip and false of every portrait one — up there they were a
+ * control nobody could press without letting go of the phone. Under this they
+ * are stacked beside the sticks instead, where the same thumb reaches them.
+ */
+const PORTRAIT_ASPECT = 1.1
+
+/**
  * Whether this session gets the touch rail. It does, unless it says otherwise.
  *
  * There is no device sniff any more. The rail used to be gated on `pointer:
@@ -120,7 +139,7 @@ export function wantsTouchControls (forced: string | null): boolean {
 }
 
 type ClusterInput = {
-  mode:        HudMode;
+  columns:     number;
   gapLeft:     number;
   gapRight:    number;
   left:        number;
@@ -150,14 +169,13 @@ type ClusterBox = {
 }
 
 function clusterBox (input: ClusterInput): ClusterBox {
-  const { mode, gapLeft, gapRight, left, right, bottom, margin, unit, minTouch, maxClusterW, gap, buttonH, stickY, stickRadius } = input
+  const { columns, gapLeft, gapRight, left, right, bottom, margin, unit, minTouch, maxClusterW, gap, buttonH, stickY, stickRadius } = input
 
-  // The widest row the cluster has to hold: three triggers in battle, two
-  // utility buttons everywhere. Deciding on THIS rather than on a round number
-  // is the point — clamping a column to `minTouch` inside a container too
-  // narrow for it is what drove the cluster straight through the sticks.
-  const columns = mode === 'battle' ? 3 : 2
-  const needed  = minTouch * columns + gap * (columns - 1)
+  // The widest row the cluster has to hold. Deciding on THIS rather than on a
+  // round number is the point — clamping a column to `minTouch` inside a
+  // container too narrow for it is what drove the cluster straight through the
+  // sticks.
+  const needed = minTouch * columns + gap * (columns - 1)
 
   // On a narrow phone the two sticks leave no usable gap. Above the stick row
   // is worse for the thumbs and the only thing that fits.
@@ -185,6 +203,35 @@ function clusterBox (input: ClusterInput): ClusterBox {
   }
 }
 
+type RailInput = {
+  portrait:    boolean;
+  top:         number;
+  margin:      number;
+  unit:        number;
+  gap:         number;
+  railW:       number;
+  railH:       number;
+  holdH:       number;
+  stickY:      number;
+  stickRadius: number;
+}
+
+/**
+ * The top of a shoulder rail's two-plate stack.
+ *
+ * Landscape hangs it from the top edge, where an index finger wrapped over the
+ * frame lands. Portrait stacks it directly above the stick instead: the same
+ * thumb that flies the ship rolls up onto it, because in a one-handed grip
+ * nothing above the middle of the phone is reachable at all.
+ */
+function railTop (input: RailInput): number {
+  const { portrait, top, margin, unit, gap, railH, holdH, stickY, stickRadius } = input
+  if (!portrait)
+    return top + margin + unit * 0.1
+
+  return stickY - stickRadius - gap * 2 - railH - gap - holdH
+}
+
 export function touchLayout (input: TouchLayoutInput): TouchLayout {
   const { width, height, cssWidth, cssHeight, insets, mode } = input
 
@@ -202,6 +249,7 @@ export function touchLayout (input: TouchLayoutInput): TouchLayout {
   const unit      = shortEdge
   const margin    = unit * 0.055
   const minTouch  = toPx(MIN_TOUCH_CSS)
+  const portrait  = (right - left) / Math.max(bottom - top, 1) < PORTRAIT_ASPECT
 
   const stickRadius = Math.max(minTouch, unit * STICK_RADIUS)
   const stickY      = bottom - margin - stickRadius
@@ -229,54 +277,61 @@ export function touchLayout (input: TouchLayoutInput): TouchLayout {
 
   const buttons: TouchButton[] = []
 
-  // --- shoulder rail --------------------------------------------------------
-  // Edge strips, reachable with an index finger while both thumbs stay on the
-  // sticks. Strafe is a lateral thruster and the air brake is a drag panel:
-  // both are things you feather WHILE flying, not instead of it.
-  const railW   = Math.max(minTouch, unit * 0.11)
-  const railH   = Math.max(minTouch * 1.4, unit * 0.22)
-  const railTop = top + margin + unit * 0.1
+  // --- shoulder rails -------------------------------------------------------
+  // Two edge stacks, IDENTICAL in every mode: the strafe trigger, and one hold
+  // under it — the air brake to port, boost to starboard. Both are things you
+  // feather WHILE flying rather than instead of it, which is why they are on
+  // the edge and not in the thumb cluster where a press costs you the stick.
+  const railW = Math.max(minTouch, unit * 0.11)
+  const railH = Math.max(minTouch * 1.2, unit * 0.185)
+  const top0  = railTop({ portrait, top, margin, unit, gap, railW, railH, holdH: buttonH, stickY, stickRadius })
+  const holdY = top0 + railH + gap
 
   buttons.push(
     {
       id:     'touch-strafe-left',
       label:  '◀ strafe',
       action: 'strafe-left',
-      rect:   { x: left + margin, y: railTop, width: railW, height: railH },
+      rect:   { x: left + margin, y: top0, width: railW, height: railH },
       accent: 'cyan',
+      hold:   true,
+    },
+    {
+      id:     'touch-airbrake',
+      label:  'brake',
+      action: 'airbrake',
+      rect:   { x: left + margin, y: holdY, width: railW, height: buttonH },
+      accent: 'amber',
       hold:   true,
     },
     {
       id:     'touch-strafe-right',
       label:  'strafe ▶',
       action: 'strafe-right',
-      rect:   { x: right - margin - railW, y: railTop, width: railW, height: railH },
+      rect:   { x: right - margin - railW, y: top0, width: railW, height: railH },
       accent: 'cyan',
       hold:   true,
     },
     {
-      id:     'touch-airbrake',
-      label:  'air brake',
-      action: 'airbrake',
-      rect:   {
-        x:      left + margin,
-        y:      railTop + railH + gap,
-        width:  railW,
-        height: buttonH,
-      },
-      accent: 'amber',
+      id:     'touch-boost',
+      label:  'boost',
+      action: 'boost',
+      rect:   { x: right - margin - railW, y: holdY, width: railW, height: buttonH },
+      accent: 'violet',
       hold:   true,
     }
   )
 
   // --- centre cluster -------------------------------------------------------
   // Between the two sticks by default, stacked upward from the bottom margin,
-  // so the thumbs reach it by rolling inward rather than lifting off.
+  // so the thumbs reach it by rolling inward rather than lifting off. Its box
+  // is sized for two columns in EVERY mode, so the view/reset pair lands on the
+  // same pixels whichever room you are in.
   const gapLeft  = left + margin * 2 + stickRadius * 2
   const gapRight = right - margin * 2 - stickRadius * 2
 
   const { clusterX, clusterW, utilityY } = clusterBox({
-    mode,
+    columns:     2,
     gapLeft,
     gapRight,
     left,
@@ -312,17 +367,19 @@ export function touchLayout (input: TouchLayoutInput): TouchLayout {
     }
   )
 
-  const primaryH = buttonH * 1.25
-  const primaryY = utilityY - gap - primaryH
-
+  // --- weapons --------------------------------------------------------------
+  // The one thing a mode adds rather than moves. Same box, one row up, so
+  // nothing shared shifts by a pixel between race and battle.
   if (mode === 'battle') {
-    const third = (clusterW - gap * 2) / 3
+    const primaryH = buttonH * 1.25
+    const primaryY = utilityY - gap - primaryH
+
     buttons.push(
       {
         id:     'touch-secondary',
         label:  'msl',
         action: 'fire-secondary',
-        rect:   { x: clusterX, y: primaryY, width: third, height: primaryH },
+        rect:   { x: clusterX, y: primaryY, width: utilityW, height: primaryH },
         accent: 'amber',
         hold:   true,
       },
@@ -330,30 +387,11 @@ export function touchLayout (input: TouchLayoutInput): TouchLayout {
         id:     'touch-fire',
         label:  'fire',
         action: 'fire-primary',
-        rect:   { x: clusterX + third + gap, y: primaryY - gap, width: third, height: primaryH + gap },
+        rect:   { x: clusterX + clusterW - utilityW, y: primaryY, width: utilityW, height: primaryH },
         accent: 'magenta',
-        hold:   true,
-      },
-      {
-        id:     'touch-boost',
-        label:  'boost',
-        action: 'boost',
-        rect:   { x: clusterX + (third + gap) * 2, y: primaryY, width: third, height: primaryH },
-        accent: 'violet',
         hold:   true,
       }
     )
-  }
-  else {
-    const boostW = clusterW * 0.62
-    buttons.push({
-      id:     'touch-boost',
-      label:  'boost',
-      action: 'boost',
-      rect:   { x: clusterX + clusterW * 0.5 - boostW * 0.5, y: primaryY, width: boostW, height: primaryH },
-      accent: 'violet',
-      hold:   true,
-    })
   }
 
   return { sticks, buttons, stickTravel: stickRadius * 0.66, pixelScale }

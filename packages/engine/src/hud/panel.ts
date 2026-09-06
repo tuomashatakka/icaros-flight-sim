@@ -164,6 +164,50 @@ export class HudPanel {
     this.texture.generateMipmaps = false
   }
 
+  /**
+   * Resize the raster, and force the GPU allocation to follow it.
+   *
+   * `texture.dispose()` is the whole point of this method, and it is not
+   * belt-and-braces. A `CanvasTexture` allocates IMMUTABLE storage on its first
+   * upload — three calls `texStorage2D` once, when the source has no recorded
+   * version, and every later upload is a `texSubImage2D` into that fixed
+   * allocation. Resize the canvas afterwards and the sub-upload is out of
+   * bounds: the driver rejects it (`glCopySubTextureCHROMIUM: Offset overflows
+   * texture dimensions`), silently, and the texture keeps showing whatever was
+   * uploaded FIRST, forever.
+   *
+   * That is exactly how the touch controls went missing on the deployed build
+   * and nowhere else. The overlay is authored at 1280x720 and re-sized to the
+   * viewport's true aspect on its first draw, so on a 16:9 monitor the size
+   * never changes and nothing is wrong — while on a phone the first upload wins
+   * and every frame after it is discarded. Whether the resize landed before or
+   * after that first upload was a race between the resize observer and the
+   * first rendered frame, which a slower dev build won and a production build
+   * lost.
+   *
+   * Disposing clears the texture's cache key, so the next render builds a new
+   * WebGLTexture and re-allocates at the size the canvas is now.
+   *
+   * @returns Whether the size actually changed.
+   */
+  resize (width: number, height: number): boolean {
+    const nextWidth  = Math.max(1, Math.round(width))
+    const nextHeight = Math.max(1, Math.round(height))
+    if (this.canvas.width === nextWidth && this.canvas.height === nextHeight)
+      return false
+
+    this.canvas.width  = nextWidth
+    this.canvas.height = nextHeight
+    this.texture.dispose()
+    this.texture.needsUpdate = true
+
+    // Both are memoised against the old size, and the render key is what would
+    // otherwise let a facet skip the redraw its new raster needs.
+    this.glassFill = null
+    this.renderKey = null
+    return true
+  }
+
   /** Draw and upload only when displayed state, interaction, or layout changed. */
   render (key: string, elapsed: number, draw: () => void): boolean {
     const renderKey = `${key}|${this.title}|${this.hovered ?? ''}|${this.canvas.width}x${this.canvas.height}`

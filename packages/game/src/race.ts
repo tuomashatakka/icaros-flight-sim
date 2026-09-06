@@ -14,13 +14,15 @@
  */
 
 import * as THREE from 'three'
-import { defineModule } from 'threejs-scene'
+import { createSeededRng, defineModule } from 'threejs-scene'
 import { createHovercraft, createHovercraftState } from 'Φvehicle-step'
 import { BodyInterpolator } from 'Φinterpolation'
 import { toRaceInput } from 'Λinput'
 import { trackBundle } from 'Λ'
 
 import { raceHudModule } from 'Σhud/index'
+import { createScenePost } from 'Σrender/post'
+import { createWreckField } from 'Σfx/wreck'
 import { initialRaceState, raceActions, raceTimers, resetRaceTimers } from 'Ƨ'
 import { LocalPrediction } from 'Σnet/prediction'
 import { publishTelemetry } from 'Σnet/telemetry-publish'
@@ -28,11 +30,14 @@ import { buildRemoteHull } from 'Σnet/remote-hull'
 import { buildNameplate } from 'Σbattle/visuals'
 import { RaceTransport } from 'Σrace/transport'
 import { TRACK_VISUALS } from 'Σlevels/types'
+import { buildDraft, draftEnvironment } from 'Σlevels/draft'
 import { activeControls } from 'Σinput'
 import { mountBaseScene } from 'Σscenes/base'
 
+import type RAPIER from '@dimforge/rapier3d-deterministic-compat'
 import type { App, AppModule } from 'threejs-scene'
-import type { TrackId } from 'Λ'
+import type { TrackBundle, TrackId } from 'Λ'
+import type { PropPlacement } from 'Ȼprops'
 import type { Nameplate } from 'Σbattle/visuals'
 import type { NetRacer, RaceFrame } from 'Σrace/transport'
 import type { RaceState } from 'Ƨ'
@@ -44,6 +49,21 @@ export type RaceMountOptions = {
 
   /** The route's `touch` parameter, read by the page with `useSearchParams`. */
   forcedTouch?: string | null;
+
+  /**
+   * A track the map forge just compiled, instead of a shipped one.
+   *
+   * The whole point of the forge's test drive: the bundle is the same shape
+   * `trackBundle` returns, built by the same `buildTrack` the shipped levels
+   * use, so it is driven by the real scene rather than previewed by a
+   * lookalike. No room is joined for a draft — the server has never heard of
+   * this track — and the free-flight path the app already has for an
+   * unreachable server is exactly the right behaviour.
+   */
+  draft?: {
+    bundle: TrackBundle;
+    props:  readonly PropPlacement[];
+  };
 }
 
 /** Grid colours, by finishing position rather than by team. */
@@ -64,7 +84,8 @@ export async function mountRace (
   trackId: TrackId,
   options: RaceMountOptions = {}
 ): Promise<App<RaceState>> {
-  const bundle    = trackBundle(trackId)
+  const draft     = options.draft
+  const bundle    = draft?.bundle ?? trackBundle(trackId)
   const track     = bundle.spec
   const transport = new RaceTransport()
   const controls  = activeControls()
@@ -73,6 +94,15 @@ export async function mountRace (
 
   const shipRoot  = new THREE.Group()
   const opponents = new Map<string, Opponent>()
+
+  // The hull the local player is flying, captured from the base scene so a
+  // wreck can cut up the ship that actually died rather than a stand-in.
+  let localHull: THREE.Object3D | null      = null
+  let localChassis: RAPIER.RigidBody | null = null
+  // Its own stream, forked from a fixed seed: debris is cosmetic and must never
+  // draw from the rng the simulation is stepped with.
+  const wreck          = createWreckField(createSeededRng(0x5eed))
+  const _wreckVelocity = new THREE.Vector3()
 
   const _pose = new THREE.Vector3()
   const _quat = new THREE.Quaternion()
@@ -147,20 +177,58 @@ export async function mountRace (
         dropOpponent(id)
   }
 
+  // The same chain battle runs, graded warmer: a track is lit by its own neon
+  // and a sky, not by an arena floor.
+  const post = createScenePost({ tint: '#f2ecff', saturation: 1.1, vignette: 0.24 })
+
+  /**
+   * Cut a wrecked ship apart at the pose it is being drawn at.
+   *
+   * The RENDERED pose, not the snapshot's: a remote ship is drawn ~100 ms in
+   * the past, and an explosion where the ship is not is worse than none.
+   */
+  function blowUp (id: string): void {
+    const mine = transport.localId() === id
+    const hull = mine ? localHull : opponents.get(id)?.root
+    if (!hull)
+      return
+
+    // The predicted chassis is the only body this client simulates, so it is
+    // the only one with a velocity to inherit. A remote's debris just falls.
+    const velocity = mine ? localChassis?.linvel() : null
+    _wreckVelocity.set(velocity?.x ?? 0, velocity?.y ?? 0, velocity?.z ?? 0)
+
+    // The hull is NOT hidden here. The sim respawns a wreck on the very next
+    // tick, at its last gate, so the ship removes itself from the debris by
+    // teleporting away from it — and the base scene rewrites the local hull's
+    // visibility every frame from the camera blend, so hiding it here would
+    // last exactly one frame anyway.
+    wreck.burst(hull, _wreckVelocity, mine ? '#ffb057' : '#ff5470')
+  }
+
   const app = await mountBaseScene<RaceState>({
     canvas,
-    levelId:        trackId,
-    levelSpec:      track,
-    initialState:   initialRaceState(),
-    bloom:          track.bloom,
+    levelId:      trackId,
+    levelSpec:    track,
+    initialState: initialRaceState(),
+    bloom:        track.bloom,
+    post:         post.options,
+    onQuality:    level => post.setQuality(level),
+    onPostView:   view => {
+      post.setFocus(view.focusDistance)
+      post.setMotion(view.speed, view.accel)
+    },
     colliders:      track.colliders,
     colliderOffset: track.colliderOffset,
-    environment:    TRACK_VISUALS[trackId].environment,
-    buildGeometry:  ctx => TRACK_VISUALS[trackId].build(ctx, bundle),
+    environment:    draft ? draftEnvironment(bundle) : TRACK_VISUALS[trackId].environment,
+    buildGeometry:  ctx => draft
+      ? buildDraft(ctx, bundle, draft.props)
+      : TRACK_VISUALS[trackId].build(ctx, bundle),
 
     gameModuleFactory: (physics, telemetry, sceneControls, vehicleRef, rig) => {
       // The ONE body in this world besides the track: the predicted local ship.
       const local = createHovercraft(physics.world, provisionalSpawn)
+      localChassis = local.chassis
 
       prediction = new LocalPrediction({
         chassis: local.chassis,
@@ -191,12 +259,14 @@ export async function mountRace (
       }
 
       resetRaceTimers()
-      transport.connect({
-        name:   options.name ?? 'Pilot',
-        shipId: 'icaras',
-        trackId,
-        server: options.server,
-      })
+      // A draft has no room to join. Free flight is the test drive.
+      if (!draft)
+        transport.connect({
+          name:   options.name ?? 'Pilot',
+          shipId: 'icaras',
+          trackId,
+          server: options.server,
+        })
 
       let clientTick   = 0
       let lastSnapshot = 0
@@ -308,6 +378,7 @@ export async function mountRace (
             lapElapsed:      server.lapElapsed,
             bestLap:         server.bestLap,
             finished:        server.finished,
+            hull:            server.hull,
             standings:       [ ...view.racers ]
               .sort((a, b) => a.position - b.position)
               .map(r => ({ id: r.id, name: r.name, position: r.position, lap: r.lap, bestLap: r.bestLap, finished: r.finished, isBot: r.isBot })),
@@ -318,18 +389,28 @@ export async function mountRace (
       return { module: raceNetModule }
     },
 
-    hudModuleFactory: (_shipRoot, telemetry, hudRef, hudControls) =>
-      raceHudModule(canvas, track, telemetry, hudControls, hudRef, options.forcedTouch),
+    hudModuleFactory: (baseShipRoot, telemetry, hudRef, hudControls, hudScene) => {
+      // The base owns the local hull; this is the one callback it is handed
+      // through. Sliced ahead of the first wreck so the frame a ship dies on is
+      // not also the frame that builds four vertex buffers.
+      localHull = baseShipRoot
+      wreck.prime(baseShipRoot)
+      return raceHudModule(canvas, track, telemetry, hudControls, hudRef, hudScene, options.forcedTouch)
+    },
 
     extraModules: [
       defineModule<RaceState>({
         name:  'race-visuals',
-        build: ctx => ctx.scene.add(shipRoot),
+        build: ctx => ctx.scene.add(shipRoot, wreck.group),
       }),
     ],
 
-    onFrame: () => {
-      transport.drainEvents()
+    onFrame: frame => {
+      for (const event of transport.drainEvents())
+        if (event.type === 'wrecked')
+          blowUp(event.id)
+
+      wreck.update(frame.delta)
 
       const frameView = transport.frame()
       if (frameView)
@@ -337,6 +418,7 @@ export async function mountRace (
     },
 
     onDispose: () => {
+      wreck.dispose()
       for (const id of [ ...opponents.keys() ])
         dropOpponent(id)
       transport.close()

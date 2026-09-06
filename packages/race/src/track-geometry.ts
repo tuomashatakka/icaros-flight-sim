@@ -127,6 +127,89 @@ export function ribbonBoxColliders (
 }
 
 /**
+ * Barrier boxes down both edges of a ribbon.
+ *
+ * Without these a spline track has a drivable deck and nothing else, so the
+ * first corner you overshoot drops you into the void and the run is over —
+ * which is what made every track but The Flats unraceable. The Flats has had
+ * hand-authored walls since it was the handling rig; every generated track had
+ * only `ribbonBoxColliders`.
+ *
+ * Built from the SAME vertex strip the deck and the mesh come from, so the
+ * barrier you hit is the barrier you can see. Each box is oriented on the
+ * segment's own basis, which means it banks with the road rather than standing
+ * vertically through it.
+ *
+ * `sink` overlaps the deck the way `flats.ts` documents: a wall whose bottom
+ * face is exactly coplanar with the deck leaves a seam, and a hovercraft
+ * arriving at 47 m/s finds it — the impact bleeds speed, the solver pushes the
+ * hull down as much as back, and once the chassis is below the deck it is below
+ * the wall entirely.
+ */
+export function ribbonWallColliders (
+  vertices: Float32Array,
+  opts: { height?: number; thickness?: number; stride?: number; sink?: number; maxLen?: number } = {}
+): BoxCollider[] {
+  const height    = opts.height ?? 5
+  const thickness = opts.thickness ?? 1.2
+  const stride    = opts.stride ?? 2
+  const sink      = opts.sink ?? 1.5
+  const maxLen    = opts.maxLen ?? 60
+
+  const rings                = Math.floor(vertices.length / 6)
+  const at                   = (i: number) => new THREE.Vector3(vertices[i * 3], vertices[i * 3 + 1], vertices[i * 3 + 2])
+  const boxes: BoxCollider[] = []
+
+  const halfHeight    = height * 0.5
+  const halfThickness = thickness * 0.5
+
+  for (let i = 0; i + stride < rings; i += stride) {
+    const L0 = at(i * 2)
+    const R0 = at(i * 2 + 1)
+    const L1 = at((i + stride) * 2)
+    const R1 = at((i + stride) * 2 + 1)
+
+    const mid0 = L0.clone().add(R0)
+      .multiplyScalar(0.5)
+    const mid1 = L1.clone().add(R1)
+      .multiplyScalar(0.5)
+
+    const forwardVec = mid1.clone().sub(mid0)
+    const len        = forwardVec.length()
+    if (len < 1e-3 || len > maxLen)
+      continue
+
+    const forward = forwardVec.normalize()
+    const sideVec = R0.clone().sub(L0)
+    if (sideVec.lengthSq() < 1e-6)
+      continue
+
+    const right = sideVec.clone().normalize()
+    const up    = right.clone().cross(forward)
+      .normalize()
+    const basis                              = new THREE.Matrix4().makeBasis(right, up, forward)
+    const euler                              = new THREE.Euler().setFromRotationMatrix(basis)
+    const rotation: [number, number, number] = [ euler.x, euler.y, euler.z ]
+    const args: [number, number, number]     = [ halfThickness, halfHeight, len * 0.5 ]
+
+    for (const [ near, far ] of [[ L0, L1 ], [ R0, R1 ]] as Array<[THREE.Vector3, THREE.Vector3]>) {
+      // Inward by its own half-thickness so the barrier's INNER face lands on
+      // the road edge rather than straddling it, and up by half its height less
+      // the sink so its foot is buried in the deck.
+      const inward = near === L0 ? 1 : -1
+      const centre = near.clone().add(far)
+        .multiplyScalar(0.5)
+        .addScaledVector(right, inward * halfThickness)
+        .addScaledVector(up, halfHeight - sink)
+
+      boxes.push({ position: [ centre.x, centre.y, centre.z ], rotation, args })
+    }
+  }
+
+  return boxes
+}
+
+/**
  * Sweeps a flat (optionally banked) road ribbon along a Catmull-Rom spline.
  *
  * Two vertices are emitted per sample — the left and right road edges, offset

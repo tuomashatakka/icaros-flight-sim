@@ -27,6 +27,30 @@ const _ndc = new THREE.Vector2()
 /** When the rail follows the visor in, in seconds. See its use for the derivation. */
 const TOUCH_STAGGER_S = HUD_TRANSITION_S * 0.206
 
+/**
+ * Where the visor's glass sits, world units from the eye.
+ *
+ * `HUD_VISOR_BOUNDS`' rim and centre depths are -5.4 and -6.35; this is the
+ * middle of that fold, which is what the defocus is measured against.
+ */
+const VISOR_DEPTH = 5.9
+
+/** How far the focal plane travels before the visor is fully soft, world units. */
+const VISOR_FOCUS_RANGE = 26
+
+/**
+ * How defocused the visor is, given where the lens is looking.
+ *
+ * Capped well short of 1: this is glass a hand's width from the eye, and a real
+ * lens focused down the track would render it as an unreadable smear. The point
+ * is that it stops being razor sharp — that it belongs to the same optical
+ * system as the world behind it — not that it becomes useless.
+ */
+function visorSoftness (focusDistance: number): number {
+  const away = Math.abs(focusDistance - VISOR_DEPTH) / VISOR_FOCUS_RANGE
+  return Math.min(0.34, Math.max(0, away))
+}
+
 function readSafeAreaInsets (): SafeAreaInsets {
   if (typeof document === 'undefined')
     return NO_INSETS
@@ -130,7 +154,9 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
     transparent: true,
     depthTest:   false,
     depthWrite:  false,
-    toneMapped:  false,
+    // Tone-mapped, because the HUD is drawn after the composer and nothing
+    // downstream will do it. See the note in `hud/materials.ts`.
+    toneMapped:  true,
   })
   const overlayMesh         = new THREE.Mesh(overlayGeometry, overlayMaterial)
   overlayMesh.name          = 'spatial-cockpit-hud-screen-layer'
@@ -152,6 +178,47 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
   const toastBorn      = new Map<string, number>()
   const cssSize        = { width: 1, height: 1 }
   let insets: SafeAreaInsets = NO_INSETS
+
+  /**
+   * Where the canvas is on screen, cached.
+   *
+   * `getBoundingClientRect` forces the browser to flush style and layout, and
+   * this was called from three places that all run hot: once per overlay
+   * repaint (up to 30 Hz) and twice per pointer event (up to the pointer's
+   * rate, which on a fast mouse is higher than the frame rate). A synchronous
+   * layout at that cadence is a real cost on a machine with anything else going
+   * on, and it is paying it for a number that only changes when the window
+   * does. Observed instead, and re-read on the events that can move a canvas
+   * without resizing it.
+   */
+  const surface = { left: 0, top: 0, width: 1, height: 1 }
+  let surfaceStale = true
+
+  function readSurface (): void {
+    if (!surfaceStale)
+      return
+
+    const rect = canvas.getBoundingClientRect()
+    surfaceStale = false
+    if (rect.width <= 0 || rect.height <= 0)
+      return
+
+    surface.left   = rect.left
+    surface.top    = rect.top
+    surface.width  = rect.width
+    surface.height = rect.height
+  }
+
+  const invalidateSurface = () => {
+    surfaceStale = true
+  }
+
+  const surfaceObserver = typeof ResizeObserver === 'undefined'
+    ? null
+    : new ResizeObserver(invalidateSurface)
+  surfaceObserver?.observe(canvas)
+  window.addEventListener('resize', invalidateSurface, { passive: true })
+  window.addEventListener('scroll', invalidateSurface, { passive: true, capture: true })
 
   // The rail is on for everyone. `?touch=0` is the only way to turn it off, and
   //  it is honoured in EVERY build — there is no device sniff left to get a
@@ -266,17 +333,16 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
     const aspect      = viewAspect(frame.camera)
     const height      = Math.round(Math.sqrt(OVERLAY_PIXELS / Math.max(aspect, 0.01)))
     const targetWidth = Math.max(1, Math.round(height * aspect))
-    if (overlay.canvas.width !== targetWidth || overlay.canvas.height !== height) {
-      overlay.canvas.width  = targetWidth
-      overlay.canvas.height = height
-      overlayDirty          = true
-    }
 
-    const rect = canvas.getBoundingClientRect()
-    if (rect.width > 0 && rect.height > 0 &&
-        (cssSize.width !== rect.width || cssSize.height !== rect.height)) {
-      cssSize.width  = rect.width
-      cssSize.height = rect.height
+    // Through `resize`, never by assigning to the canvas: the GPU allocation
+    // has to be thrown away with it. See `HudPanel.resize`.
+    if (overlay.resize(targetWidth, height))
+      overlayDirty = true
+
+    readSurface()
+    if (cssSize.width !== surface.width || cssSize.height !== surface.height) {
+      cssSize.width  = surface.width
+      cssSize.height = surface.height
       insets         = readSafeAreaInsets()
       overlayDirty   = true
     }
@@ -365,7 +431,7 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
     }
 
     const revealPhase = visorReveal.value(frame.elapsed)
-    tickHudPanelMesh(panelMesh, frame.elapsed, revealPhase)
+    tickHudPanelMesh(panelMesh, frame.elapsed, revealPhase, visorSoftness(frame.focusDistance))
     // The visor is still assembling, so it needs a frame every frame — the
     // panel cadence would draw the wipe in four steps.
     if (revealPhase < 1)
@@ -399,18 +465,22 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
     else if (!modalReveal.live(frame.elapsed))
       modalData = null
 
-    // Two gates, and both are about the same frame rather than about the
-    // device: the rail follows the visor in by 87 ms so the mount is not one
-    // wall of motion, and it steps aside for a full-screen layer, which draws
-    // over it and would otherwise be tapped through. Nothing else can withhold
-    // it — a rail whose existence depended on the state of a layer it has
-    // nothing to do with is how it came to be missing entirely.
+    // ONE gate, and it is about this frame rather than about the device or
+    // about any other layer: the rail follows the visor in by 87 ms so the
+    // mount is not one wall of motion. That is the whole of it.
+    //
+    // `blocking` used to be in here as well, which meant a full-screen layer
+    // took the controls away — including the battle error card a client-only
+    // deployment shows permanently. Nothing may withhold the rail now: it is
+    // drawn unconditionally and this only decides how far into its arrival it
+    // is, so the worst a broken clock can do is leave it at its floor alpha
+    // rather than leave the player with no controls at all.
     //
     // The stagger waits on the CLOCK, not on `revealPhase`. Same moment to the
     // millisecond as the old gate, which was the EASED phase passing 0.5:
     // `1 - (1 - t)³` crosses a half at t ≈ 0.206, not halfway through.
     const staggered = mountedAt !== null && frame.elapsed - mountedAt >= TOUCH_STAGGER_S
-    touchReveal.set(isTouch && staggered && !blocking, frame.elapsed)
+    touchReveal.set(isTouch && staggered, frame.elapsed)
 
     // A layer mid-transition needs every frame. `isHudBlockingOverlay` alone
     // would stop redrawing the moment a modal closed and freeze its exit wipe
@@ -447,10 +517,10 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
   type CanvasPointReturnType = { x: number; y: number }
 
   function canvasPoint (clientX: number, clientY: number): CanvasPointReturnType {
-    const rect = canvas.getBoundingClientRect()
+    readSurface()
     return {
-      x: (clientX - rect.left) / Math.max(rect.width, 1) * overlay.canvas.width,
-      y: (clientY - rect.top) / Math.max(rect.height, 1) * overlay.canvas.height,
+      x: (clientX - surface.left) / Math.max(surface.width, 1) * overlay.canvas.width,
+      y: (clientY - surface.top) / Math.max(surface.height, 1) * overlay.canvas.height,
     }
   }
 
@@ -463,10 +533,10 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
     if (overlayHit)
       return overlayHit
 
-    const rect = canvas.getBoundingClientRect()
+    readSurface()
     _ndc.set(
-      (clientX - rect.left) / Math.max(rect.width, 1) * 2 - 1,
-      -((clientY - rect.top) / Math.max(rect.height, 1) * 2 - 1)
+      (clientX - surface.left) / Math.max(surface.width, 1) * 2 - 1,
+      -((clientY - surface.top) / Math.max(surface.height, 1) * 2 - 1)
     )
     raycaster.setFromCamera(_ndc, lastFrame.camera)
 
@@ -811,6 +881,9 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
       canvas.removeEventListener('pointerup', onPointerUp)
       canvas.removeEventListener('pointercancel', onPointerCancel)
       canvas.removeEventListener('pointerleave', onPointerLeave)
+      surfaceObserver?.disconnect()
+      window.removeEventListener('resize', invalidateSurface)
+      window.removeEventListener('scroll', invalidateSurface, { capture: true })
       canvas.style.cursor = ''
       if (isTouch)
         setTouchOverlayActive(false)

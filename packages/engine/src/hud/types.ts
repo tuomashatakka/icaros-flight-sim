@@ -64,6 +64,15 @@ export type HudViewFrame = {
   aimPitch: number;
 
   /**
+   * Where the lens is focused, world units from the eye.
+   *
+   * The visor is drawn after the post chain, so the scene's depth of field
+   * cannot reach it. This is what lets it carry its own — see
+   * `HudFacetUniforms.uSoftness`.
+   */
+  focusDistance: number;
+
+  /**
    * How often the HUD may REPAINT, Hz — the renderer quality tier's budget.
    *
    * A ceiling on texture work, never on the pose: the visor is anchored in
@@ -94,6 +103,9 @@ export type HudFrame = {
   hudQuaternion:    THREE.Quaternion;
   hudLead:          THREE.Quaternion;
   aimPitch:         number;
+
+  /** Where the lens is focused, world units. See `HudViewFrame.focusDistance`. */
+  focusDistance:    number;
   steer:            number;
   strafe:           number;
   target:           THREE.Vector3 | null;

@@ -69,6 +69,12 @@ what a summary field means. Invoke it when debugging runtime behaviour.
   harnesses build a fresh sim per run, so there is no reset list to update — but
   a field set anywhere else makes a run start from a different value than the
   one before it, and the hash silently stops meaning anything.
+- **Never assign to a HUD canvas's `width`/`height` — call `HudPanel.resize`.**
+  A `CanvasTexture` allocates immutable GPU storage on its first upload, so a
+  canvas resized afterwards uploads out of bounds and the texture silently keeps
+  the FIRST frame forever. Whether the resize lands before or after that upload
+  is a race a dev build wins and a production build loses, which is how the
+  touch controls came to be missing on the deployed build and nowhere else.
 - **Physics debug layers are ON by default in dev**, with number keys 1-9 to
   toggle and 0 to clear. `?overlay=` (even empty) overrides the default.
 - **Dev code must not ship.** After `bun run build`,

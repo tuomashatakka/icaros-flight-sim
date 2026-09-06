@@ -58,7 +58,7 @@ function panelRenderKey (panel: HudPanel, data: HudData, frame: HudFrame): strin
     const byPanel: Record<string, unknown[]> = {
       topLeft:      [ frame.targetLabel, frame.checkpointNumber, frame.checkpointCount, quantise(gateClosure(frame), 0.01) ],
       topRight:     [ frame.targetLabel, frame.checkpointNumber, quantise(distance, 1), quantise(telemetry.speed * 3.6, 1), quantise(gateClosure(frame), 0.01), data.tuningOpen ],
-      bottomLeft:   [ quantise(surfaceAlignment(frame.hullQuaternion), 0.01), quantise(telemetry.boostMeter, 0.01), telemetry.grounded, quantise(telemetry.gLoad, 0.1), quantise(telemetry.airbrake, 0.01), telemetry.crashSeq ],
+      bottomLeft:   [ quantise(surfaceAlignment(frame.hullQuaternion), 0.01), quantise(race.hull, 0.01), quantise(telemetry.boostMeter, 0.01), telemetry.grounded, quantise(telemetry.gLoad, 0.1), quantise(telemetry.airbrake, 0.01), telemetry.crashSeq ],
       bottomCenter: [ quantise(frame.throttle, 0.01), quantise(telemetry.boostMeter, 0.01), quantise(telemetry.speed * 3.6, 1), quantise(telemetry.velocity.y, 0.1), telemetry.boosting ],
       bottomRight:  [ race.currentLap, race.laps, frame.checkpointNumber, quantise(data.clocks.lapElapsed, 0.001), data.zone, data.shipId, quantise(telemetry.speed / Math.max(data.targetSpeed, 1), 0.01), data.tuningOpen ],
       center:       [ race.currentLap, race.laps, quantise(data.clocks.elapsed, 0.001), race.bestLap, telemetry.boosting ],
@@ -210,7 +210,7 @@ function createSurfaceGeometry (corners: HudVisorCorners): THREE.BufferGeometry 
  * the visor assembles panel by panel instead of appearing as one sheet — which
  * is both better looking and how you can tell at a glance that a panel is late.
  */
-export function tickHudPanelMesh (mesh: THREE.Mesh, elapsed: number, reveal = 1): void {
+export function tickHudPanelMesh (mesh: THREE.Mesh, elapsed: number, reveal = 1, softness = 0): void {
   const materials = mesh.userData.hudMaterials as HudFacetMaterial[]
   const glass     = mesh.userData.glassMaterial as HudGlassMaterial
   const stagger   = 0.45 / Math.max(1, materials.length - 1)
@@ -220,8 +220,9 @@ export function tickHudPanelMesh (mesh: THREE.Mesh, elapsed: number, reveal = 1)
 
     // Compress each panel's own ramp into the window left after its delay, so
     // every one of them still finishes exactly when the reveal does.
-    const delay                     = index * stagger
-    material.uniforms.uReveal.value = Math.max(0, Math.min(1, (reveal - delay) / (1 - delay)))
+    const delay                       = index * stagger
+    material.uniforms.uReveal.value   = Math.max(0, Math.min(1, (reveal - delay) / (1 - delay)))
+    material.uniforms.uSoftness.value = softness
   })
   glass.uniforms.uTime.value = elapsed
 }
@@ -439,8 +440,18 @@ function drawRacePanels (panels: Record<HudPanelKey, HudPanel>, data: RaceHudDat
   // combat heading. Race calls it what it is.
   bottomLeft.title = 'airframe'
   renderPanel(bottomLeft, data, frame, () => {
-    bottomLeft.bar({ x: 36, y: 104, width: 404, height: 16, label: 'surface alignment', value: upness, color: bottomLeft.accent })
-    drawSegmentedBar(bottomLeft.context, { x: 36, y: 170, width: 404, height: 18 }, telemetry.boostMeter, {
+    // Hull first: race has a damage model now, and integrity is the one reading
+    // on this panel that decides whether there is a next corner.
+    drawSegmentedBar(bottomLeft.context, { x: 36, y: 100, width: 404, height: 18 }, data.race.hull, {
+      color:         HUES.cyan,
+      criticalColor: THEME.red,
+      criticalBelow: 0.3,
+      segments:      HUD_BAR_SEGMENTS,
+      label:         'hull integrity',
+      valueLabel:    `${Math.round(data.race.hull * 100)}%`,
+    })
+    bottomLeft.bar({ x: 36, y: 146, width: 404, height: 14, label: 'surface alignment', value: upness, color: bottomLeft.accent })
+    drawSegmentedBar(bottomLeft.context, { x: 36, y: 196, width: 404, height: 18 }, telemetry.boostMeter, {
       color:         HUES.green,
       criticalColor: THEME.red,
       criticalBelow: HUD_BOOST_CRITICAL,
@@ -448,7 +459,7 @@ function drawRacePanels (panels: Record<HudPanelKey, HudPanel>, data: RaceHudDat
       label:         'boost reserve',
       valueLabel:    `${Math.round(telemetry.boostMeter * 100)}%`,
     })
-    bottomLeft.text({ x: 36, y: 246, size: 14, alpha: 0.6, value: `${telemetry.grounded ? 'SURFACE LOCK' : 'AIRBORNE'} · ${telemetry.gLoad.toFixed(1)}G · AIRBRAKE ${Math.round(telemetry.airbrake * 100)}% · IMPACTS ${telemetry.crashSeq}` })
+    bottomLeft.text({ x: 36, y: 258, size: 14, alpha: 0.6, value: `${telemetry.grounded ? 'SURFACE LOCK' : 'AIRBORNE'} · ${telemetry.gLoad.toFixed(1)}G · AIRBRAKE ${Math.round(telemetry.airbrake * 100)}% · IMPACTS ${telemetry.crashSeq}` })
     bottomLeft.button({ id: 'defense-reset', x: 466, y: 120, width: 132, height: 52, label: 'reset', action: 'respawn' })
   })
 
@@ -560,7 +571,7 @@ function drawBattlePanels (panels: Record<HudPanelKey, HudPanel>, data: BattleHu
       label:         'boost',
       valueLabel:    `${Math.round(battle.myBoost * 100)}%`,
     })
-    bottomLeft.text({ x: 36, y: 246, size: 14, alpha: 0.6, value: `HULL ${battle.myHealth}/${battle.maxHealth} · K/D ${battle.myKills}/${battle.myDeaths}` })
+    bottomLeft.text({ x: 36, y: 258, size: 14, alpha: 0.6, value: `HULL ${battle.myHealth}/${battle.maxHealth} · K/D ${battle.myKills}/${battle.myDeaths}` })
     bottomLeft.button({ id: 'battle-defense-respawn', x: 466, y: 120, width: 132, height: 52, label: 'respawn', action: 'respawn' })
     bottomLeft.text({ x: 598, y: 246, size: 12, align: 'right', color: battle.carrying ? TEAM_COLORS[battle.carrying] : bottomLeft.accent, value: battle.carrying ? `${battle.carrying.toUpperCase()} CORE` : 'CORE BAY EMPTY' })
   })

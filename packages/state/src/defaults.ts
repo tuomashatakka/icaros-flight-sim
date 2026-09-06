@@ -48,6 +48,7 @@ export const INITIAL_RACE_HUD: RaceHudState = {
   loop:            true,
   position:        1,
   gridSize:        1,
+  hull:            1,
   elapsed:         0,
   lapElapsed:      0,
   lapTimes:        [],

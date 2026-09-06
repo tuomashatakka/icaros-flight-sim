@@ -19,6 +19,16 @@ export type TrackBundle = {
   /** Ribbon mesh, for tracks generated from a spline or a walk. */
   geometry?: THREE.BufferGeometry;
 
+  /**
+   * The ribbon's edge strip, `[Lx,Ly,Lz, Rx,Ry,Rz, …]`.
+   *
+   * Carried for the same reason as `geometry`: the barriers are generated from
+   * it on both sides of the split, so the wall you hit and the wall you see are
+   * the same wall. Deriving it again from the curve on the render side is what
+   * would let them disagree.
+   */
+  vertices?: Float32Array;
+
   /** The sampled centreline, for rails and scenery placement. */
   curve?: THREE.CatmullRomCurve3;
 }

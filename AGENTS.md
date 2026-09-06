@@ -411,6 +411,25 @@ no device sniff left to get a machine wrong, and `wantsTouchControls` is now one
 line. `?touch=0` is the only way to turn it off; `?touch=1` additionally paints
 the diagnostic readout, and `dev-cli --query touch=1` reaches it.
 
+**One touch layout, every mode, and nothing may withhold it.** `touchLayout`
+puts every control race and battle share on the same pixels — two sticks, a
+shoulder rail up each side (strafe, plus the air brake to port and boost to
+starboard), and the view/reset pair between the thumbs. Battle adds two weapon
+plates above that pair and moves nothing. The controls are drawn LAST in
+`drawHudOverlay`, outside every modal branch: they used to sit inside the
+live-layer branch, so a finish card, the tuning popover or a battle whose
+server never answered (`status: 'error'` — the ordinary state of a
+client-only deployment) took them away entirely. Their hit regions are emitted
+after a modal's, so a stick under a card is still a stick.
+
+**Below a 1.2 aspect the visor is worn, not carried, and it fits proportionally.**
+`hudStation` scales it to the frame's width on BOTH axes (scaling X alone
+squashed it to a quarter width on a phone and left its height alone), slides
+the anchor to the seated station regardless of where the camera is (the chase
+halo is an unreadable speck at 390 px), and drops it clear of the bottom third
+so the thumb cluster is not drawn over the instruments. Everything at 16:9 or
+wider is untouched by all three.
+
 **Post-processing extends through `BaseSceneConfig.postEffects`.** Battle's chain
 lives in `packages/engine/src/battle/post.ts`. Two traps it documents: nothing may sample
 the composer's shared depth texture (it is attached to both render targets, so
@@ -702,9 +721,13 @@ packages/engine/  Depends on state, core, physics, net, race, battle. The
                   hull-deform.ts (move the cloud with `Ȼship/hull-shape`).
   hud/            Continuous visor GUI: tokens.ts (the amber cockpit palette,
                   `HUD_THEME`), chrome.ts (the shared drawing vocabulary —
-                  plates, brackets, glow), panel.ts, facets.ts, layout.ts,
-                  overlay.ts, spatial-hud.ts, index.ts (thin race/battle
-                  adapters).
+                  plates, brackets, glow, and the holo plate/stick the touch
+                  controls are painted with), panel.ts (one facet, its canvas
+                  and its texture — resize through `resize()`, never by
+                  assignment), facets.ts, layout.ts, anchor.ts (where the visor
+                  sits, as one function of blend and aspect), touch-layout.ts
+                  (one control layout for every mode), overlay.ts,
+                  spatial-hud.ts, index.ts (thin race/battle adapters).
   dev/            Dev-only harness (harness.ts, overlay.ts, params.ts,
                   trace.ts). Excluded from production builds.
   camera/rig.ts   Chase + cockpit camera, as two blended stations.

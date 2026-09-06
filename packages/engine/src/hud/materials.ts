@@ -12,6 +12,24 @@ export type HoloUniforms = {
   uGain:    { value: number };
 }
 
+
+/**
+ * The two chunks a HUD shader has to end with, and why.
+ *
+ * The HUD is drawn AFTER the composer now — see `mountBaseScene` — so nothing
+ * downstream tone-maps it any more. Inside the composer it was written raw into
+ * a linear HDR buffer and `OutputPass` applied ACES and the sRGB encode to the
+ * sum; drawn straight to the canvas the same raw value is read as sRGB, which
+ * lifts every dark in the visor and turns the panels into pale washes. A
+ * `ShaderMaterial` does not get these appended for it the way a built-in
+ * material does, so they are spelled out — with `toneMapped: true`, which is
+ * what makes three define them at all.
+ */
+const OUTPUT = /* glsl */`
+  #include <tonemapping_fragment>
+  #include <colorspace_fragment>
+`
+
 const VERTEX = /* glsl */`
 varying vec2 vUv;
 
@@ -100,6 +118,18 @@ export type HudFacetUniforms = {
 
   /** 0 = not yet arrived, 1 = fully present. Driven by `hud/transition.ts`. */
   uReveal: { value: number };
+
+  /**
+   * How defocused the visor is, 0..1.
+   *
+   * The HUD is drawn after the composer, so the scene's depth of field cannot
+   * reach it — and should not: a blurred touch control is a broken touch
+   * control. But a visor that stays razor sharp while the world racks past it
+   * reads as a sticker on the lens rather than as glass a few centimetres from
+   * the eye. So the FACETS carry their own, driven by how far the focal plane
+   * has travelled from them, and the screen layer carries none.
+   */
+  uSoftness: { value: number };
 }
 
 export type HudFacetMaterial = THREE.ShaderMaterial & { uniforms: HudFacetUniforms }
@@ -124,6 +154,7 @@ uniform float uTime;
 uniform vec3 uAccent;
 uniform float uOpacity;
 uniform float uReveal;
+uniform float uSoftness;
 
 varying vec2 vUv;
 varying vec3 vViewPosition;
@@ -147,7 +178,18 @@ void main () {
   // settles — the same separation the settled facet carries, just overdriven.
   float split = mix(0.0028, 0.0011, facing) + (1.0 - uReveal) * 0.02;
 
+  // Four diagonal taps, radius driven by the focal plane. At zero softness the
+  // offset is zero and this is the single centre tap it always was.
+  float blur  = uSoftness * 0.004;
   vec4 source = texture2D(uMap, vUv);
+  if (blur > 0.0001) {
+    source = (source
+      + texture2D(uMap, vUv + vec2( blur,  blur))
+      + texture2D(uMap, vUv + vec2(-blur,  blur))
+      + texture2D(uMap, vUv + vec2( blur, -blur))
+      + texture2D(uMap, vUv + vec2(-blur, -blur))) * 0.2;
+  }
+
   vec3 signal = vec3(
     texture2D(uMap, vUv + radial * split).r,
     source.g,
@@ -163,6 +205,15 @@ void main () {
   vec3 color = signal * (scan + grain * 0.055);
   color += uAccent * glyph * (0.08 + edgeGain * 0.18);
   color += uAccent * sweep * 2.2;
+
+  // A glow the panels used to get for free.
+  //
+  // Inside the composer every lit glyph fed UnrealBloomPass, which is most of
+  // what made the visor read as light rather than as printing. Drawn after it,
+  // they get none — so the bloom is faked where it is cheapest to fake: lift
+  // the bright end of the signal against itself, which spreads nothing but does
+  // put the halo back on the strokes that had one.
+  color += signal * glyph * (0.34 + edgeGain * 0.3);
   float alpha = source.a * uOpacity * mix(0.28, 1.0, glyph);
   alpha *= 0.96 + grain * 0.08;
   alpha = max(alpha, sweep * 0.75);
@@ -170,6 +221,7 @@ void main () {
   if (alpha < 0.002)
     discard;
   gl_FragColor = vec4(color * (1.08 + edgeGain * 0.22), alpha);
+${OUTPUT}
 }
 `
 
@@ -189,15 +241,16 @@ export function createHudFacetMaterial ({
       uMap:     { value: map },
       uTime:    { value: 0 },
       uAccent:  { value: new THREE.Color(accent) },
-      uOpacity: { value: opacity },
-      uReveal:  { value: 0 },
+      uOpacity:  { value: opacity },
+      uReveal:   { value: 0 },
+      uSoftness: { value: 0 },
     } satisfies HudFacetUniforms,
     vertexShader:   HUD_VERTEX,
     fragmentShader: HUD_FRAGMENT,
     transparent:    true,
     depthTest:      false,
     depthWrite:     false,
-    toneMapped:     false,
+    toneMapped:     true,
     side:           THREE.DoubleSide,
   }) as HudFacetMaterial
 }
@@ -223,6 +276,7 @@ void main () {
   float sweep = 0.5 + 0.5 * sin((vUv.y * 8.0 - uTime * 0.08) * 6.2831853);
   float alpha = 0.018 + fresnel * 0.16 + sweep * 0.008;
   gl_FragColor = vec4(uColor * (0.42 + fresnel * 1.35), alpha);
+${OUTPUT}
 }
 `
 
@@ -238,7 +292,7 @@ export function createHudGlassMaterial (): HudGlassMaterial {
     blending:       THREE.AdditiveBlending,
     depthTest:      false,
     depthWrite:     false,
-    toneMapped:     false,
+    toneMapped:     true,
     side:           THREE.DoubleSide,
   }) as HudGlassMaterial
 }

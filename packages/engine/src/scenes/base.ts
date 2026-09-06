@@ -9,6 +9,7 @@ import { createSimClock } from 'Φclock'
 import { createPhysics } from 'Φworld'
 import type { Physics } from 'Φworld'
 import { attachBoxColliders } from 'Φcolliders'
+import { vehicleConfig } from 'Φconfig'
 import type { BoxCollider } from 'Φcolliders'
 import { createTelemetry } from '../telemetry'
 import type { Telemetry } from '../telemetry'
@@ -29,9 +30,26 @@ import type { PublishHandle } from '../modules/publish'
 import { attachBridge } from '../bridge'
 import { createRendererQuality } from '../quality/runtime'
 import { publishSceneLifecycle, reducedMotion, sceneLifecycleState } from '../lifecycle'
+import { createFocusProbe } from '../render/focus-probe'
 
 
 const SEED = 7
+
+/**
+ * Where the lens sits when the pointer is on the sky, world units.
+ *
+ * Far enough that the near scenery softens rather than the horizon.
+ */
+const FOCUS_FALLBACK = 320
+
+/**
+ * The acceleration that saturates the speed streak, m/s^2.
+ *
+ * A hovercraft on full boost pulls a little over 30; a wall is far more. Both
+ * should max the effect, which is why this is where it is rather than at the
+ * chassis's peak.
+ */
+const ACCEL_FULL = 26
 
 function resolveSeed (defaultSeed = SEED): number {
   if (process.env.NODE_ENV !== 'production' && typeof window !== 'undefined') {
@@ -60,6 +78,7 @@ const _view: HudViewFrame = {
   hudQuaternion:  _hudQuaternion,
   hudLead:        _hudLead,
   aimPitch:       0,
+  focusDistance:  FOCUS_FALLBACK,
   drawHz:         60,
 }
 
@@ -77,6 +96,26 @@ type AppContext<TState extends object> = Parameters<AppModule<TState>['build']>[
 
 /** The slice of the post module a scene is allowed to fill in. */
 export type ScenePost = Pick<PostProcessingOptions, 'depth' | 'effects' | 'onFrame' | 'onResize'>
+
+/**
+ * What the shell reports to the post chain every rendered frame.
+ *
+ * The chain owns the look; only the shell knows where the pointer is, what the
+ * ship is doing and which rapier world to ask. Handing over three numbers keeps
+ * the dependency pointing that way rather than giving the post module a camera
+ * and a physics handle of its own.
+ */
+export type ScenePostView = {
+
+  /** Distance from the eye to whatever the pointer is over, world units. */
+  focusDistance: number;
+
+  /** Ground speed as a fraction of the vehicle's top speed. */
+  speed: number;
+
+  /** |d(speed)/dt|, normalised so 1 is a hard launch or a wall. */
+  accel: number;
+}
 
 export type BaseSceneConfig<TState extends object> = {
   canvas:       HTMLCanvasElement;
@@ -142,7 +181,20 @@ export type BaseSceneConfig<TState extends object> = {
     shipRoot: THREE.Group,
     telemetry: Telemetry,
     hudRef: { current: HudHandle | null },
-    controls: Controls
+    controls: Controls,
+
+    /**
+     * Where the HUD's objects go, and it is NOT `ctx.scene`.
+     *
+     * The HUD is drawn after the composer has finished with the world, so that
+     * `BokehPass` measures the world's depth instead of a full-screen overlay
+     * plane sitting 4.35 units off the eye — which would put every pixel of the
+     * frame at one distance and defeat the depth of field entirely — and so a
+     * touch control stays readable while the world behind it is defocused. A
+     * HUD object added to `ctx.scene` is inside the post chain and gets both of
+     * those wrong.
+     */
+    hudScene: THREE.Scene
   ) => AppModule<TState>;
   extraModules?: Array<AppModule<TState>>;
   onFrame?:        (
@@ -154,6 +206,9 @@ export type BaseSceneConfig<TState extends object> = {
   ) => void;
   onDispose?: () => void;
   onQuality?: (effects: 0 | 1 | 2) => void;
+
+  /** Per-frame report for the post chain. See `ScenePostView`. */
+  onPostView?: (view: ScenePostView) => void;
 }
 
 export async function mountBaseScene<TState extends object> (
@@ -221,6 +276,11 @@ export async function mountBaseScene<TState extends object> (
 
   const shipRoot = new THREE.Group()
 
+  // Drawn after the composer, so the world's post chain never touches it. See
+  // `hudModuleFactory`'s `hudScene` parameter.
+  const hudScene   = new THREE.Scene()
+  const focusProbe = createFocusProbe(physics, canvas)
+
   const game = gameModuleFactory?.(physics, telemetry, controls, vehicle, rig)
 
   const modules: Array<AppModule<TState>> = [
@@ -239,7 +299,7 @@ export async function mountBaseScene<TState extends object> (
   ]
 
   if (hudModuleFactory)
-    modules.push(hudModuleFactory(shipRoot, telemetry, hud, controls))
+    modules.push(hudModuleFactory(shipRoot, telemetry, hud, controls, hudScene))
 
   modules.push(
     defineModule<TState>({
@@ -381,6 +441,7 @@ export async function mountBaseScene<TState extends object> (
       // ceiling on REPAINTS, so it travels on the frame and the HUD applies it
       // to its own texture cadence.
       _view.drawHz = quality.settings().hudHz
+      reportPostView(frame)
       hud.current?.update(_view)
 
       onFrame?.(frame, _shipPosition, _shipQuaternion, rig, controls)
@@ -393,7 +454,54 @@ export async function mountBaseScene<TState extends object> (
       composer.render(frame.delta)
     else
       app.ctx.renderer.render(app.ctx.scene, rig.camera)
+
+    // The HUD, over the finished frame. `autoClear` off so the world survives;
+    // depth cleared so a visor facet is never occluded by scenery it happens to
+    // be standing in front of, which the world's depth buffer still remembers.
+    if (hudScene.children.length > 0) {
+      const renderer     = app.ctx.renderer
+      const wasAutoClear = renderer.autoClear
+      renderer.autoClear = false
+      renderer.clearDepth()
+      renderer.render(hudScene, rig.camera)
+      renderer.autoClear = wasAutoClear
+    }
+
     quality.endFrame(frame.delta * 1000)
+  }
+
+  /**
+   * Focus distance and how hard the ship is changing speed, once per frame.
+   *
+   * `lastSpeed` is in metres per second and the report is normalised, because
+   * the post chain must not have to know what a fast hovercraft is.
+   */
+  let lastSpeed = 0
+  let accel     = 0
+
+  function reportPostView (frame: FrameContext): void {
+    // Sampled unconditionally, because the HUD wants it too: the visor is drawn
+    // after the post chain and carries its own defocus, so a scene with no post
+    // chain at all still has to know where the lens is looking.
+    _view.focusDistance = focusProbe.sample(rig.camera, FOCUS_FALLBACK)
+
+    if (!config.onPostView)
+      return
+
+    const delta = Math.max(frame.delta, 1e-4)
+    const raw   = Math.abs(telemetry.speed - lastSpeed) / delta
+    lastSpeed   = telemetry.speed
+
+    // Smoothed toward the instantaneous figure, and it falls faster than it
+    // rises: a launch should bloom and settle, not flicker with the solver.
+    const rate = raw > accel ? 9 : 3.4
+    accel += (raw - accel) * (1 - Math.exp(-rate * delta))
+
+    config.onPostView({
+      focusDistance: _view.focusDistance,
+      speed:         telemetry.speed / Math.max(1, vehicleConfig.maxSpeed),
+      accel:         accel / ACCEL_FULL,
+    })
   }
 
   const detachControls = attachControls(canvas, controls)
@@ -450,6 +558,7 @@ export async function mountBaseScene<TState extends object> (
   app.dispose   = () => {
     onDispose?.()
     detachDev?.()
+    focusProbe.dispose()
     detachControls()
     detachBridge()
     quality.dispose()

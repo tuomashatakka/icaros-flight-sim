@@ -1,12 +1,20 @@
 /**
- * Neon Canyon — a winding, banked ravine. The spline opens with a FLAT,
- * colinear straight along -Z straddling the origin, so the ship lands squarely
- * on the road before the track banks and snakes out into the canyon.
+ * Neon Canyon — a wide, walled circuit with two sweepers and a chicane.
+ *
+ * Deliberately simple. What was here before was a fifteen-point spline through
+ * eleven metres of elevation with 0.4 banking and a 26-metre road, and it was
+ * not raceable for two separate reasons: it had no barriers at all, so the
+ * first corner you overshot dropped you into the void with nothing to do but
+ * reset, and the banking rolled hard enough on the tight radii that the deck
+ * fought the hover rig through every turn.
+ *
+ * So: one plane of elevation, gentle banking, a road half again as wide, and
+ * walls down both edges built from the same vertex strip as the deck.
  */
 
 import { Vector3 } from 'three'
 
-import { buildTrack, ribbonBoxColliders } from '../track-geometry'
+import { buildTrack, ribbonBoxColliders, ribbonWallColliders } from '../track-geometry'
 
 import type { TrackBundle } from './types'
 import type { Vec3Tuple } from '../track'
@@ -14,38 +22,52 @@ import type { Vec3Tuple } from '../track'
 
 const v = (x: number, y: number, z: number) => new Vector3(x, y, z)
 
+/** Full road width. Wide enough that a corner missed is a corner survived. */
+const WIDTH = 34
+
+/** Barrier height. A hovercraft rides up a short wall and straight over it. */
+const WALL_HEIGHT = 6
+
 export function neonCanyonTrack (): TrackBundle {
   const { geometry, vertices, curve } = buildTrack({
     points: [
-      // Flat colinear start (zero curvature -> zero bank) under the spawn.
-      v(0, 0, 80), v(0, 0, 40), v(0, 0, 0), v(0, 0, -40),
-      // Bank out into the canyon.
-      v(50, 5, -110), v(140, 9, -130), v(200, 6, -70),
-      v(205, 3, 20), v(150, 8, 95), v(60, 11, 140),
-      v(-50, 7, 140), v(-150, 2, 80), v(-160, 0, -10),
-      v(-90, 0, -50), v(-30, 0, -30),
+      // Flat colinear start straddling the origin — zero curvature, zero bank,
+      // so the grid lands square on the road.
+      v(0, 0, 90), v(0, 0, 40), v(0, 0, -10),
+      // Long right-hand sweeper out to the far wall.
+      v(30, 0, -80), v(110, 0, -120), v(180, 0, -90),
+      // Back straight.
+      v(205, 0, -10), v(195, 0, 70),
+      // Chicane: two short, opposite kinks rather than one hairpin.
+      v(140, 0, 110), v(90, 0, 95), v(40, 0, 120),
+      // Home sweeper.
+      v(-40, 0, 120), v(-95, 0, 70), v(-90, 0, 10), v(-40, 0, 40),
     ],
-    width:    26,
-    segments: 16,
+    width:    WIDTH,
+    segments: 14,
     closed:   true,
-    banking:  0.4,
+    banking:  0.16,
   })
 
   return {
     geometry,
     curve,
+    vertices,
     spec: {
-      id:             'neon-canyon',
-      name:           'Neon Canyon',
-      background:     '#1a0a14',
-      fog:            [ '#1a0a14', 140, 620 ],
-      waypoints:      sampleCurve(curve, 10),
-      width:          26,
-      laps:           3,
-      loop:           true,
-      colliders:      ribbonBoxColliders(vertices, { stride: 1 }),
+      id:         'neon-canyon',
+      name:       'Neon Canyon',
+      background: '#12060f',
+      fog:        [ '#12060f', 160, 640 ],
+      waypoints:  sampleCurve(curve, 12),
+      width:      WIDTH,
+      laps:       3,
+      loop:       true,
+      colliders:  [
+        ...ribbonBoxColliders(vertices, { stride: 1 }),
+        ...ribbonWallColliders(vertices, { height: WALL_HEIGHT, stride: 1 }),
+      ],
       colliderOffset: [ 0, -0.05, 0 ],
-      bloom:          { strength: 0.5, threshold: 0.85, radius: 0.5 },
+      bloom:          { strength: 0.42, threshold: 0.86, radius: 0.5 },
     },
   }
 }

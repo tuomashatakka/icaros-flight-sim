@@ -77,6 +77,9 @@ export type RaceHudState = {
   bestLap:    number | null;
   finished:   boolean;
 
+  /** Hull integrity, 0..1. Race has damage now; zero is a wreck. */
+  hull: number;
+
   standings: Standing[];
 
   /** Why the game server could not be reached, or `null`. */
