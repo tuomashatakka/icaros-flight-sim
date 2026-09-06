@@ -9,6 +9,7 @@ import type { Camera } from './projection'
 import type { CompiledRace } from './compile'
 import type { EditorDocument } from './document'
 import type { Tool } from './reducer'
+import { PROP_CATALOGUE } from 'Ȼprops'
 import styles from './map-editor.module.css'
 
 
@@ -135,7 +136,54 @@ export function Viewport ({
     { doc.kind === 'race'
       ? <RaceLayer document={ doc } compiled={ compiled } selected={ selected } />
       : <BattleLayer document={ doc } selected={ selected } /> }
+
+    <PropLayer document={ doc } selected={ selected } />
   </svg>
+}
+
+/**
+ * Props, in plan.
+ *
+ * Drawn last so they sit over the deck, and outside the kind split because a
+ * pylon is a pylon on either sort of map. The footprint is the COLLIDER's, taken
+ * from the catalogue rather than guessed, so what you see is the box the ship
+ * will hit; a prop with no collider is drawn as a ring instead, which is the
+ * honest way to say "you drive through this".
+ */
+type PropLayerProps = { document: EditorDocument; selected: string | null }
+
+function PropLayer ({ document: doc, selected }: PropLayerProps) {
+  if (doc.props.length === 0)
+    return null
+
+  return <g>
+    { doc.props.map(prop => {
+      const def    = PROP_CATALOGUE[prop.kind]
+      const active = selected === prop.id
+      const scale  = prop.scale || 1
+      const tint   = prop.color ?? def.color
+
+      return <g
+        key={ prop.id }
+        data-item={ prop.id }
+        className={ active ? styles.propActive : styles.prop }
+        transform={ `translate(${prop.x} ${prop.z}) rotate(${prop.yaw})` }>
+
+        { def.half
+          ? <rect
+            x={ -def.half[0] * scale }
+            y={ -def.half[2] * scale }
+            width={ def.half[0] * 2 * scale }
+            height={ def.half[2] * 2 * scale }
+            fill={ tint }
+            vectorEffect="non-scaling-stroke" />
+          : <circle r={ Math.max(2, def.height * 0.18 * scale) } fill="none" stroke={ tint } vectorEffect="non-scaling-stroke" /> }
+
+        {/* A tick down +z, so a rotated prop reads as facing somewhere. */}
+        <line x1={ 0 } y1={ 0 } x2={ 0 } y2={ Math.max(4, def.height * 0.3 * scale) } stroke={ tint } vectorEffect="non-scaling-stroke" />
+      </g>
+    }) }
+  </g>
 }
 
 /** Metric grid plus the world axes, sized to whatever the camera can see. */

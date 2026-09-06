@@ -30,12 +30,14 @@ import { buildRemoteHull } from 'Σnet/remote-hull'
 import { buildNameplate } from 'Σbattle/visuals'
 import { RaceTransport } from 'Σrace/transport'
 import { TRACK_VISUALS } from 'Σlevels/types'
+import { buildDraft, draftEnvironment } from 'Σlevels/draft'
 import { activeControls } from 'Σinput'
 import { mountBaseScene } from 'Σscenes/base'
 
 import type RAPIER from '@dimforge/rapier3d-deterministic-compat'
 import type { App, AppModule } from 'threejs-scene'
-import type { TrackId } from 'Λ'
+import type { TrackBundle, TrackId } from 'Λ'
+import type { PropPlacement } from 'Ȼprops'
 import type { Nameplate } from 'Σbattle/visuals'
 import type { NetRacer, RaceFrame } from 'Σrace/transport'
 import type { RaceState } from 'Ƨ'
@@ -47,6 +49,21 @@ export type RaceMountOptions = {
 
   /** The route's `touch` parameter, read by the page with `useSearchParams`. */
   forcedTouch?: string | null;
+
+  /**
+   * A track the map forge just compiled, instead of a shipped one.
+   *
+   * The whole point of the forge's test drive: the bundle is the same shape
+   * `trackBundle` returns, built by the same `buildTrack` the shipped levels
+   * use, so it is driven by the real scene rather than previewed by a
+   * lookalike. No room is joined for a draft — the server has never heard of
+   * this track — and the free-flight path the app already has for an
+   * unreachable server is exactly the right behaviour.
+   */
+  draft?: {
+    bundle: TrackBundle;
+    props:  readonly PropPlacement[];
+  };
 }
 
 /** Grid colours, by finishing position rather than by team. */
@@ -67,7 +84,8 @@ export async function mountRace (
   trackId: TrackId,
   options: RaceMountOptions = {}
 ): Promise<App<RaceState>> {
-  const bundle    = trackBundle(trackId)
+  const draft     = options.draft
+  const bundle    = draft?.bundle ?? trackBundle(trackId)
   const track     = bundle.spec
   const transport = new RaceTransport()
   const controls  = activeControls()
@@ -202,8 +220,10 @@ export async function mountRace (
     },
     colliders:      track.colliders,
     colliderOffset: track.colliderOffset,
-    environment:    TRACK_VISUALS[trackId].environment,
-    buildGeometry:  ctx => TRACK_VISUALS[trackId].build(ctx, bundle),
+    environment:    draft ? draftEnvironment(bundle) : TRACK_VISUALS[trackId].environment,
+    buildGeometry:  ctx => draft
+      ? buildDraft(ctx, bundle, draft.props)
+      : TRACK_VISUALS[trackId].build(ctx, bundle),
 
     gameModuleFactory: (physics, telemetry, sceneControls, vehicleRef, rig) => {
       // The ONE body in this world besides the track: the predicted local ship.
@@ -239,12 +259,14 @@ export async function mountRace (
       }
 
       resetRaceTimers()
-      transport.connect({
-        name:   options.name ?? 'Pilot',
-        shipId: 'icaras',
-        trackId,
-        server: options.server,
-      })
+      // A draft has no room to join. Free flight is the test drive.
+      if (!draft)
+        transport.connect({
+          name:   options.name ?? 'Pilot',
+          shipId: 'icaras',
+          trackId,
+          server: options.server,
+        })
 
       let clientTick   = 0
       let lastSnapshot = 0

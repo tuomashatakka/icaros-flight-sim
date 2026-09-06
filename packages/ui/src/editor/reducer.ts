@@ -3,6 +3,8 @@ import type {
   BattleDocument, EditorDocument, MapKind, PlateauItem, RaceDocument, RouteNode, SpawnItem, ZoneItem,
 } from './document'
 import type { BattleTeam } from 'Ψarena'
+import { PROP_CATALOGUE } from 'Ȼprops'
+import type { PropKind, PropPlacement } from 'Ȼprops'
 
 
 /**
@@ -35,23 +37,28 @@ export type EditorAction =
   { type: 'spawn.add'; x: number; z: number; team: BattleTeam } |
   { type: 'spawn.patch'; id: string; patch: Partial<SpawnItem> } |
   { type: 'base.patch'; team: BattleTeam; patch: Partial<{ x: number; y: number; z: number }> } |
+  { type: 'prop.pick'; kind: PropKind } |
+  { type: 'prop.add'; kind: PropKind; x: number; z: number } |
+  { type: 'prop.patch'; id: string; patch: Partial<PropPlacement> } |
   { type: 'remove'; id: string } |
   { type: 'undo' } |
   { type: 'redo' }
 
-export type Tool = 'select' | 'route' | 'plateau' | 'zone' | 'spawn'
+export type Tool = 'select' | 'route' | 'plateau' | 'zone' | 'spawn' | 'prop'
 
 /** Which tools make sense for which map kind. The toolbar renders this, it does not restate it. */
 export const TOOLS: Record<MapKind, { id: Tool; label: string; glyph: string; hint: string }[]> = {
   race: [
     { id: 'select', label: 'Select', glyph: '⌖', hint: 'Drag a node to move it; the inspector edits width, elevation and bank.' },
     { id: 'route', label: 'Route', glyph: '⌁', hint: 'Click the deck to append a control point to the racing line.' },
+    { id: 'prop', label: 'Prop', glyph: '❖', hint: 'Pick a prop in the palette, then click to place it. Solid props get colliders.' },
   ],
   battle: [
     { id: 'select', label: 'Select', glyph: '⌖', hint: 'Drag a mesa, zone or spawn; the inspector edits its footprint.' },
     { id: 'plateau', label: 'Mesa', glyph: '▣', hint: 'Click to drop a raised plateau. Ramps are per-face, in the inspector.' },
     { id: 'zone', label: 'Zone', glyph: '◎', hint: 'Click to drop a capture zone.' },
     { id: 'spawn', label: 'Spawn', glyph: '◆', hint: 'Click to drop a spawn point for the active team.' },
+    { id: 'prop', label: 'Prop', glyph: '❖', hint: 'Pick a prop in the palette, then click to place it. Solid props get colliders.' },
   ],
 }
 
@@ -60,6 +67,9 @@ export type EditorState = {
   tool:     Tool;
   selected: string | null;
   team:     BattleTeam;
+
+  /** Which prop the prop tool drops. View state, so it is not undoable. */
+  prop: PropKind;
 
   /** Documents only. Tool and selection are view state and must not be undoable. */
   past:   EditorDocument[];
@@ -70,7 +80,7 @@ export type EditorState = {
 const HISTORY_LIMIT = 60
 
 export function initialEditorState (kind: MapKind = 'race'): EditorState {
-  return { document: createDocument(kind), tool: 'select', selected: null, team: 'red', past: [], future: []}
+  return { document: createDocument(kind), tool: 'select', selected: null, team: 'red', prop: 'pylon', past: [], future: []}
 }
 
 export function editorReducer (state: EditorState, action: EditorAction): EditorState {
@@ -95,6 +105,11 @@ export function editorReducer (state: EditorState, action: EditorAction): Editor
     return state.selected === action.id ? state : { ...state, selected: action.id }
   if (action.type === 'tool')
     return state.tool === action.tool ? state : { ...state, tool: action.tool }
+
+  // Which prop the palette has armed is view state, exactly like the tool and
+  // the selection, so it must not push an undo entry either.
+  if (action.type === 'prop.pick')
+    return state.prop === action.kind ? state : { ...state, prop: action.kind, tool: 'prop' }
 
   const next = step(state, action)
   if (next === state)
@@ -129,6 +144,25 @@ function step (state: EditorState, action: EditorAction): EditorState {
   const doc = state.document
 
   switch (action.type) {
+    case 'prop.add': {
+      const def   = PROP_CATALOGUE[action.kind]
+      const added = {
+        id:    nextId('prop'),
+        kind:  action.kind,
+        x:     action.x,
+        y:     0,
+        z:     action.z,
+        yaw:   0,
+        scale: 1,
+        color: def.color,
+      }
+      return { ...state, selected: added.id, document: { ...doc, props: [ ...doc.props, added ]}}
+    }
+    case 'prop.patch':
+      return {
+        ...state,
+        document: { ...doc, props: doc.props.map(prop => prop.id === action.id ? { ...prop, ...action.patch } : prop) },
+      }
     case 'load': {
       const loaded = normaliseDocument(action.document)
       return { ...state, document: loaded, selected: null, tool: 'select' }
@@ -160,6 +194,12 @@ function step (state: EditorState, action: EditorAction): EditorState {
 /** Delete whichever kind of item owns `id`, honouring each collection's floor. */
 function removeStep (state: EditorState, id: string): EditorState {
   const doc = state.document
+
+  // Props are the one collection both kinds share, so they are checked before
+  // the kind split rather than duplicated on either side of it.
+  if (doc.props.some(prop => prop.id === id))
+    return { ...state, selected: null, document: { ...doc, props: doc.props.filter(prop => prop.id !== id) }}
+
   if (doc.kind === 'race')
     return raceStep(state, { type: 'node.remove', id })
 

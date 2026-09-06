@@ -1,5 +1,6 @@
 import * as THREE from 'three'
-import { buildCheckpoints, buildTrack, ribbonBoxColliders } from 'Λ'
+import { buildCheckpoints, buildTrack, ribbonBoxColliders, ribbonWallColliders } from 'Λ'
+import { propColliders } from 'Ȼprops'
 import type { TrackSpec, Vec3Tuple } from 'Λtrack'
 import { BATTLE_TEAMS, plateauColliders } from 'Ψarena'
 import type { ArenaTransform, BattleArena, BattleTeam, ControlPointDef, PlateauDef } from 'Ψarena'
@@ -110,15 +111,21 @@ export function compileRace (doc: EditorDocument): CompiledRace {
   geometry.computeBoundingSphere()
 
   const spec: TrackSpec = {
-    id:             doc.id,
-    name:           doc.name,
-    background:     environment.background,
-    fog:            [ environment.fogColor, environment.fogNear, environment.fogFar ],
-    waypoints:      race.nodes.map(n => [ n.x, n.y, n.z ] as Vec3Tuple),
-    width:          uniform,
-    laps:           race.laps,
-    loop:           race.loop,
-    colliders:      ribbonBoxColliders(vertices, { stride: 1 }),
+    id:         doc.id,
+    name:       doc.name,
+    background: environment.background,
+    fog:        [ environment.fogColor, environment.fogNear, environment.fogFar ],
+    waypoints:  race.nodes.map(n => [ n.x, n.y, n.z ] as Vec3Tuple),
+    width:      uniform,
+    laps:       race.laps,
+    loop:       race.loop,
+    colliders:  [
+      ...ribbonBoxColliders(vertices, { stride: 1 }),
+      // Barriers, exactly as the shipped tracks get them. A forged circuit
+      // without them is the same unraceable ribbon those tracks used to be.
+      ...ribbonWallColliders(vertices, { height: 6, stride: 1 }),
+      ...propColliders(doc.props),
+    ],
     colliderOffset: [ 0, -0.05, 0 ],
     bloom:          {
       strength:  environment.bloomStrength,
