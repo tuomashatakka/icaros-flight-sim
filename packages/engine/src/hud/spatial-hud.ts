@@ -266,11 +266,11 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
     const aspect      = viewAspect(frame.camera)
     const height      = Math.round(Math.sqrt(OVERLAY_PIXELS / Math.max(aspect, 0.01)))
     const targetWidth = Math.max(1, Math.round(height * aspect))
-    if (overlay.canvas.width !== targetWidth || overlay.canvas.height !== height) {
-      overlay.canvas.width  = targetWidth
-      overlay.canvas.height = height
-      overlayDirty          = true
-    }
+
+    // Through `resize`, never by assigning to the canvas: the GPU allocation
+    // has to be thrown away with it. See `HudPanel.resize`.
+    if (overlay.resize(targetWidth, height))
+      overlayDirty = true
 
     const rect = canvas.getBoundingClientRect()
     if (rect.width > 0 && rect.height > 0 &&
@@ -399,18 +399,22 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
     else if (!modalReveal.live(frame.elapsed))
       modalData = null
 
-    // Two gates, and both are about the same frame rather than about the
-    // device: the rail follows the visor in by 87 ms so the mount is not one
-    // wall of motion, and it steps aside for a full-screen layer, which draws
-    // over it and would otherwise be tapped through. Nothing else can withhold
-    // it — a rail whose existence depended on the state of a layer it has
-    // nothing to do with is how it came to be missing entirely.
+    // ONE gate, and it is about this frame rather than about the device or
+    // about any other layer: the rail follows the visor in by 87 ms so the
+    // mount is not one wall of motion. That is the whole of it.
+    //
+    // `blocking` used to be in here as well, which meant a full-screen layer
+    // took the controls away — including the battle error card a client-only
+    // deployment shows permanently. Nothing may withhold the rail now: it is
+    // drawn unconditionally and this only decides how far into its arrival it
+    // is, so the worst a broken clock can do is leave it at its floor alpha
+    // rather than leave the player with no controls at all.
     //
     // The stagger waits on the CLOCK, not on `revealPhase`. Same moment to the
     // millisecond as the old gate, which was the EASED phase passing 0.5:
     // `1 - (1 - t)³` crosses a half at t ≈ 0.206, not halfway through.
     const staggered = mountedAt !== null && frame.elapsed - mountedAt >= TOUCH_STAGGER_S
-    touchReveal.set(isTouch && staggered && !blocking, frame.elapsed)
+    touchReveal.set(isTouch && staggered, frame.elapsed)
 
     // A layer mid-transition needs every frame. `isHudBlockingOverlay` alone
     // would stop redrawing the moment a modal closed and freeze its exit wipe

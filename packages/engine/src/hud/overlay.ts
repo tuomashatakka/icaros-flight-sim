@@ -1,6 +1,6 @@
 import { TEAM_COLORS } from 'Ψarena'
 import type { Controls } from '../input'
-import { chamferPath, drawCornerBrackets, drawPlate, drawPlateLabel, drawScanlines, drawStick, drawTrackedText, glowText } from './chrome'
+import { chamferPath, drawCornerBrackets, drawHoloPlate, drawHoloStick, drawPlate, drawPlateLabel, drawScanlines, drawTrackedText, glowText } from './chrome'
 import type { Rect } from './chrome'
 import { HudPanel } from './panel'
 import { drawHudSight } from './sight'
@@ -455,7 +455,7 @@ function drawTouchControls (
   context.translate(0, rise)
 
   for (const stick of layout.sticks) {
-    drawStick(context, stick.centerX, stick.centerY, stick.radius, {
+    drawHoloStick(context, stick.centerX, stick.centerY, stick.radius, {
       offsetX: stickX[stick.stick],
       offsetY: stickY[stick.stick],
       engaged: Math.hypot(stickX[stick.stick], stickY[stick.stick]) > 0.02,
@@ -479,7 +479,7 @@ function drawTouchControls (
       ? held.has(button.action) || liveHold(button.action, controls)
       : false
 
-    drawPlate(context, button.rect, { accent, active })
+    drawHoloPlate(context, button.rect, { accent, active })
     drawScanlines(context, button.rect, frame.elapsed, accent)
     drawPlateLabel(
       context,
@@ -634,6 +634,20 @@ export function drawHudOverlay ({
   if (modalClosing)
     overlay.regions.length = regionMark
 
+  // Outside every branch above, and LAST.
+  //
+  // The controls used to live inside `drawLiveLayers`, which meant any
+  // full-screen layer took them away: a battle whose server never answered
+  // reports `status: 'error'`, and that is the ordinary state of a client-only
+  // deployment with no game server reachable — so the one build where the
+  // player most needs an on-screen stick was the one build that drew none.
+  // A finish card and the tuning popover did the same thing for the same
+  // reason. None of them is a reason to stop flying, so none of them may take
+  // the controls away; drawing last also puts their regions above a modal's in
+  // the hit test, so a stick under a card is still a stick.
+  if (isTouch)
+    drawTouchControls(overlay, data, frame, controls, insets, cssSize, stickX, stickY, held, touchPhase)
+
   // Last, and outside every branch above, so it reports even when the thing it
   //  is reporting on drew nothing at all.
   if (touchDebug) {
@@ -662,7 +676,5 @@ export function drawHudOverlay ({
     // by a reticle that happens to swing across them.
     drawHudSight(overlay, data, frame)
     drawCountdown(overlay, data)
-    if (isTouch && touchPhase > 0.001)
-      drawTouchControls(overlay, data, frame, controls, insets, cssSize, stickX, stickY, held, touchPhase)
   }
 }

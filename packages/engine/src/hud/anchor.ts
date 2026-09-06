@@ -30,9 +30,55 @@ const HALO_LIFT = 0.9
  */
 const HALO_SCALE = 1.35
 
+/** The aspect the visor's bounds were authored against. */
+const REFERENCE_ASPECT = 16 / 9
+
+/** `HUD_VISOR_BOUNDS.outerX` / `outerY`: the authored visor's outer half-extents. */
+const VISOR_HALF_WIDTH  = 4.35
+const VISOR_HALF_HEIGHT = 2.72
+
+/**
+ * The frame's half-height, in the units the visor is authored in.
+ *
+ * At the reference aspect the seated visor spans the frame's full width, so the
+ * frame's half-width IS `VISOR_HALF_WIDTH`; its half-height follows from the
+ * aspect. Everything about portrait placement is measured against this.
+ */
+const FRAME_HALF_HEIGHT = VISOR_HALF_WIDTH / REFERENCE_ASPECT
+
+/**
+ * The bottom band of the frame the visor keeps clear, as a fraction of the
+ * frame's half-height — so 0.66 is the bottom third of the screen.
+ *
+ * The thumb cluster lives there — two sticks, two shoulder rails and the
+ * utility pair — and it is drawn on the screen layer, in FRONT of the visor.
+ * Instruments behind a stick are instruments you cannot read, and in portrait
+ * there is plenty of frame to move them out of.
+ */
+const THUMB_BAND = 0.66
+
+/**
+ * The aspect below which the visor is WORN rather than carried.
+ *
+ * The chase station hangs the panels around the hull, ten-odd units down the
+ * nose, which is a good hologram on a monitor and an unreadable speck on a
+ * phone held upright: fitting it to a 390 px frame leaves each outer facet
+ * about 85 px wide. The seated station is screen-locked and fills the frame's
+ * full width by construction, which is three times the size for the same
+ * pixels — so as the frame narrows the station slides to the seated one
+ * regardless of where the CAMERA is. The camera does not move; only the
+ * anchor does, and a third-person view with a helmet HUD over it is what a
+ * phone wants anyway.
+ */
+const WORN_ASPECT = 1.2
+
+/** Aspect at which the slide to the worn station is complete. */
+const WORN_ASPECT_FULL = 0.8
+
 const _fwd      = new THREE.Vector3()
 const _chase    = new THREE.Quaternion()
 const _shipPose = new THREE.Vector3()
+const _up       = new THREE.Vector3()
 const WORLD_UP  = new THREE.Vector3(0, 1, 0)
 
 /**
@@ -83,9 +129,28 @@ export function hudStation (out: HudStation, input: HudStationInput): HudStation
   const fovScale = Math.tan(THREE.MathUtils.degToRad(fov * 0.5)) /
     Math.tan(THREE.MathUtils.degToRad(HUD_REFERENCE_FOV * 0.5))
 
-  // Portrait would otherwise push the outer facets past the frame edge. Applied
-  // at both ends: legibility is not a property of which view you are in.
-  const squeeze = Math.min(1, aspect / (16 / 9))
+  // Portrait would otherwise push the outer facets past the frame edge, so the
+  // visor is scaled to fit the frame's width — UNIFORMLY, on both axes.
+  //
+  // It used to scale X alone. That does keep the outer facets on screen, and it
+  // does it by squashing the visor to 26 % of its width on a 19.5:9 phone while
+  // leaving its height untouched: every readout became a letterbox of
+  // half-width glyphs, and the seven facets stopped reading as one curved
+  // surface because the fold they are drawn on was no longer the fold they were
+  // authored on. Fitting proportionally costs size and keeps the shape, which
+  // is the trade that leaves it legible.
+  const fit = Math.min(1, aspect / REFERENCE_ASPECT)
+
+  // Where the visor sits in the frame, in frame-half-heights below centre.
+  //
+  // A cockpit puts its instruments UNDER the sightline; the middle of the
+  // canopy is the part you look through. In landscape the visor already fills
+  // the frame and this is zero, so nothing moves. Portrait leaves two thirds of
+  // the frame spare, and floating the cluster dead centre spends that on
+  // nothing — it hangs the panels across the horizon and still collides with
+  // the thumb controls at the bottom. Dropping it to sit just above the thumb
+  // band opens the sightline and closes the collision with the same number.
+  const drop = Math.min(0, VISOR_HALF_HEIGHT * fit / FRAME_HALF_HEIGHT - (1 - THUMB_BAND))
 
   // The visor looks down its own -Z, and the ship's forward is +Z, so the
   // hull-framed anchor is the hull's yaw turned to face back down the nose —
@@ -98,11 +163,25 @@ export function hudStation (out: HudStation, input: HudStationInput): HudStation
 
   _shipPose.copy(shipPosition).addScaledVector(WORLD_UP, HALO_LIFT)
 
-  const scale = THREE.MathUtils.lerp(HALO_SCALE, fovScale, cameraBlend)
+  // How SEATED the visor is, which is the camera's blend everywhere the frame is
+  // wide enough to carry a halo and is driven to 1 by the frame itself where it
+  // is not. One number, still continuous, so the pinch keeps working and there
+  // is no orientation flip anywhere.
+  const worn    = THREE.MathUtils.clamp((WORN_ASPECT - aspect) / (WORN_ASPECT - WORN_ASPECT_FULL), 0, 1)
+  const framing = cameraBlend + (1 - cameraBlend) * worn
 
-  out.position.lerpVectors(_shipPose, camera.position, cameraBlend)
-  out.quaternion.slerpQuaternions(_chase, hudQuaternion, cameraBlend)
-  out.scale.set(scale * squeeze, scale)
+  const scale = THREE.MathUtils.lerp(HALO_SCALE, fovScale, framing)
+
+  out.position.lerpVectors(_shipPose, camera.position, framing)
+  out.quaternion.slerpQuaternions(_chase, hudQuaternion, framing)
+  out.scale.set(scale * fit, scale * fit)
+
+  // Along the station's OWN up, not the world's, so the dash stays under the
+  // sightline through a roll instead of sliding across the canopy.
+  if (drop < 0) {
+    _up.set(0, 1, 0).applyQuaternion(out.quaternion)
+    out.position.addScaledVector(_up, drop * FRAME_HALF_HEIGHT * fovScale)
+  }
 
   return out
 }

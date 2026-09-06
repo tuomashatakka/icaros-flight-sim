@@ -4,8 +4,8 @@ import { createHudStation, hudStation } from 'Σhud/anchor'
 import type { HudStationInput } from 'Σhud/anchor'
 
 
-function input (cameraBlend: number, yaw = 0): HudStationInput {
-  const camera = new THREE.PerspectiveCamera(40, 16 / 9, 0.1, 400)
+function input (cameraBlend: number, yaw = 0, aspect = 16 / 9): HudStationInput {
+  const camera = new THREE.PerspectiveCamera(40, aspect, 0.1, 400)
   camera.position.set(0, 3.4, -9)
 
   const hullQuaternion = new THREE.Quaternion().setFromAxisAngle(new THREE.Vector3(0, 1, 0), yaw)
@@ -78,6 +78,48 @@ describe('hud anchor', () => {
       const station = hudStation(createHudStation(), input(blend))
       expect(station.scale.x).toBeGreaterThan(0.1)
       expect(station.scale.y).toBeGreaterThan(0.1)
+    }
+  })
+
+  it('fits the visor to a portrait frame without distorting it', () => {
+    // It used to scale X alone, which on a 19.5:9 phone squashed the visor to a
+    // quarter of its width while leaving its height alone: every glyph became a
+    // letterbox and the seven facets stopped reading as one folded surface.
+    const portrait = hudStation(createHudStation(), input(1, 0, 390 / 844))
+
+    expect(portrait.scale.x).toBeCloseTo(portrait.scale.y, 6)
+    expect(portrait.scale.x).toBeLessThan(0.4)
+  })
+
+  it('drops the visor under the sightline in portrait and nowhere else', () => {
+    // A cockpit keeps its instruments below the horizon, and in portrait there
+    // are two thirds of a frame going spare above the thumb controls.
+    const seated   = hudStation(createHudStation(), input(1)).position.clone()
+    const portrait = hudStation(createHudStation(), input(1, 0, 390 / 844)).position.clone()
+
+    // Landscape is untouched: the visor already fills the frame there.
+    expect(seated.toArray()).toEqual([ 0, 3.4, -9 ])
+    expect(portrait.y).toBeLessThan(seated.y)
+  })
+
+  it('wears the visor on a narrow frame even while the camera is in chase', () => {
+    // A halo hung around the hull is unreadable on a phone held upright: the
+    // seated station is screen-locked and fills the frame's width instead. The
+    // camera has not moved — only the anchor.
+    const chaseWide     = hudStation(createHudStation(), input(0))
+    const chasePortrait = hudStation(createHudStation(), input(0, 0, 390 / 844))
+
+    // Wide: the halo rides the ship at the origin, as it always has.
+    expect(chaseWide.position.z).toBe(0)
+    // Narrow: it has slid onto the camera.
+    expect(chasePortrait.position.z).toBeCloseTo(-9, 6)
+    expect(chasePortrait.position.y).toBeLessThan(3.4)
+  })
+
+  it('leaves the visor centred on frames at least as wide as it was authored for', () => {
+    for (const aspect of [ 16 / 9, 21 / 9, 4 / 3 ]) {
+      const station = hudStation(createHudStation(), input(1, 0, aspect))
+      expect(station.position.toArray(), `aspect ${aspect}`).toEqual([ 0, 3.4, -9 ])
     }
   })
 })
