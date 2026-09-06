@@ -27,12 +27,6 @@ type IcarasPartsData = {
   parts:  Record<IcarasPartName, IcarasPartData>;
 }
 
-type IcarasGeneratedOptions = {
-  bodyWidth?:      number;
-  verticalHeight?: number;
-  bodyLength?:     number;
-}
-
 const DATA                                         = partsData as unknown as IcarasPartsData
 const MATERIAL_ORDER: IcarasMaterialName[]         = [ 'Body', 'Cockpit', 'Glass', 'Glow' ]
 const PART_KEYS: Exclude<IcarasPartName, 'hull'>[] = [ 'engineL', 'engineR', 'weaponL', 'weaponR' ]
@@ -141,11 +135,17 @@ function createIcarasMaterials (): THREE.MeshStandardMaterial[] {
   return [ body, cockpit, glass, glow ]
 }
 
-export function createGeneratedIcarasShip ({
-  bodyWidth = 1,
-  verticalHeight = 1,
-  bodyLength = 1,
-}: IcarasGeneratedOptions = {}): THREE.Group {
+/**
+ * Assemble the Icaras from its extracted part table.
+ *
+ * Takes no shape options any more: the fifteen hull parameters are a vertex
+ * deform applied by `Σship/hull-deform` after the loader has fitted the model,
+ * and it walks the four child parts through their own matrices. The three
+ * scale multipliers that used to live here — with every child counter-scaled by
+ * their reciprocal to keep the pods from stretching — are gone with the hack
+ * they needed.
+ */
+export function createGeneratedIcarasShip (): THREE.Group {
   const materials             = createIcarasMaterials()
   const ship                  = new THREE.Group()
   ship.name                   = 'generated-icaras-ship'
@@ -167,10 +167,6 @@ export function createGeneratedIcarasShip ({
     mesh.position.set(part.origin[0], part.origin[1], part.origin[2])
     hull.add(mesh)
   }
-
-  hull.scale.set(bodyWidth, verticalHeight, bodyLength)
-  for (const child of hull.children)
-    child.scale.set(1 / bodyWidth, 1 / verticalHeight, 1 / bodyLength)
 
   return ship
 }

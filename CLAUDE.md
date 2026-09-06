@@ -58,6 +58,13 @@ what a summary field means. Invoke it when debugging runtime behaviour.
   `paths` ever includes `Δ*`, so that import is a compile error, not a
   boot-time surprise. `@/…` and `@crash-velocity/*` import specifiers no
   longer exist anywhere in the tree.
+- **Hull geometry is scanned, not tabulated.** `Σship/hull-profile` measures each
+  loaded hull's landmarks; `Σship/hull-deform` moves the cloud with the fifteen
+  parameters in `Ȼship/hull-shape`. Always deform from the per-mesh snapshot,
+  and keep `HULL_DEFAULTS` an exact identity — normals included.
+- **The map forge compiles through `Λtrack-geometry` / `Ψarena`.** If the editor
+  ever evaluates a spline of its own, the plan view and the game have already
+  diverged.
 - **Adding persistent sim state? Constructor-initialise it.** Both replay
   harnesses build a fresh sim per run, so there is no reset list to update — but
   a field set anywhere else makes a run start from a different value than the

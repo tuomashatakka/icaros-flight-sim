@@ -11,6 +11,8 @@ import type { ShipId } from 'Φships'
 // without dragging WebGL code where it doesn't belong.
 
 import type { WeaponId } from 'Ψweapons'
+import { HULL_DEFAULTS } from './hull-shape'
+import type { HullShape } from './hull-shape'
 
 
 export type TexturePreset = 'plain' | 'panels' | 'carbon' | 'hazard' | 'city' | 'gallery' | 'racing' | 'splinter' | 'circuit'
@@ -18,8 +20,14 @@ export type PaletteName =
   | 'default' | 'colibri' | 'ion' | 'ember' | 'ink' | 'toxic' |
   'mercury' | 'venom' | 'sunset' | 'abyss' | 'bone' | 'vapor'
 
-/** The user-tweakable appearance fields (everything in a config except which ship it is). */
-export interface ShipCustomization {
+/**
+ * The user-tweakable fields (everything in a config except which ship it is).
+ *
+ * Extends `HullShape`, so the fifteen parametric-geometry sliders are part of a
+ * ship config by construction: adding one to `hull-shape.ts` makes it
+ * persisted, randomisable and deformable without touching this file.
+ */
+export interface ShipCustomization extends HullShape {
   bodyColor:         string;
   emissiveColor:     string;
   metalness:         number;
@@ -78,18 +86,10 @@ export interface ShipCustomization {
 
   // --- hull shape -----------------------------------------------------------
   //
-  // Non-uniform scale on the fitted hull. Applied on the fit group rather than
-  // the root, because the sim writes the root's pose every frame and would
-  // clobber anything set there.
-
-  /** Beam multiplier. */
-  bodyWidth: number;
-
-  /** Ride-height / canopy multiplier. */
-  bodyHeight: number;
-
-  /** Nose-to-tail multiplier. */
-  bodyLength: number;
+  // The fifteen geometry parameters come in through `HullShape`. They are a
+  // real VERTEX deform against landmarks scanned off the hull at load time, not
+  // a scale on the fit group — which is what the first three used to be, and
+  // why they could only ever stretch a silhouette rather than reshape one.
 
   /** Normal-map depth, i.e. how pronounced the hull plating reads. */
   platingDepth: number;
@@ -319,9 +319,7 @@ export const BASE_CONFIG: ShipCustomization = {
   trimColor:         '#36d6ff',
   gloss:             0.9,
   patternAngle:      0,
-  bodyWidth:         1,
-  bodyHeight:        1,
-  bodyLength:        1,
+  ...HULL_DEFAULTS,
   platingDepth:      1,
   primaryWeapon:     'pulse',
   secondaryWeapon:   'hornet',

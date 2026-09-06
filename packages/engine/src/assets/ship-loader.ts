@@ -10,6 +10,10 @@ import { createAfterburner, deriveNozzles } from '../fx/afterburner'
 import type { Afterburner } from '../fx/afterburner'
 import { createCannons, deriveHardpoints } from '../ship/cannons'
 import type { Cannons } from '../ship/cannons'
+import { buildHullRig } from '../ship/hull-profile'
+import type { HullRig } from '../ship/hull-profile'
+import { applyHullDeform } from '../ship/hull-deform'
+import { hullShapeKey, hullShapeOf } from 'Ȼship/hull-shape'
 
 // `blankTexManager` rewrites every image URL the FBX asks for to a 1x1 GIF —
 // the WipEout scans carry baked absolute Windows paths that would otherwise 404.
@@ -91,6 +95,14 @@ export type ShipInstance = {
 
   /** Re-apply livery without rebuilding — palette/colour/roughness edits. */
   applyConfig(config: ShipConfig): void;
+
+  /**
+   * The scanned hull: every mesh's untouched vertex snapshot plus the landmarks
+   * the deformer measures its parameters against. Exposed so a caller (the
+   * hangar's wire overlay, a future collider fit) can read the same silhouette
+   * the sliders are moving instead of re-deriving one that disagrees.
+   */
+  rig: HullRig;
   dispose(): void;
 }
 
@@ -123,7 +135,7 @@ export async function loadShip (shipId: ShipId, targetSize: number): Promise<Shi
       break
     }
     case 'generated':
-      model = createGeneratedIcarasShip({})
+      model = createGeneratedIcarasShip()
       break
     default:
       throw new Error(`Unknown ship kind for "${shipId}"`)
@@ -145,9 +157,10 @@ export async function loadShip (shipId: ShipId, targetSize: number): Promise<Shi
 
   const inner = new THREE.Group()
   inner.scale.setScalar(fit.scale)
-  // Hull-shape deform multiplies the FIT scale on this group, never on `root`:
-  // the sim writes root.position/quaternion every frame and a scale set there
-  // survives exactly one tick.
+  // `inner` carries the FIT scale and nothing else. The hull-shape parameters
+  // move vertices instead, so this stays uniform — and it is never set on
+  // `root`, because the sim writes root.position/quaternion every frame and a
+  // scale there survives exactly one tick.
   if (preset.modelRotation)
     model.rotation.set(preset.modelRotation[0], preset.modelRotation[1], preset.modelRotation[2])
 
@@ -171,6 +184,11 @@ export async function loadShip (shipId: ShipId, targetSize: number): Promise<Shi
   const cannons = createCannons()
   root.add(cannons.group)
 
+  // Scan the hull ONCE, in `inner`'s frame — post-rotation, so the nose already
+  // points +z and the deformer's nose/tail landmarks mean the same thing on all
+  // nine hulls regardless of how their author oriented them.
+  const rig = buildHullRig(model, inner)
+
   // Nozzles are derived from `inner` (post-fit, post-rotation) so they land in
   // root-local units and survive any future change to the fit maths.
   let nozzleSpread = -1
@@ -181,21 +199,25 @@ export async function loadShip (shipId: ShipId, targetSize: number): Promise<Shi
     root,
     burner,
     cannons,
+    rig,
     applyConfig (config) {
       applyShipConfig(model, config)
 
       // Deform first: nozzles and hardpoints are both measured off the fitted
-      // hull, so re-deriving them before the new scale is in place pins them to
+      // hull, so re-deriving them before the new shape is in place pins them to
       // the OLD silhouette and they drift out of the hull as the sliders move.
-      const nextShape = `${config.bodyWidth}|${config.bodyHeight}|${config.bodyLength}`
+      //
+      // This is a VERTEX deform now, not a scale on `inner`. The old three
+      // multipliers could only stretch the whole hull at once; the fifteen here
+      // move nose, wings, canopy, keel and pods independently, against
+      // landmarks scanned off this specific mesh. `inner` therefore keeps the
+      // pure fit scale and nothing downstream has to unpick a non-uniform one.
+      const shape     = hullShapeOf(config)
+      const nextShape = hullShapeKey(shape)
       const reshaped  = nextShape !== shapeKey
       if (reshaped) {
         shapeKey = nextShape
-        inner.scale.set(
-          fit.scale * config.bodyWidth,
-          fit.scale * config.bodyHeight,
-          fit.scale * config.bodyLength
-        )
+        applyHullDeform(rig, shape)
         inner.updateMatrixWorld(true)
       }
 
