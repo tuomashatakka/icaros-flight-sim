@@ -204,6 +204,21 @@ function geometryFor (kind: PropKind): THREE.BufferGeometry {
 }
 
 /**
+ * Whether a geometry belongs to the shared per-kind cache.
+ *
+ * Callers that tear a scene down have to skip these: the cache is module-level
+ * and reused by every later `buildProps`, so disposing one takes the props out
+ * of the next scene with it. The forge's 3D preview is exactly that caller — it
+ * rebuilds on every edit.
+ */
+export function isSharedPropGeometry (geometry: THREE.BufferGeometry): boolean {
+  for (const cached of geometries.values())
+    if (cached === geometry)
+      return true
+  return false
+}
+
+/**
  * Every placement, as one instanced mesh per kind.
  *
  * Colour is per instance through `setColorAt`, which is why a placement may

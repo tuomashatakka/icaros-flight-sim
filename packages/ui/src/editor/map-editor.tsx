@@ -12,6 +12,7 @@ import { zoomAbout } from './projection'
 import { useEditor } from './use-editor'
 import { Inspector } from './inspector'
 import { Viewport } from './viewport'
+import { Viewport3D } from './viewport-3d'
 import type { MapKind } from './document'
 import styles from './map-editor.module.css'
 
@@ -47,6 +48,10 @@ export function MapEditor () {
   // with site data blocked. Silently opening a tab onto an empty track is the
   // one outcome worse than saying so.
   const [ storageBlocked, setStorageBlocked ] = useState(false)
+
+  // Plan or perspective. View state and nothing else — the document is the same
+  // either way, and so is the compile it is drawn from.
+  const [ view, setView ] = useState<'plan' | '3d'>('plan')
 
   const { state, dispatch, camera, setCamera, compiled, arena, issues, blocking } = editor
   const { document: doc, tool, selected, team }                                   = state
@@ -144,19 +149,28 @@ export function MapEditor () {
     </nav>
 
     <section className={ styles.stage }>
-      <Viewport
-        document={ doc }
-        compiled={ compiled }
-        camera={ camera }
-        tool={ tool }
-        selected={ selected }
-        onCamera={ setCamera }
-        onSelect={ id => dispatch({ type: 'select', id }) }
-        onPlace={ editor.place }
-        onDragItem={ editor.dragItem } />
+      { view === 'plan'
+        ? <Viewport
+          document={ doc }
+          compiled={ compiled }
+          camera={ camera }
+          tool={ tool }
+          selected={ selected }
+          onCamera={ setCamera }
+          onSelect={ id => dispatch({ type: 'select', id }) }
+          onPlace={ editor.place }
+          onDragItem={ editor.dragItem } />
+        : <Viewport3D document={ doc } compiled={ compiled } /> }
+
+      <div className={ styles.viewPicker } role="group" aria-label="Viewport">
+        <button aria-pressed={ view === 'plan' } onClick={ () => setView('plan') }>Plan</button>
+        <button aria-pressed={ view === '3d' } onClick={ () => setView('3d') }>3D</button>
+      </div>
 
       <p className={ styles.hint }>
-        { activeTool?.hint } Hold Alt to place off-grid · scroll to zoom · F to frame.
+        { view === 'plan'
+          ? `${activeTool?.hint ?? ''} Hold Alt to place off-grid · scroll to zoom · F to frame.`
+          : 'Drag to orbit · scroll to dolly. Editing happens in the plan view.' }
       </p>
 
       <div className={ styles.zoom }>
