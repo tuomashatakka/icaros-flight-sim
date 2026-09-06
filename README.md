@@ -67,6 +67,28 @@ mid-corner.
 - **Neon Canyon** — banked, winding ravine loop.
 - **Orbital Ring** — banked figure-eight station suspended in the starfield.
 
+## The map forge
+
+`/editor` authors real levels, not diagrams. The document is a small JSON model
+(`packages/ui/src/editor/document.ts`) in world metres; `compile.ts` turns it into an
+actual `TrackSpec` or `BattleArena` by calling the same `buildTrack`,
+`ribbonBoxColliders` and `plateauColliders` the shipped levels call, so the plan view
+outlines the deck a room would simulate rather than a bezier that resembles it.
+
+- **Circuits** — a Catmull-Rom through draggable control points with per-node width,
+  elevation and bank; the compiler emits the ribbon, its box colliders, the gate
+  waypoints, fog and bloom.
+- **Arenas** — plateaus with per-face ramps, capture zones that snap to the deck they
+  land on, per-team spawns and bases; the compiler emits the floor slab, the perimeter
+  wall and one collider set per mesa.
+- **Validation** names the failure modes the shipped levels hit: a start line that is
+  already banking, a spawn buried in a mesa, a fog far plane shorter than the deck
+  diagonal.
+
+Every edit is an action through a pure reducer with undo/redo, and the four modules
+with a decision in them are tested without a DOM (`packages/ui/test/map-editor.test.ts`).
+Export gives you the authored source or the compiled runtime spec.
+
 ## Ships
 
 Ships are registered in one place — `packages/core/src/ship/registry.ts` (`SHIP_PRESETS`). The
@@ -77,6 +99,33 @@ entry.
 - **Icaras** — procedurally rebuilt mesh with baked PBR livery (`public/icaras/`).
 - **WipEout fleet** — AG-Systems, Assegai, Auricom, EG-X, Feisar, Harimau, Qirex — FBX hulls
   (`public/ships/<id>/`) re-skinned from per-ship livery (CC-BY-4.0, Nobby76).
+
+### Parametric hulls
+
+Every ship's geometry is **extracted at load time and then reshaped by fifteen
+parameters**. There is no per-ship table of landmarks:
+`packages/engine/src/ship/hull-profile.ts` walks the vertex cloud of whatever the
+loader produced — glTF scene, FBX clone or rebuilt part table — and measures the
+half-beam (an |x| quantile, so one antenna cannot set the beam for the ship), the
+wing threshold, the canopy floor, the widest station and the engine slab, in a
+frame where the nose already points +z.
+
+`hull-deform.ts` then moves the cloud against those landmarks, in the order a hull
+is built up:
+
+| group | parameters |
+| --- | --- |
+| Proportions | beam, profile, length |
+| Planform | nose sharpness, tail taper, wing span, wing sweep, wing dihedral, chine flare |
+| Section | canopy rise, keel depth, engine girth, engine overhang, spine arch, hull twist |
+
+The fields live in `packages/core/src/ship/hull-shape.ts` (`HullShape`), so they are
+persisted, randomised and rendered as sliders from one table — the hangar's hull
+panel *is* `HULL_SLIDERS`. Two properties make it safe: the deformer always reads an
+untouched per-mesh snapshot, so sliders never compound and the order you touch them
+in cannot matter; and at factory values it restores that snapshot verbatim, authored
+normals included. Engine nozzles and gun hardpoints are re-derived from the new
+silhouette, so they follow the shape rather than staying pinned to the old one.
 
 ### How the hangar sliders apply
 

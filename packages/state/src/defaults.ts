@@ -142,7 +142,12 @@ export const SHIP_STORE_KEY = 'ship-config'
 // v5: hull-shape deform, the second livery layer and the armament block. Without
 //     the bump a v4 save reaches the loader with bodyWidth undefined and every
 //     hull collapses to a zero-scale point.
-export const SHIP_STORE_VERSION = 5
+// v6: the parametric hull — fifteen geometry parameters replacing the three
+//     scale multipliers. bodyWidth/bodyHeight/bodyLength survive by name and
+//     still mean the same thing, but a v5 save carries none of the other twelve
+//     and `hullShapeOf` would silently fill them from factory on every load
+//     while the persisted config kept claiming they were absent.
+export const SHIP_STORE_VERSION = 6
 
 /** Fresh factory map for every registered ship. */
 export const initialShipConfigs = (): Record<ShipId, ShipConfig> =>

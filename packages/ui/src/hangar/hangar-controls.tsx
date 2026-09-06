@@ -7,7 +7,9 @@ import type { HangarViewToggle } from 'Ƨ'
 import { PALETTES } from 'Ȼship/palettes'
 import { SHIP_IDS, SHIP_PRESETS } from 'Ȼship/registry'
 import type { ShipConfig } from 'Ȼship/registry'
-import { RANDOM_BUILD_RANGES, RANDOM_LOOK_RANGES, RANDOM_TEXTURE_PRESETS } from 'Ȼship/random-ranges'
+import { RANDOM_BUILD_RANGES, RANDOM_HULL_RANGES, RANDOM_LOOK_RANGES, RANDOM_TEXTURE_PRESETS } from 'Ȼship/random-ranges'
+import { HULL_DEFAULTS, HULL_GROUP_LABELS, HULL_SHAPE_KEYS, HULL_SLIDERS } from 'Ȼship/hull-shape'
+import type { HullGroup } from 'Ȼship/hull-shape'
 import { BEAM_WEAPONS, MISSILE_WEAPONS, WEAPONS } from 'Ψweapons'
 import type { WeaponId } from 'Ψweapons'
 import styles from './hangar-controls.module.css'
@@ -184,18 +186,36 @@ function randomLook (): Partial<ShipConfig> {
   }
 }
 
-/** Random silhouette + armament. Kept separate: a lot of pilots want one, not both. */
+/**
+ * Random silhouette. Every geometry parameter, rolled from the table rather
+ * than a hand-kept list — the previous version named three fields by hand and
+ * would have gone on rolling three of fifteen without anything failing.
+ */
+function randomHull (): Partial<ShipConfig> {
+  return Object.fromEntries(
+    HULL_SHAPE_KEYS.map(key => [ key, roll(RANDOM_HULL_RANGES[key]) ])
+  ) as Partial<ShipConfig>
+}
+
+/** Random build: the silhouette plus armament. Kept apart from paint — pilots want one, not both. */
 function randomBuild (): Partial<ShipConfig> {
   return {
-    bodyWidth:       roll(RANDOM_BUILD_RANGES.bodyWidth),
-    bodyHeight:      roll(RANDOM_BUILD_RANGES.bodyHeight),
-    bodyLength:      roll(RANDOM_BUILD_RANGES.bodyLength),
+    ...randomHull(),
     platingDepth:    roll(RANDOM_BUILD_RANGES.platingDepth),
     primaryWeapon:   pick(BEAM_WEAPONS),
     secondaryWeapon: pick(MISSILE_WEAPONS),
     gunScale:        roll(RANDOM_BUILD_RANGES.gunScale),
     gunSpread:       roll(RANDOM_BUILD_RANGES.gunSpread),
   }
+}
+
+/** Rounded readout for a hull slider: `1.24×`, `-12°`, or a bare signed amount. */
+function hullFormat (unit: '×' | '°' | ''): (value: number) => string {
+  if (unit === '°')
+    return value => `${Math.round(value)}°`
+  if (unit === '×')
+    return value => `${value.toFixed(2)}×`
+  return value => value.toFixed(2)
 }
 
 export function HangarControls () {
@@ -279,42 +299,44 @@ export function HangarControls () {
         <Swatch label="trim" value={ currentConfig.trimColor } onChange={ v => set('trimColor', v) } />
       </Section>
 
-      <Section title="Hull Shape">
-        <Slider
-          label="beam (width)" value={ currentConfig.bodyWidth }
-          min={ 0.6 } max={ 1.7 } step={ 0.01 }
-          onChange={ v => set('bodyWidth', v) }
-          format={ v => `${v.toFixed(2)}×` } />
+      { (Object.keys(HULL_GROUP_LABELS) as HullGroup[]).map(group =>
+        <Section key={ group } title={ `Hull · ${HULL_GROUP_LABELS[group]}` }>
+          { HULL_SLIDERS.filter(slider => slider.group === group).map(slider =>
+            <Slider
+              key={ slider.key }
+              label={ slider.label }
+              value={ currentConfig[slider.key] }
+              min={ slider.min }
+              max={ slider.max }
+              step={ slider.step }
+              onChange={ v => set(slider.key, v) }
+              format={ hullFormat(slider.unit) } />
+          ) }
+        </Section>
+      ) }
 
-        <Slider
-          label="profile (height)" value={ currentConfig.bodyHeight }
-          min={ 0.5 } max={ 1.8 } step={ 0.01 }
-          onChange={ v => set('bodyHeight', v) }
-          format={ v => `${v.toFixed(2)}×` } />
-
-        <Slider
-          label="length" value={ currentConfig.bodyLength }
-          min={ 0.6 } max={ 1.7 } step={ 0.01 }
-          onChange={ v => set('bodyLength', v) }
-          format={ v => `${v.toFixed(2)}×` } />
-
+      <Section title="Hull · Shell">
         <Slider
           label="plating depth" value={ currentConfig.platingDepth }
           min={ 0 } max={ 2.5 } step={ 0.01 }
           onChange={ v => set('platingDepth', v) } />
 
         <div className={ styles.toggles }>
-          <Toggle
-            pressed={ false }
-            onClick={ () => updateConfig({ bodyWidth: 1, bodyHeight: 1, bodyLength: 1 }) }>
+          <Toggle pressed={ false } onClick={ () => updateConfig(HULL_DEFAULTS) }>
             reset silhouette
+          </Toggle>
+
+          <Toggle pressed={ false } onClick={ () => updateConfig(randomHull()) }>
+            randomize hull ⬡
           </Toggle>
         </div>
 
         <p className={ styles.note }>
-          Deform scales the fitted hull, so the engine nozzles and gun hardpoints are
-          re-derived from the new silhouette rather than staying pinned to the old one.
-          Handling is unaffected — the collider is the same box on every hull.
+          The { HULL_SLIDERS.length } sliders above are a real vertex deform, not a scale: the hull is
+          scanned at load time for its beam, wing line, canopy, keel and engine bay, and each
+          parameter moves the cloud against those measured landmarks. That is why one set of
+          controls fits all { SHIP_IDS.length } hulls. Nozzles and gun hardpoints are re-derived from the
+          new silhouette; handling is unaffected — the collider is the same box on every hull.
         </p>
       </Section>
 

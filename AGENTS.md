@@ -346,6 +346,34 @@ There is no downstream code adding those effects, so moving a mount point
 changes how the ship drives and nothing else will notice.
 `packages/physics/test/thrusters.test.ts` pins the signs; change a position and read what it says.
 
+**A hull's shape is measured, then moved — never tabulated.** Nine ships
+arrive through three pipelines (a glTF scene, a clone of a WipEout FBX scan, a
+mesh rebuilt from an extracted part table) and none of them says where its
+wings end. `packages/engine/src/ship/hull-profile.ts` scans the vertex cloud at
+load time for half-beam (an |x| quantile, not the max — one antenna would set
+the beam for the whole ship), wing threshold, canopy floor, chine station and
+engine slab, in a frame where `modelRotation` has already put the nose at +z.
+`hull-deform.ts` then expresses all fifteen parameters against THOSE landmarks,
+which is what makes one function correct on a hull it was never tuned against.
+Two invariants hold it together: the deformer always reads a per-mesh SNAPSHOT
+(so sliders do not compound, and order cannot matter), and at `HULL_DEFAULTS` it
+restores that snapshot verbatim — authored normals included — so "reset" is the
+source mesh rather than a `computeVertexNormals()` approximation of it. The
+three multipliers that used to scale the fit group are gone with the
+counter-scale hack the generated Icaras needed to survive them.
+`packages/engine/test/hull-deform.test.ts` runs every slider to both extremes
+against the real Icaras and asserts no NaN and no collapse.
+
+**The map forge compiles; it does not draw a picture of a compile.**
+`packages/ui/src/editor/compile.ts` calls the same `buildTrack`,
+`ribbonBoxColliders` and `plateauColliders` the shipped levels call, and the
+viewport outlines the ribbon that came back. Anything that would evaluate the
+spline twice — a stroked bezier in the plan view, a second width sweep for the
+per-node taper — is the bug this replaced: the old editor drew screen-space
+isometry and exported a JSON body nothing could load. Per-node width is applied
+by pulling the swept edges inward afterwards, at the WIDEST node's uniform
+width, precisely so there is no second copy of the banking maths.
+
 **Handling authority lives in shared physics.** Race and battle both call
 `stepHovercraft`, so turn/strafe feel belongs in `vehicleConfig`,
 `thrusters.ts` and `vehicle-step.ts`, never in one input path. Verify changes
@@ -637,7 +665,10 @@ packages/battle/  Depends on physics, net, data. Battle's rules and world.
 packages/core/    Depends on physics, battle. Domain configuration shared by
                   every layer above it.
   src/ship/       registry.ts (`SHIP_PRESETS`, one entry per ship), palettes.ts,
-                  random-ranges.ts (the hangar's randomize ranges).
+                  hull-shape.ts (`HullShape` — the 15 parametric geometry
+                  fields, their slider table and their factory identity),
+                  random-ranges.ts (the hangar's randomize ranges, derived
+                  from the slider table rather than restated).
   src/camera.ts   `CameraView` (`'chase' | 'cockpit'`).
   src/levels.ts   Menu-facing level metadata (name, tagline, card accent).
   src/tuning.ts   Pure helpers behind the tuning panel's footer buttons.
@@ -666,7 +697,9 @@ packages/engine/  Depends on state, core, physics, net, race, battle. The
   modules/        AppModules: publish.ts, publish-battle.ts, sun.ts,
                   ship-visual.ts, physics-step.ts.
   ship/           FBX/generated hull loading and materials: cannons.ts,
-                  fbx-ship.ts, icaras-generated.ts, materials.ts.
+                  fbx-ship.ts, icaras-generated.ts, materials.ts,
+                  hull-profile.ts (scan a loaded hull for its landmarks),
+                  hull-deform.ts (move the cloud with `Ȼship/hull-shape`).
   hud/            Continuous visor GUI: tokens.ts (the amber cockpit palette,
                   `HUD_THEME`), chrome.ts (the shared drawing vocabulary —
                   plates, brackets, glow), panel.ts, facets.ts, layout.ts,
@@ -692,7 +725,13 @@ packages/ui/      Depends on game + everything below it. React: the
                   components and hooks the Next.js routes render.
   src/scene-canvas.tsx   The ONLY React<->three boundary.
   src/main-menu.tsx, crash-lab.tsx, session-provider.tsx, scene-lifecycle.ts.
-  src/hangar/, src/editor/   Panel components per route.
+  src/hangar/     The ship panel. The hull section renders `HULL_SLIDERS`.
+  src/editor/     The map forge, in seven modules: document.ts (the authored
+                  model), reducer.ts (pure transitions + undo), compile.ts
+                  (document -> real `TrackSpec` / `BattleArena`),
+                  projection.ts (the plan-view camera), use-editor.ts (state,
+                  shortcuts, file IO), viewport.tsx, inspector.tsx, fields.tsx,
+                  map-editor.tsx (layout only).
   src/hooks/      React-only hooks (use-gauge-animation.ts).
 
 packages/server/  Colyseus boot. Defines the rooms and gets out of the way.
