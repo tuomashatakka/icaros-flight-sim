@@ -50,6 +50,9 @@ export type RacerSnapshot = {
   speed:    number;
   grounded: boolean;
 
+  /** Hull integrity, 0..`MAX_HEALTH`. Zero for the tick a wreck is reported. */
+  health: number;
+
   lap:            number;
   nextCheckpoint: number;
   position:       number;
@@ -74,6 +77,7 @@ export type RaceEvent =
   { type: 'lap'; id: string; lap: number; lapTime: number; best: boolean } |
   { type: 'finish'; id: string; position: number; totalTime: number } |
   { type: 'respawn'; id: string } |
+  { type: 'wrecked'; id: string } |
   { type: 'countdown'; value: number } |
   { type: 'raceStart' } |
   { type: 'raceEnd' }

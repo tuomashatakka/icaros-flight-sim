@@ -156,8 +156,8 @@ export function ribbonWallColliders (
   const sink      = opts.sink ?? 1.5
   const maxLen    = opts.maxLen ?? 60
 
-  const rings = Math.floor(vertices.length / 6)
-  const at    = (i: number) => new THREE.Vector3(vertices[i * 3], vertices[i * 3 + 1], vertices[i * 3 + 2])
+  const rings                = Math.floor(vertices.length / 6)
+  const at                   = (i: number) => new THREE.Vector3(vertices[i * 3], vertices[i * 3 + 1], vertices[i * 3 + 2])
   const boxes: BoxCollider[] = []
 
   const halfHeight    = height * 0.5
@@ -187,8 +187,8 @@ export function ribbonWallColliders (
     const right = sideVec.clone().normalize()
     const up    = right.clone().cross(forward)
       .normalize()
-    const basis = new THREE.Matrix4().makeBasis(right, up, forward)
-    const euler = new THREE.Euler().setFromRotationMatrix(basis)
+    const basis                              = new THREE.Matrix4().makeBasis(right, up, forward)
+    const euler                              = new THREE.Euler().setFromRotationMatrix(basis)
     const rotation: [number, number, number] = [ euler.x, euler.y, euler.z ]
     const args: [number, number, number]     = [ halfThickness, halfHeight, len * 0.5 ]
 

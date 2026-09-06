@@ -23,6 +23,11 @@ export const RacerState = schema({
   isBot:    t.boolean().default(false),
   netIndex: t.uint16().default(0),
 
+  // Hull integrity, rounded to a byte. On the schema channel rather than the
+  // bit-packed one because race's binary `health` field already carries the
+  // boost meter — see `snapshot.ts` — and hull changes on impacts, not ticks.
+  health: t.uint8().default(100),
+
   lap:            t.uint8().default(1),
   position:       t.uint8().default(1),
   nextCheckpoint: t.uint8().default(0),
@@ -79,6 +84,7 @@ export function syncRaceState (
     }
 
     set(entry, 'netIndex', netIndexOf(racer.id))
+    set(entry, 'health', Math.max(0, Math.min(255, Math.round(racer.health))))
     set(entry, 'lap', racer.lap)
     set(entry, 'position', racer.position)
     set(entry, 'nextCheckpoint', racer.nextCheckpoint)

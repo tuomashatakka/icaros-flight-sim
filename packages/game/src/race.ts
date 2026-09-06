@@ -14,7 +14,7 @@
  */
 
 import * as THREE from 'three'
-import { defineModule } from 'threejs-scene'
+import { createSeededRng, defineModule } from 'threejs-scene'
 import { createHovercraft, createHovercraftState } from 'Φvehicle-step'
 import { BodyInterpolator } from 'Φinterpolation'
 import { toRaceInput } from 'Λinput'
@@ -22,6 +22,7 @@ import { trackBundle } from 'Λ'
 
 import { raceHudModule } from 'Σhud/index'
 import { createScenePost } from 'Σrender/post'
+import { createWreckField } from 'Σfx/wreck'
 import { initialRaceState, raceActions, raceTimers, resetRaceTimers } from 'Ƨ'
 import { LocalPrediction } from 'Σnet/prediction'
 import { publishTelemetry } from 'Σnet/telemetry-publish'
@@ -32,6 +33,7 @@ import { TRACK_VISUALS } from 'Σlevels/types'
 import { activeControls } from 'Σinput'
 import { mountBaseScene } from 'Σscenes/base'
 
+import type RAPIER from '@dimforge/rapier3d-deterministic-compat'
 import type { App, AppModule } from 'threejs-scene'
 import type { TrackId } from 'Λ'
 import type { Nameplate } from 'Σbattle/visuals'
@@ -74,6 +76,15 @@ export async function mountRace (
 
   const shipRoot  = new THREE.Group()
   const opponents = new Map<string, Opponent>()
+
+  // The hull the local player is flying, captured from the base scene so a
+  // wreck can cut up the ship that actually died rather than a stand-in.
+  let localHull: THREE.Object3D | null      = null
+  let localChassis: RAPIER.RigidBody | null = null
+  // Its own stream, forked from a fixed seed: debris is cosmetic and must never
+  // draw from the rng the simulation is stepped with.
+  const wreck          = createWreckField(createSeededRng(0x5eed))
+  const _wreckVelocity = new THREE.Vector3()
 
   const _pose = new THREE.Vector3()
   const _quat = new THREE.Quaternion()
@@ -152,6 +163,31 @@ export async function mountRace (
   // and a sky, not by an arena floor.
   const post = createScenePost({ tint: '#f2ecff', saturation: 1.1, vignette: 0.24 })
 
+  /**
+   * Cut a wrecked ship apart at the pose it is being drawn at.
+   *
+   * The RENDERED pose, not the snapshot's: a remote ship is drawn ~100 ms in
+   * the past, and an explosion where the ship is not is worse than none.
+   */
+  function blowUp (id: string): void {
+    const mine = transport.localId() === id
+    const hull = mine ? localHull : opponents.get(id)?.root
+    if (!hull)
+      return
+
+    // The predicted chassis is the only body this client simulates, so it is
+    // the only one with a velocity to inherit. A remote's debris just falls.
+    const velocity = mine ? localChassis?.linvel() : null
+    _wreckVelocity.set(velocity?.x ?? 0, velocity?.y ?? 0, velocity?.z ?? 0)
+
+    // The hull is NOT hidden here. The sim respawns a wreck on the very next
+    // tick, at its last gate, so the ship removes itself from the debris by
+    // teleporting away from it — and the base scene rewrites the local hull's
+    // visibility every frame from the camera blend, so hiding it here would
+    // last exactly one frame anyway.
+    wreck.burst(hull, _wreckVelocity, mine ? '#ffb057' : '#ff5470')
+  }
+
   const app = await mountBaseScene<RaceState>({
     canvas,
     levelId:      trackId,
@@ -172,6 +208,7 @@ export async function mountRace (
     gameModuleFactory: (physics, telemetry, sceneControls, vehicleRef, rig) => {
       // The ONE body in this world besides the track: the predicted local ship.
       const local = createHovercraft(physics.world, provisionalSpawn)
+      localChassis = local.chassis
 
       prediction = new LocalPrediction({
         chassis: local.chassis,
@@ -319,6 +356,7 @@ export async function mountRace (
             lapElapsed:      server.lapElapsed,
             bestLap:         server.bestLap,
             finished:        server.finished,
+            hull:            server.hull,
             standings:       [ ...view.racers ]
               .sort((a, b) => a.position - b.position)
               .map(r => ({ id: r.id, name: r.name, position: r.position, lap: r.lap, bestLap: r.bestLap, finished: r.finished, isBot: r.isBot })),
@@ -329,18 +367,28 @@ export async function mountRace (
       return { module: raceNetModule }
     },
 
-    hudModuleFactory: (_shipRoot, telemetry, hudRef, hudControls, hudScene) =>
-      raceHudModule(canvas, track, telemetry, hudControls, hudRef, hudScene, options.forcedTouch),
+    hudModuleFactory: (baseShipRoot, telemetry, hudRef, hudControls, hudScene) => {
+      // The base owns the local hull; this is the one callback it is handed
+      // through. Sliced ahead of the first wreck so the frame a ship dies on is
+      // not also the frame that builds four vertex buffers.
+      localHull = baseShipRoot
+      wreck.prime(baseShipRoot)
+      return raceHudModule(canvas, track, telemetry, hudControls, hudRef, hudScene, options.forcedTouch)
+    },
 
     extraModules: [
       defineModule<RaceState>({
         name:  'race-visuals',
-        build: ctx => ctx.scene.add(shipRoot),
+        build: ctx => ctx.scene.add(shipRoot, wreck.group),
       }),
     ],
 
-    onFrame: () => {
-      transport.drainEvents()
+    onFrame: frame => {
+      for (const event of transport.drainEvents())
+        if (event.type === 'wrecked')
+          blowUp(event.id)
+
+      wreck.update(frame.delta)
 
       const frameView = transport.frame()
       if (frameView)
@@ -348,6 +396,7 @@ export async function mountRace (
     },
 
     onDispose: () => {
+      wreck.dispose()
       for (const id of [ ...opponents.keys() ])
         dropOpponent(id)
       transport.close()

@@ -47,6 +47,9 @@ export type ViewRacer = {
   boost:    number;
   grounded: boolean;
 
+  /** Hull integrity, 0..1, off the schema channel. */
+  hull: number;
+
   lap:            number;
   position:       number;
   nextCheckpoint: number;
@@ -199,6 +202,7 @@ export class RaceTransport {
         qw:       pose?.qw ?? 1,
         boost:    (pose?.health ?? 255) / 255,
         grounded: ((pose?.flags ?? 0) & 8) !== 0,
+        hull:     entry.health / 100,
 
         lap:            entry.lap,
         position:       entry.position,

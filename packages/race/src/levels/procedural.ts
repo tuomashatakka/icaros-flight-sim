@@ -45,13 +45,13 @@ type Walk = {
  * tension decides what the corner actually is.
  */
 function createWalk (start: THREE.Vector3, heading: THREE.Vector3): Walk {
-  const vertices: number[]       = []
-  const indices: number[]        = []
-  const centre: THREE.Vector3[]  = []
-  const position                 = start.clone()
-  const direction                = heading.clone().normalize()
-  const side                     = new THREE.Vector3()
-  const up                       = new THREE.Vector3(0, 1, 0)
+  const vertices: number[]      = []
+  const indices: number[]       = []
+  const centre: THREE.Vector3[] = []
+  const position                = start.clone()
+  const direction               = heading.clone().normalize()
+  const side                    = new THREE.Vector3()
+  const up                      = new THREE.Vector3(0, 1, 0)
   let previous                   = -1
 
   const addSegment = (length: number, curve: number, ramp: number) => {
@@ -125,17 +125,17 @@ export function proceduralTrack (): TrackBundle {
     geometry,
     vertices,
     spec: {
-      id:             'procedural',
-      name:           'Procedural Sprint',
-      background:     '#0d0d16',
+      id:         'procedural',
+      name:       'Procedural Sprint',
+      background: '#0d0d16',
       // The shared 20-80 canvas fog this inherited under R3F would have
       // swallowed a ~3500-unit sprint; given a range that matches the track.
-      fog:            [ '#0d0d16', 140, 950 ],
-      waypoints:      waypoints.map(p => [ p.x, p.y, p.z ] as Vec3Tuple),
-      width:          WIDTH,
-      laps:           1,
-      loop:           false,
-      colliders:      [
+      fog:        [ '#0d0d16', 140, 950 ],
+      waypoints:  waypoints.map(p => [ p.x, p.y, p.z ] as Vec3Tuple),
+      width:      WIDTH,
+      laps:       1,
+      loop:       false,
+      colliders:  [
         ...ribbonBoxColliders(vertices, { stride: 1 }),
         ...ribbonWallColliders(vertices, { height: WALL_HEIGHT, stride: 1 }),
       ],
