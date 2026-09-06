@@ -261,3 +261,67 @@ function surface (positions: number[], indices: number[], material: THREE.Materi
   geometry.computeBoundingSphere()
   return new THREE.Mesh(geometry, material)
 }
+
+/**
+ * Gate posts, every checkpoint, in one draw call.
+ *
+ * Two per waypoint — one at each road edge — as a single `InstancedMesh`. A
+ * sixteen-gate circuit is thirty-two posts, and thirty-two meshes is thirty-two
+ * draw calls for something that is one geometry and one material; instanced it
+ * is one, and the per-instance work is a matrix written once at build time and
+ * never touched again.
+ *
+ * They earn their place twice over. Barrier caps tell you where the road goes;
+ * these tell you where the next gate is, which is the other half of knowing
+ * where to point the ship.
+ */
+export function gatePosts (
+  waypoints: readonly (readonly [number, number, number])[],
+  halfWidth: number,
+  color: string,
+  height = 7
+): THREE.InstancedMesh {
+  const count    = waypoints.length * 2
+  const geometry = new THREE.BoxGeometry(0.5, height, 0.5)
+  const material = new THREE.MeshStandardMaterial({
+    color,
+    emissive:          color,
+    // Low, because a post is a metre from the camera every time you cross a
+    // gate and bloom does not care how small the geometry is.
+    emissiveIntensity: 0.65,
+    roughness:         0.5,
+  })
+
+  const mesh   = new THREE.InstancedMesh(geometry, material, count)
+  const matrix = new THREE.Matrix4()
+  const here   = new THREE.Vector3()
+  const ahead  = new THREE.Vector3()
+  const side   = new THREE.Vector3()
+  const up     = new THREE.Vector3(0, 1, 0)
+  const unit   = new THREE.Vector3(1, 1, 1)
+  const level  = new THREE.Quaternion()
+  const at     = new THREE.Vector3()
+
+  for (let i = 0; i < waypoints.length; i++) {
+    const point = waypoints[i]
+    const next  = waypoints[(i + 1) % waypoints.length]
+    here.set(point[0], point[1], point[2])
+    ahead.set(next[0], next[1], next[2])
+
+    side.subVectors(ahead, here).cross(up)
+      .normalize()
+    if (side.lengthSq() < 1e-8)
+      side.set(1, 0, 0)
+
+    for (const sign of [ 1, -1 ]) {
+      at.copy(here).addScaledVector(side, sign * halfWidth)
+      at.y += height * 0.5 - 1
+      mesh.setMatrixAt(i * 2 + (sign > 0 ? 0 : 1), matrix.compose(at, level, unit))
+    }
+  }
+
+  mesh.instanceMatrix.needsUpdate = true
+  mesh.frustumCulled              = false
+  mesh.castShadow                 = false
+  return mesh
+}

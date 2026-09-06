@@ -6,7 +6,7 @@
 
 import * as THREE from 'three'
 
-import { finaliseStaticScene, guideRail, pointLight, ribbonWalls, roadMaterial } from './shared'
+import { finaliseStaticScene, guideRail, pointLight, gatePosts, ribbonWalls, roadMaterial } from './shared'
 
 import type { SceneContext } from 'threejs-scene'
 import type { TrackBundle } from 'Λ'
@@ -43,6 +43,7 @@ export function buildNeonCanyon (ctx: SceneContext, bundle: TrackBundle): void {
   if (vertices)
     root.add(ribbonWalls(vertices, { height: 6, face: '#1d0d16', cap: '#ff2d6f' }))
 
+  root.add(gatePosts(bundle.spec.waypoints, bundle.spec.width / 2 + 1.2, '#ff2d6f'))
   root.add(guideRail(curve.getSpacedPoints(420), '#ff2d6f', 0.35, 0.2))
 
   root.add(pointLight('#ff5a7a', 24, 150, [ 0, 18, 10 ]))

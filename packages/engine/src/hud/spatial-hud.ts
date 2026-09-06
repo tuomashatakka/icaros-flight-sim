@@ -155,6 +155,47 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
   const cssSize        = { width: 1, height: 1 }
   let insets: SafeAreaInsets = NO_INSETS
 
+  /**
+   * Where the canvas is on screen, cached.
+   *
+   * `getBoundingClientRect` forces the browser to flush style and layout, and
+   * this was called from three places that all run hot: once per overlay
+   * repaint (up to 30 Hz) and twice per pointer event (up to the pointer's
+   * rate, which on a fast mouse is higher than the frame rate). A synchronous
+   * layout at that cadence is a real cost on a machine with anything else going
+   * on, and it is paying it for a number that only changes when the window
+   * does. Observed instead, and re-read on the events that can move a canvas
+   * without resizing it.
+   */
+  const surface = { left: 0, top: 0, width: 1, height: 1 }
+  let surfaceStale = true
+
+  function readSurface (): void {
+    if (!surfaceStale)
+      return
+
+    const rect = canvas.getBoundingClientRect()
+    surfaceStale = false
+    if (rect.width <= 0 || rect.height <= 0)
+      return
+
+    surface.left   = rect.left
+    surface.top    = rect.top
+    surface.width  = rect.width
+    surface.height = rect.height
+  }
+
+  const invalidateSurface = () => {
+    surfaceStale = true
+  }
+
+  const surfaceObserver = typeof ResizeObserver === 'undefined'
+    ? null
+    : new ResizeObserver(invalidateSurface)
+  surfaceObserver?.observe(canvas)
+  window.addEventListener('resize', invalidateSurface, { passive: true })
+  window.addEventListener('scroll', invalidateSurface, { passive: true, capture: true })
+
   // The rail is on for everyone. `?touch=0` is the only way to turn it off, and
   //  it is honoured in EVERY build — there is no device sniff left to get a
   //  machine wrong. It arrives as a prop from the page's `useSearchParams`,
@@ -274,11 +315,10 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
     if (overlay.resize(targetWidth, height))
       overlayDirty = true
 
-    const rect = canvas.getBoundingClientRect()
-    if (rect.width > 0 && rect.height > 0 &&
-        (cssSize.width !== rect.width || cssSize.height !== rect.height)) {
-      cssSize.width  = rect.width
-      cssSize.height = rect.height
+    readSurface()
+    if (cssSize.width !== surface.width || cssSize.height !== surface.height) {
+      cssSize.width  = surface.width
+      cssSize.height = surface.height
       insets         = readSafeAreaInsets()
       overlayDirty   = true
     }
@@ -453,10 +493,10 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
   type CanvasPointReturnType = { x: number; y: number }
 
   function canvasPoint (clientX: number, clientY: number): CanvasPointReturnType {
-    const rect = canvas.getBoundingClientRect()
+    readSurface()
     return {
-      x: (clientX - rect.left) / Math.max(rect.width, 1) * overlay.canvas.width,
-      y: (clientY - rect.top) / Math.max(rect.height, 1) * overlay.canvas.height,
+      x: (clientX - surface.left) / Math.max(surface.width, 1) * overlay.canvas.width,
+      y: (clientY - surface.top) / Math.max(surface.height, 1) * overlay.canvas.height,
     }
   }
 
@@ -469,10 +509,10 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
     if (overlayHit)
       return overlayHit
 
-    const rect = canvas.getBoundingClientRect()
+    readSurface()
     _ndc.set(
-      (clientX - rect.left) / Math.max(rect.width, 1) * 2 - 1,
-      -((clientY - rect.top) / Math.max(rect.height, 1) * 2 - 1)
+      (clientX - surface.left) / Math.max(surface.width, 1) * 2 - 1,
+      -((clientY - surface.top) / Math.max(surface.height, 1) * 2 - 1)
     )
     raycaster.setFromCamera(_ndc, lastFrame.camera)
 
@@ -817,6 +857,9 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
       canvas.removeEventListener('pointerup', onPointerUp)
       canvas.removeEventListener('pointercancel', onPointerCancel)
       canvas.removeEventListener('pointerleave', onPointerLeave)
+      surfaceObserver?.disconnect()
+      window.removeEventListener('resize', invalidateSurface)
+      window.removeEventListener('scroll', invalidateSurface, { capture: true })
       canvas.style.cursor = ''
       if (isTouch)
         setTouchOverlayActive(false)

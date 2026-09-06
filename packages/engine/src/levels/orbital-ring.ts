@@ -5,7 +5,7 @@
 
 import * as THREE from 'three'
 
-import { finaliseStaticScene, guideRail, pointLight, ribbonWalls, roadMaterial, starfield } from './shared'
+import { finaliseStaticScene, guideRail, pointLight, gatePosts, ribbonWalls, roadMaterial, starfield } from './shared'
 
 import type { SceneContext } from 'threejs-scene'
 import type { TrackBundle } from 'Λ'
@@ -41,6 +41,7 @@ export function buildOrbitalRing (ctx: SceneContext, bundle: TrackBundle): void 
   if (vertices)
     root.add(ribbonWalls(vertices, { height: 6, face: '#0e1725', cap: '#22d3ee' }))
 
+  root.add(gatePosts(bundle.spec.waypoints, bundle.spec.width / 2 + 1.2, '#22d3ee'))
   root.add(guideRail(curve.getSpacedPoints(460), '#22d3ee', 0.35, 0.2))
 
   // Starfield backdrop + the planet far below.

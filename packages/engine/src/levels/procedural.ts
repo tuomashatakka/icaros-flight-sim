@@ -5,7 +5,7 @@
 
 import * as THREE from 'three'
 
-import { finaliseStaticScene, pointLight, ribbonWalls, roadMaterial } from './shared'
+import { finaliseStaticScene, gatePosts, pointLight, ribbonWalls, roadMaterial } from './shared'
 
 import type { SceneContext } from 'threejs-scene'
 import type { TrackBundle } from 'Λ'
@@ -42,6 +42,8 @@ export function buildProcedural (ctx: SceneContext, bundle: TrackBundle): void {
 
   if (vertices)
     root.add(ribbonWalls(vertices, { height: 6, face: '#191922', cap: '#8a9bff' }))
+
+  root.add(gatePosts(bundle.spec.waypoints, bundle.spec.width / 2 + 1.2, '#8a9bff'))
 
   root.add(pointLight('#aab4ff', 40, 520, [ 0, 80, -200 ]))
   root.add(pointLight('#c8b4ff', 34, 420, [ 400, 60, -800 ]))
