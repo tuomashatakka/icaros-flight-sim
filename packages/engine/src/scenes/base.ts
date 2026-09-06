@@ -78,6 +78,7 @@ const _view: HudViewFrame = {
   hudQuaternion:  _hudQuaternion,
   hudLead:        _hudLead,
   aimPitch:       0,
+  focusDistance:  FOCUS_FALLBACK,
   drawHz:         60,
 }
 
@@ -440,6 +441,7 @@ export async function mountBaseScene<TState extends object> (
       // ceiling on REPAINTS, so it travels on the frame and the HUD applies it
       // to its own texture cadence.
       _view.drawHz = quality.settings().hudHz
+      reportPostView(frame)
       hud.current?.update(_view)
 
       onFrame?.(frame, _shipPosition, _shipQuaternion, rig, controls)
@@ -447,8 +449,6 @@ export async function mountBaseScene<TState extends object> (
     }
     else
       onFrame?.(frame, _shipPosition, _shipQuaternion, rig, controls)
-
-    reportPostView(frame)
 
     if (composer)
       composer.render(frame.delta)
@@ -480,6 +480,11 @@ export async function mountBaseScene<TState extends object> (
   let accel     = 0
 
   function reportPostView (frame: FrameContext): void {
+    // Sampled unconditionally, because the HUD wants it too: the visor is drawn
+    // after the post chain and carries its own defocus, so a scene with no post
+    // chain at all still has to know where the lens is looking.
+    _view.focusDistance = focusProbe.sample(rig.camera, FOCUS_FALLBACK)
+
     if (!config.onPostView)
       return
 
@@ -493,7 +498,7 @@ export async function mountBaseScene<TState extends object> (
     accel += (raw - accel) * (1 - Math.exp(-rate * delta))
 
     config.onPostView({
-      focusDistance: focusProbe.sample(rig.camera, FOCUS_FALLBACK),
+      focusDistance: _view.focusDistance,
       speed:         telemetry.speed / Math.max(1, vehicleConfig.maxSpeed),
       accel:         accel / ACCEL_FULL,
     })

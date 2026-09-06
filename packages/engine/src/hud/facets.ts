@@ -210,7 +210,7 @@ function createSurfaceGeometry (corners: HudVisorCorners): THREE.BufferGeometry 
  * the visor assembles panel by panel instead of appearing as one sheet — which
  * is both better looking and how you can tell at a glance that a panel is late.
  */
-export function tickHudPanelMesh (mesh: THREE.Mesh, elapsed: number, reveal = 1): void {
+export function tickHudPanelMesh (mesh: THREE.Mesh, elapsed: number, reveal = 1, softness = 0): void {
   const materials = mesh.userData.hudMaterials as HudFacetMaterial[]
   const glass     = mesh.userData.glassMaterial as HudGlassMaterial
   const stagger   = 0.45 / Math.max(1, materials.length - 1)
@@ -220,8 +220,9 @@ export function tickHudPanelMesh (mesh: THREE.Mesh, elapsed: number, reveal = 1)
 
     // Compress each panel's own ramp into the window left after its delay, so
     // every one of them still finishes exactly when the reveal does.
-    const delay                     = index * stagger
-    material.uniforms.uReveal.value = Math.max(0, Math.min(1, (reveal - delay) / (1 - delay)))
+    const delay                       = index * stagger
+    material.uniforms.uReveal.value   = Math.max(0, Math.min(1, (reveal - delay) / (1 - delay)))
+    material.uniforms.uSoftness.value = softness
   })
   glass.uniforms.uTime.value = elapsed
 }

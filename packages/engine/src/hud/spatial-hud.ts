@@ -27,6 +27,30 @@ const _ndc = new THREE.Vector2()
 /** When the rail follows the visor in, in seconds. See its use for the derivation. */
 const TOUCH_STAGGER_S = HUD_TRANSITION_S * 0.206
 
+/**
+ * Where the visor's glass sits, world units from the eye.
+ *
+ * `HUD_VISOR_BOUNDS`' rim and centre depths are -5.4 and -6.35; this is the
+ * middle of that fold, which is what the defocus is measured against.
+ */
+const VISOR_DEPTH = 5.9
+
+/** How far the focal plane travels before the visor is fully soft, world units. */
+const VISOR_FOCUS_RANGE = 26
+
+/**
+ * How defocused the visor is, given where the lens is looking.
+ *
+ * Capped well short of 1: this is glass a hand's width from the eye, and a real
+ * lens focused down the track would render it as an unreadable smear. The point
+ * is that it stops being razor sharp — that it belongs to the same optical
+ * system as the world behind it — not that it becomes useless.
+ */
+function visorSoftness (focusDistance: number): number {
+  const away = Math.abs(focusDistance - VISOR_DEPTH) / VISOR_FOCUS_RANGE
+  return Math.min(0.34, Math.max(0, away))
+}
+
 function readSafeAreaInsets (): SafeAreaInsets {
   if (typeof document === 'undefined')
     return NO_INSETS
@@ -407,7 +431,7 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
     }
 
     const revealPhase = visorReveal.value(frame.elapsed)
-    tickHudPanelMesh(panelMesh, frame.elapsed, revealPhase)
+    tickHudPanelMesh(panelMesh, frame.elapsed, revealPhase, visorSoftness(frame.focusDistance))
     // The visor is still assembling, so it needs a frame every frame — the
     // panel cadence would draw the wipe in four steps.
     if (revealPhase < 1)

@@ -102,6 +102,7 @@ function sharedHudModule<TState extends object> ({
     hudQuaternion:    new THREE.Quaternion(),
     hudLead:          new THREE.Quaternion(),
     aimPitch:         0,
+    focusDistance:    40,
     drawHz:           60,
     steer:            0,
     strafe:           0,
@@ -139,8 +140,9 @@ function sharedHudModule<TState extends object> ({
           frame.camera         = view.camera
           frame.hudQuaternion.copy(view.hudQuaternion)
           frame.hudLead.copy(view.hudLead)
-          frame.aimPitch = view.aimPitch
-          frame.drawHz   = view.drawHz
+          frame.aimPitch      = view.aimPitch
+          frame.focusDistance = view.focusDistance
+          frame.drawHz        = view.drawHz
           frame.steer    = controls.steer
           frame.strafe   = controls.strafe
 
