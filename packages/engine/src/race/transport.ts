@@ -41,6 +41,15 @@ export type ViewRacer = {
   qy:     number;
   qz:     number;
   qw:     number;
+  // Velocity, straight off the wire. The codec has always carried it; this
+  //  view used to drop it, which left the local prediction rewinding to a
+  //  standstill on every correction.
+  vx:     number;
+  vy:     number;
+  vz:     number;
+  wx:     number;
+  wy:     number;
+  wz:     number;
 
   // Race carries the boost meter in the wire record's health slot — it has no
   //  damage model, and forking the codec for one scalar was not worth it.
@@ -137,6 +146,10 @@ export class RaceTransport {
     return this.link.serverTick()
   }
 
+  serverAck (): number {
+    return this.link.serverAck()
+  }
+
   drainEvents (): RaceEvent[] {
     return this.link.drainEvents()
   }
@@ -200,6 +213,12 @@ export class RaceTransport {
         qy:       pose?.qy ?? 0,
         qz:       pose?.qz ?? 0,
         qw:       pose?.qw ?? 1,
+        vx:       pose?.vx ?? 0,
+        vy:       pose?.vy ?? 0,
+        vz:       pose?.vz ?? 0,
+        wx:       pose?.wx ?? 0,
+        wy:       pose?.wy ?? 0,
+        wz:       pose?.wz ?? 0,
         boost:    (pose?.health ?? 255) / 255,
         grounded: ((pose?.flags ?? 0) & 8) !== 0,
         hull:     entry.health / 100,

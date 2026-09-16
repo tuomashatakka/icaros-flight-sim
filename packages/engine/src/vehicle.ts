@@ -9,6 +9,7 @@
  * payload the force overlay draws.
  */
 
+import type * as THREE from 'three'
 import type RAPIER from '@dimforge/rapier3d-deterministic-compat'
 import type { BodyInterpolator } from 'Φinterpolation'
 import type { Transform } from 'Φtypes'
@@ -36,4 +37,18 @@ export type VehicleHandle = {
 
   /** Cut the ship to a transform. Suppresses interpolation across the jump. */
   teleportTo(transform: Transform, liftY?: number): void;
+
+  /**
+   * Decaying offset between where the ship is DRAWN and where the body is.
+   *
+   * A server correction moves the body at once — extrapolating from the
+   * authoritative state rather than a smoothed fake is what keeps the physics
+   * honest — and hands the difference to this, so the drawn ship walks there
+   * over a couple of hundred milliseconds instead of stepping there in one
+   * frame. Written into `out` and returned; `dt` is the RENDER delta, because
+   * it is the render that has to walk.
+   *
+   * Zero on every frame nothing was corrected, which is nearly all of them.
+   */
+  renderOffset(dt: number, out: THREE.Vector3): THREE.Vector3;
 }

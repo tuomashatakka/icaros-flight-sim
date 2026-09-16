@@ -397,6 +397,17 @@ export class RoomLink<TState extends object, TEvent> {
     return this.newest?.serverTick ?? 0
   }
 
+  /**
+   * The newest input frame the server has applied.
+   *
+   * The join between a snapshot and the client's own prediction history: the
+   * pose in that snapshot is the answer to THIS frame, so it is the frame the
+   * prediction has to be compared at. Zero until the first snapshot lands.
+   */
+  serverAck (): number {
+    return this.newest?.lastProcessedInput ?? 0
+  }
+
   drainEvents (): TEvent[] {
     const out   = this.events
     this.events = []

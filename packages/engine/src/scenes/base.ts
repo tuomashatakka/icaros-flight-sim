@@ -63,6 +63,7 @@ function resolveSeed (defaultSeed = SEED): number {
 // Reused so the render phase stays allocation-free; the rig only reads it.
 const _pan            = { panX: 0, panY: 0, pitch: 0 }
 const _shipPosition   = new THREE.Vector3()
+const _renderOffset   = new THREE.Vector3()
 const _shipQuaternion = new THREE.Quaternion()
 const _hudQuaternion  = new THREE.Quaternion()
 const _hudLead        = new THREE.Quaternion()
@@ -399,8 +400,9 @@ export async function mountBaseScene<TState extends object> (
       setCameraView(view)
     }
 
-    const interpolator = vehicle.current?.interpolator
-    if (interpolator) {
+    const localShip    = vehicle.current
+    const interpolator = localShip?.interpolator
+    if (localShip && interpolator) {
       // Race passes nothing and gets the spring off the raw held axis; battle
       // reports its integrated trim. Either way the hull is eased rather than
       // snapped, because the sim's trim steps at 60 Hz and the render does not.
@@ -410,6 +412,15 @@ export async function mountBaseScene<TState extends object> (
       shipVisual.current?.setAimPitch(hullAimPitch)
 
       interpolator.sample(clock.alpha(), _shipPosition, _shipQuaternion)
+
+      // A server correction moves the predicted body the instant it lands; the
+      // ship is DRAWN at the body's pose plus whatever is left of that jump,
+      // decaying. Without this line the error smoother is dead code and every
+      // blended correction is a visible pop — which is precisely what "the ship
+      // jumps a couple of times a second, in all modes" was. The debug overlays
+      // deliberately keep drawing at the body: they show physics, not framing.
+      _shipPosition.add(localShip.renderOffset(frame.delta, _renderOffset))
+
       shipRoot.position.copy(_shipPosition)
       shipRoot.quaternion.copy(_shipQuaternion)
       _pan.panX  = controls.panX

@@ -230,14 +230,18 @@ export async function mountRace (
       const local = createHovercraft(physics.world, provisionalSpawn)
       localChassis = local.chassis
 
-      prediction = new LocalPrediction({
-        chassis: local.chassis,
-        world:   physics.world,
-        state:   createHovercraftState(),
-      })
-
+      // Built before the prediction and handed to it: a correction has to move
+      // the body, cut the blend and set the render offset together, so one
+      // thing owns all three.
       const localInterpolator = new BodyInterpolator(local.chassis)
       physics.interpolators.push(localInterpolator)
+
+      prediction = new LocalPrediction({
+        chassis:      local.chassis,
+        world:        physics.world,
+        state:        createHovercraftState(),
+        interpolator: localInterpolator,
+      })
 
       vehicleRef.current = {
         get body () {
@@ -255,6 +259,9 @@ export async function mountRace (
           local.chassis.setAngvel({ x: 0, y: 0, z: 0 }, true)
           localInterpolator.teleport()
           rig.requestSnap()
+        },
+        renderOffset (dt, out) {
+          return prediction?.smoothing(dt, out) ?? out.set(0, 0, 0)
         },
       }
 
@@ -315,7 +322,10 @@ export async function mountRace (
           // the authoritative hash cannot move.
           const racing   = view ? view.status === 'racing' : true
 
-          prediction?.step(toRaceInput(frameOut), provisionalSpawn, racing)
+          // `frameOut.seq` files the pose this tick solves to under the frame
+          // that caused it, which is what reconciliation compares the server's
+          // answer against.
+          prediction?.step(toRaceInput(frameOut), provisionalSpawn, racing, frameOut.seq)
           transport.flushInput(transport.serverTick())
 
           // A new snapshot is the only thing that can correct the prediction,
@@ -324,13 +334,21 @@ export async function mountRace (
           if (prediction && server && transport.serverTick() !== lastSnapshot) {
             lastSnapshot = transport.serverTick()
 
-            const result = prediction.reconcile(server, transport.unacknowledged(), toRaceInput, provisionalSpawn, racing)
+            const result = prediction.reconcile({
+              server,
+              ack:        transport.serverAck(),
+              replay:     transport.unacknowledged(),
+              toInput:    toRaceInput,
+              spawn:      provisionalSpawn,
+              allowDrive: racing,
+            })
             transport.noteCorrection(result.correctionM)
 
-            if (result.snapped) {
-              localInterpolator.teleport()
+            // `reconcile` has already cut the interpolator and set the render
+            // offset. Only a snap cuts the camera too: a blend is drawn as
+            // continuous motion, so the camera should follow it as such.
+            if (result.tier === 'snap')
               rig.requestSnap()
-            }
           }
 
           publishTelemetry(telemetry, local.chassis, prediction, sceneControls.boost)

@@ -1,22 +1,37 @@
 /**
  * The mode-agnostic half of client-side prediction.
  *
- * What is here: the unacknowledged-input ring, and the render-offset smoother
- * that decides whether a server correction is ignored, blended, or snapped.
- * What is NOT here: anything that knows how a ship moves. Stepping the physics
- * and reading a snapshot belong to the mode, because those are the parts race
- * and battle genuinely differ on.
+ * What is here: the unacknowledged-input ring, the ring of poses this client
+ * predicted for those inputs, and the render-offset smoother that decides
+ * whether a server correction is ignored, blended, or snapped. What is NOT
+ * here: anything that knows how a ship moves. Stepping the physics and reading
+ * a snapshot belong to the mode, because those are the parts race and battle
+ * genuinely differ on.
  *
- * The three tiers are not a style choice. Rapier's controllers keep internal
- * per-contact state they do not expose for snapshotting, so a replay after a
- * hard reset restarts from a state close to — but not — the server's.
- * Correcting thirty times a second therefore fights the solver continuously and
- * produces exactly the shimmer prediction exists to prevent.
+ * The tiers are about what the PLAYER sees, not about protecting the solver.
+ * They used to be the latter: the ship was a rapier
+ * `DynamicRayCastVehicleController` whose per-wheel suspension state could not
+ * be snapshotted, so a reset-and-replay never restarted from the server's
+ * actual state and correcting thirty times a second fought the controller
+ * continuously. That vehicle is gone — a hovercraft's entire state is its body
+ * pose and velocity — so a correction now lands exactly, and the only question
+ * left is whether the player should be able to see it happen.
  */
 
 import { MAX_INPUT_FRAMES } from './rates'
 
 import type { InputFrame } from './codec/input'
+
+
+/**
+ * Predicted poses kept.
+ *
+ * Twice the unacknowledged-input cap, because an acknowledgement names a frame
+ * that has already left `PendingInputs` — the pose for it has to outlive the
+ * input by however long the snapshot carrying the acknowledgement was in
+ * flight.
+ */
+const HISTORY = MAX_INPUT_FRAMES * 2
 
 
 /**
@@ -93,6 +108,80 @@ export type Correction = {
   distance: number;
 }
 
+type OutType = { x: number; y: number; z: number }
+
+type FunctionReturnType = { x: number; y: number; z: number }
+
+/**
+ * Poses this client predicted, indexed by the input frame that produced them.
+ *
+ * Reconciliation needs this to ask the only question that means anything: at
+ * the tick the server answered for, was the prediction right? The server's
+ * snapshot describes `lastProcessedInput`, which is up to a round trip behind
+ * the frame the client is drawing. Comparing that pose to the one the client
+ * holds NOW measures `speed x round trip` of lag and calls it prediction
+ * error — at 50 m/s and 100 ms that is five metres the prediction never got
+ * wrong, which is over any sane snap threshold. Every snapshot then "corrects"
+ * a prediction that was tracking perfectly.
+ *
+ * Positions only: the deadband is a distance, and carrying rotations here
+ * would double the ring for something nothing reads.
+ */
+export class PredictedPoses {
+  private readonly seqs = new Int32Array(HISTORY)
+  private readonly xyz = new Float64Array(HISTORY * 3)
+  private head = -1
+
+  /** Store the pose that input frame `seq` integrated to. */
+  record (seq: number, x: number, y: number, z: number): void {
+    this.head            = (this.head + 1) % HISTORY
+    this.seqs[this.head] = seq
+
+    const at         = this.head * 3
+    this.xyz[at]     = x
+    this.xyz[at + 1] = y
+    this.xyz[at + 2] = z
+  }
+
+  /**
+   * Read back the pose for `seq`, or null when it is no longer held.
+   *
+   * Null is not an error — it is what a client sees on its first few snapshots,
+   * and after a snap threw the history away. The caller falls back to the
+   * present pose, which is what this code did unconditionally before.
+   */
+  find (seq: number, out: OutType): OutType | null {
+    if (this.head < 0)
+      return null
+
+    for (let step = 0; step < HISTORY; step++) {
+      const slot = (this.head - step + HISTORY) % HISTORY
+      if (this.seqs[slot] !== seq)
+        continue
+
+      const at = slot * 3
+      out.x    = this.xyz[at]
+      out.y    = this.xyz[at + 1]
+      out.z    = this.xyz[at + 2]
+      return out
+    }
+    return null
+  }
+
+  /**
+   * Forget everything.
+   *
+   * Called after a correction the replay did NOT follow up — a respawn. The
+   * ring then describes a trajectory the body is not on any more, and a stale
+   * entry is worse than no entry: it would measure the next snapshot against a
+   * pose from before the relocation.
+   */
+  reset (): void {
+    this.head = -1
+    this.seqs.fill(0)
+  }
+}
+
 /**
  * Holds the visible error between where the body is and where it is drawn.
  *
@@ -101,10 +190,6 @@ export type Correction = {
  * from the authoritative state rather than from a smoothed fake one is what
  * keeps stacked and colliding bodies stable.
  */
-type OutType = { x: number; y: number; z: number }
-
-type FunctionReturnType = { x: number; y: number; z: number }
-
 export class ErrorSmoother {
   private ox = 0
   private oy = 0

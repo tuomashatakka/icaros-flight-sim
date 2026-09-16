@@ -104,8 +104,9 @@ on the game server AND under Node on Vercel, so a stray `Bun.*` is a compile
 error rather than a runtime surprise on whichever host hits it first.
 
 **`packages/net` is the architecture document, as code.** NTP clock with slew,
-buffered entity interpolation, the rewind buffer, the prediction error-smoother,
-seat and baseline bookkeeping, and the bit-packed codec — smallest-three
+buffered entity interpolation, the rewind buffer, the predicted-pose ring and
+the prediction error-smoother, seat and baseline bookkeeping, and the bit-packed
+codec — smallest-three
 quaternions, quantised positions, Quake-3 delta compression against the client's
 last acknowledged snapshot. Nothing in it knows what a lap or a weapon is, which
 is exactly why both modes can share a transport, a prediction loop and an
@@ -463,6 +464,11 @@ Rendering samples `BodyInterpolator.sample(clock.alpha(), …)` — never the ra
 body, or poses stair-step above 60 Hz. After any `setTranslation`/`setRotation`,
 call `interpolator.teleport()` or the ship visibly smears to the new pose.
 
+The sampled pose is one step behind the body by construction, and
+`drawnPosition()` hands it back for the one caller that needs to know: a
+prediction correction, whose render offset has to be continuous with what the
+player was looking at rather than with where the body is.
+
 **Station keeping is throttle AND brake together.** Holding both is not a
 contradiction — mains lit, air brakes out, the difference trimmed to hold
 position — and it is how you park an airframe with no wheels. The trim band is
@@ -552,13 +558,57 @@ two snapshots around `serverNow() − interpDelay`; `packages/net/src/clock.ts`'
 `NetClock` estimates `serverNow()` and **slews** corrections rather than jumping them, because an
 offset applied instantly teleports every ship on screen.
 
-**Prediction corrects in three tiers, and not more often.** Rapier's controllers
-keep internal per-contact state they do not expose for snapshotting, so a replay
-after a hard reset restarts from a state close to but not the server's —
-correcting 30 times a second fights the solver continuously. Inside the deadband
-the body is left alone; above it the correction replays unacknowledged input and
-the visible jump decays away; past three metres continuity is a fiction and
-everything snaps. See `packages/engine/src/net/prediction.ts`, shared by both modes.
+**Reconciliation is a rewind and a replay, and three separate things have to be
+true for it to converge.** Each of them fails silently on its own, and each on
+its own produces the same symptom — the local ship visibly stepping forward
+thirty times a second, in every mode.
+
+1. **The error is measured at the tick the server ANSWERED for.** A snapshot
+   describes `lastProcessedInput`, which is a round trip old. Measure against
+   the pose the client is drawing and the round trip itself reads as prediction
+   error — five metres of it at racing speed, which is past any snap threshold,
+   so every snapshot corrects. `PredictedPoses` in `packages/net` files each
+   predicted pose under the input frame that caused it; `serverAck()` on both
+   transports is the join.
+2. **The rewind restores velocity, not just pose.** `ShipState` carries
+   `vx…wz` and both sims fill them. A reset that zeroes velocity leaves the
+   ship at a standstill at a stale pose, so nothing but the next correction
+   ever moves it again — the prediction gets *dragged* along half a metre at a
+   time instead of flying.
+3. **The replay INTEGRATES each frame.** `LocalPrediction.step` only applies
+   forces, because `world.step()` belongs to `physicsStepModule` and runs after
+   every module has had its say. Replaying N frames without stepping between
+   them leaves one frame's forces on a body that never moved. The newest frame
+   is deliberately left un-stepped: the caller's own `world.step()`, later in
+   the same tick, is the step that frame was always going to be integrated by.
+
+There is exactly one dynamic body in the client world — remote ships are
+interpolated transforms with no physics — which is what makes it safe for a
+replay to step that world at all.
+
+The tiers then decide only what the player is allowed to SEE. Inside the
+deadband the body is not touched; above it the jump goes into a decaying render
+offset and reads as a settle; past three metres continuity is a fiction and it
+is drawn immediately. A respawn (`respawnIndex`, never an event) snaps and
+replays nothing, because the input the player was holding was for a ship that no
+longer exists where it was.
+
+**The render offset has to be added to the drawn pose or the whole middle tier
+is dead code.** `scenes/base.ts` draws
+`interpolator.sample(clock.alpha(), …) + vehicle.renderOffset(frame.delta, …)`.
+It is measured against `BodyInterpolator.drawnPosition()` — the pose the last
+frame actually drew, which is one step behind the body, because that is what
+render interpolation is. Measured against the body instead, a whole step of
+motion goes unaccounted for and the ship skips forward by it.
+
+`reconcile` owns the interpolator cut as well as the offset: a correction is
+three things that are only correct together, and split across two files they
+drift. All it asks of the caller is `rig.requestSnap()`, and only on `'snap'`.
+
+See `packages/engine/src/net/prediction.ts`, shared by both modes, and
+`packages/engine/test/prediction.test.ts`, which runs a real room against the
+real prediction over a real latency and asserts the only thing a player can
+see: the drawn ship never moves further in one frame than it could fly.
 
 **A replayed frame must go through the same converter the server applies.**
 `toBattleInput` / `toRaceInput` live in their packages and are imported by both
@@ -646,7 +696,8 @@ packages/net/     The architecture document, as code. A leaf.
   src/clock.ts    NTP-shaped offset estimate. Slews, never jumps.
   src/room-clock.ts  `pongFor` — the PING/PONG handshake, identical for every room.
   src/interpolation.ts  Buffered entity interpolation, 250 ms extrapolation clamp.
-  src/prediction.ts     Pending-input ring + the three-tier error smoother.
+  src/prediction.ts     Pending-input ring, the ring of poses predicted for
+                  them (`PredictedPoses`), and the render-offset smoother.
   src/rewind.ts   Lag compensation, generic over the entity.
   src/seats.ts    Per-connection input bookkeeping and baseline history.
   src/rates.ts    Every rate, with the reason attached.
