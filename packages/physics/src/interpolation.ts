@@ -19,6 +19,11 @@ const _currQuat = new THREE.Quaternion()
 export class BodyInterpolator {
   private prev = new Float64Array(7)
   private curr = new Float64Array(7)
+
+  // The position `sample` last handed out. NOT the body's pose: it is one step
+  //  behind it by construction, and it is what a correction has to stay
+  //  continuous with. See `drawnPosition`.
+  private drawn = new Float64Array(3)
   private jumped = true
 
   constructor (private body: RAPIER.RigidBody) {
@@ -26,6 +31,7 @@ export class BodyInterpolator {
     // something coherent to blend between.
     this.commit()
     this.commit()
+    this.drawn.set(this.curr.subarray(0, 3))
   }
 
   /** Capture the solved pose. Call exactly once per sim tick, right after `world.step()`. */
@@ -75,6 +81,27 @@ export class BodyInterpolator {
     _prevQuat.set(p[3], p[4], p[5], p[6])
     _currQuat.set(c[3], c[4], c[5], c[6])
     outQuaternion.slerpQuaternions(_prevQuat, _currQuat, alpha)
+
+    this.drawn[0] = outPosition.x
+    this.drawn[1] = outPosition.y
+    this.drawn[2] = outPosition.z
+  }
+
+  /**
+   * The position the last rendered frame was drawn from.
+   *
+   * Not the same thing as the body's pose, and the difference is exactly one
+   * step: rendering blends `prev` toward `curr`, so it sits somewhere between
+   * the last two SOLVED poses while the body already holds the newer of them.
+   *
+   * A correction needs this rather than the body's pose. `teleport` collapses
+   * the blend onto the corrected pose, so the visual continuity has to come
+   * from an offset measured against what the player was actually looking at —
+   * measure it against the body instead and a whole step of motion goes
+   * unaccounted for, which the ship is then drawn skipping forward by.
+   */
+  drawnPosition (out: THREE.Vector3): THREE.Vector3 {
+    return out.set(this.drawn[0], this.drawn[1], this.drawn[2])
   }
 }
 

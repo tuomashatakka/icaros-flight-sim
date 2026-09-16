@@ -10,56 +10,69 @@
  * the server runs, at the same `STEP` — on its own rapier body, and corrects
  * that body when the server disagrees.
  *
- * Correction is deliberately three-tiered rather than a rewind-and-replay on
- * every snapshot, and the reason is specific: rapier's
- * `DynamicRayCastVehicleController` keeps internal per-wheel suspension and
- * friction state that it does not expose for snapshotting. A replay after a
- * hard reset therefore restarts from a state that is close to, but not, the
- * server's — so correcting 30 times a second would fight the controller
- * continuously and produce exactly the shimmer prediction exists to avoid.
+ * Reconciliation is a rewind and replay, and there are three parts to it that
+ * each fail silently on their own:
+ *
+ * 1. **The error is measured at the tick the server answered for.** A snapshot
+ *    describes `lastProcessedInput`, which is a round trip old. Measuring
+ *    against the pose the client holds NOW reads `speed x round trip` as
+ *    prediction error — metres of it at racing speed — so the deadband is
+ *    blown on every single snapshot no matter how well the prediction tracks.
+ * 2. **The rewind restores velocity, not just pose.** `ShipState` carries
+ *    `vx…wz`; a reset that zeroes them instead leaves the ship at a standstill
+ *    at a stale pose, and nothing but the next correction ever moves it again.
+ * 3. **The replay integrates.** `step` only applies forces — `world.step()`
+ *    lives in `physicsStepModule` — so replaying N frames without stepping
+ *    between them leaves one frame's forces on a body that never moved.
+ *
+ * Get any of the three wrong and the prediction cannot converge on the pose it
+ * was just corrected to, so it is corrected again on the next snapshot, and
+ * the ship visibly steps forward thirty times a second. That was the bug.
+ *
+ * The tiers then decide only what the player is allowed to see:
  *
  *   · under `DEADBAND`  — leave the body alone. The prediction is tracking.
- *   · under `HARD_SNAP` — reset to the server pose, replay unacknowledged
- *                         input, and absorb the visible jump into a decaying
- *                         render offset.
- *   · over  `HARD_SNAP` — a respawn, a teleport, or a genuine desync. Snap
- *                         everything, smooth nothing; pretending continuity
- *                         across a relocation is what draws a ship streaking
- *                         over the arena.
+ *   · under `HARD_SNAP` — rewind, replay, and absorb the visible jump into a
+ *                         decaying render offset, so it reads as a settle.
+ *   · over  `HARD_SNAP` — a genuine desync. Rewind and replay, but draw it
+ *                         immediately: past three metres, pretending the ship
+ *                         walked there is a worse lie than the cut.
+ *   · a respawn         — signalled by `respawnIndex`, never inferred. Snap to
+ *                         the server pose and replay NOTHING: the input the
+ *                         player was holding was for a ship that no longer
+ *                         exists where it was.
  */
 
 import { Vector3 } from 'three'
 import { STEP } from 'Φclock'
 import { stepHovercraft } from 'Φvehicle-step'
+import type { BodyInterpolator } from 'Φinterpolation'
 import { MAIN_THRUST_CAPACITY } from 'Φthrusters'
 import type { VehicleDebug } from '../vehicle'
 
 
 const COLLECT_FORCES = process.env.NODE_ENV !== 'production'
+import { DEFAULT_SMOOTHING } from 'Ξ'
 import { vehicleConfig } from 'Φconfig'
 import { DEFAULT_TUNING } from 'Ƨ'
 import { AIM_MAX, AIM_RATE } from 'Λ'
 import type { Transform } from 'Φtypes'
 import type { HovercraftState } from 'Φvehicle-step'
 
-import type { InputFrame } from 'Ξ'
+import { ErrorSmoother, PredictedPoses } from 'Ξ'
+import type { CorrectionTier, InputFrame } from 'Ξ'
 import type RAPIER from '@dimforge/rapier3d-deterministic-compat'
 
 
 /**
  * Position error tolerated before the body is touched at all, metres.
  *
- * Below this the prediction is tracking and a correction would cost more (in
- * disturbed wheel state) than it buys.
+ * Below this the prediction is tracking, and a rewind costs a handful of
+ * `world.step()` calls for a pose nobody could see moving. `DEFAULT_SMOOTHING`
+ * carries this, the snap threshold and the offset half-life together in
+ * `packages/net`, so the client and the architecture document cannot drift.
  */
-const DEADBAND = 0.35
-
-/** Above this, continuity is a fiction — snap rather than smooth. */
-const HARD_SNAP = 3
-
-// Render offset decay. ~0.12 s to fall to a tenth, so a correction is felt as
-//  a settle rather than seen as a jump.
-const SMOOTH_HALF_LIFE = 0.055
+const SMOOTHING = DEFAULT_SMOOTHING
 
 /** Per-tick blend for the g meter. ~0.35 s to settle at 60 Hz. */
 const G_SMOOTHING = 0.05
@@ -92,7 +105,15 @@ export type PredictInput = {
   resetSeq:  number;
 }
 
-/** What it needs back from the server. Both modes' merged views satisfy it. */
+/**
+ * What it needs back from the server. Both modes' merged views satisfy it.
+ *
+ * The velocities are not optional decoration. `ShipState` has carried `vx…wz`
+ * since the bit-packed codec replaced the JSON snapshot, precisely so a
+ * receiver never has to finite-difference two poses — and a rewind that
+ * restores pose but not velocity puts the predicted ship at a dead stop on
+ * every correction.
+ */
 export type ServerPose = {
   x:            number;
   y:            number;
@@ -101,6 +122,12 @@ export type ServerPose = {
   qy:           number;
   qz:           number;
   qw:           number;
+  vx:           number;
+  vy:           number;
+  vz:           number;
+  wx:           number;
+  wy:           number;
+  wz:           number;
   aimAngle:     number;
   boost:        number;
   respawnIndex: number;
@@ -110,27 +137,83 @@ export type PredictionRig = {
   chassis: RAPIER.RigidBody;
   world:   RAPIER.World;
   state:   HovercraftState;
+
+  /**
+   * The render's view of `chassis`.
+   *
+   * Reconciliation owns this rather than the caller, because a correction is
+   * three things that are only correct together: move the body, cut the
+   * interpolator, and hand the difference to the render offset. Split across
+   * two files, they drift — which is how the offset came to be measured
+   * against the body's pose while the interpolator was drawing a step behind
+   * it, and how the cut came to happen on hard snaps only.
+   */
+  interpolator: BodyInterpolator;
 }
 
 export type PredictionResult = {
 
-  /** Metres the body was moved by the last correction; 0 when inside the deadband. */
+  /**
+   * How far the body was moved, metres — zero inside the deadband.
+   *
+   * The distance the prediction was out BY is now measured at the acknowledged
+   * tick and so is a live, always-nonzero number; reporting that instead would
+   * push a new value into `setNetStats` thirty times a second and force a React
+   * commit with it, which is exactly what that setter's tolerance exists to
+   * prevent. What the HUD's meter means is how hard the link is correcting, and
+   * inside the deadband the answer is "not at all".
+   */
   correctionM: number;
 
-  // True when continuity was abandoned — the caller must also snap the camera
-  //  and any interpolator that was blending this body.
-  snapped: boolean;
+  /**
+   * What was done about it.
+   *
+   * `'none'` left the body alone. `'blend'` moved it and handed the difference
+   * to the render offset. `'snap'` moved it and drew it there at once. The
+   * interpolator is cut either way, by `reconcile` itself; all a correction
+   * asks of the caller is a camera cut, and only on `'snap'`.
+   */
+  tier: CorrectionTier;
 }
 
-const _serverPos = new Vector3()
-const _bodyPos   = new Vector3()
+/** Everything one reconciliation needs, named — it is five things now. */
+export type ReconcileParams = {
+
+  /** The authoritative pose, off the newest snapshot. */
+  server: ServerPose;
+
+  // The input frame that pose accounts for (`lastProcessedInput`). This is the
+  //  join between a snapshot and this client's own prediction history, and
+  //  without it there is no way to ask whether the prediction was right.
+  ack: number;
+
+  /** Frames the server has not seen yet, oldest first. */
+  replay: readonly InputFrame[];
+
+  /** The mode's own frame converter — the same one the server applies. */
+  toInput: (frame: InputFrame) => PredictInput;
+
+  spawn:      Transform;
+  allowDrive: boolean;
+}
+
+const _serverPos    = new Vector3()
+const _bodyPos      = new Vector3()
+const _predictedPos = new Vector3()
+const _beforePos    = new Vector3()
 
 export class LocalPrediction {
   readonly rig: PredictionRig
 
   // Difference between where the ship was drawn and where it now is, decayed
   //  to zero over a few frames so a correction never reads as a jump.
-  private readonly offset = new Vector3()
+  private readonly smoother = new ErrorSmoother(SMOOTHING)
+
+  /** Where this client thought it was, per input frame. See `reconcile`. */
+  private readonly history = new PredictedPoses()
+
+  /** The frame whose forces the caller's `world.step()` is about to integrate. */
+  private steppedSeq = 0
 
   private boostMeter = 1
   private groundedNow = false
@@ -204,8 +287,22 @@ export class LocalPrediction {
    * `spawn` is only consulted when the input asks for a respawn, which is why
    * the caller can pass its best guess rather than the authoritative lane —
    * the server's answer arrives in the next snapshot and corrects it.
+   *
+   * `seq` is the input frame's sequence number, and it is what lets
+   * reconciliation compare like with like later. Nothing here steps the world:
+   * `physicsStepModule` does that, after every module has had its say, because
+   * a force applied after `world.step()` silently does nothing for a tick.
+   * Which is exactly why the pose recorded below is recorded on ENTRY — at
+   * this point the body holds the solved result of the previous frame's
+   * forces, so it is that frame's pose, not this one's.
    */
-  step (input: PredictInput, spawn: Transform, allowDrive: boolean): void {
+  step (input: PredictInput, spawn: Transform, allowDrive: boolean, seq = 0): void {
+    if (this.steppedSeq > 0) {
+      const settled = this.rig.chassis.translation()
+      this.history.record(this.steppedSeq, settled.x, settled.y, settled.z)
+    }
+    this.steppedSeq = seq
+
     let resetRequested = false
     if (input.resetSeq !== this.lastResetSeq) {
       this.lastResetSeq = input.resetSeq
@@ -261,22 +358,17 @@ export class LocalPrediction {
    * Fold in one authoritative snapshot, replaying whatever input it has not
    * seen yet.
    *
-   * @param replay frames the server has not acknowledged, oldest first
+   * The error is measured between the server's pose and the pose this client
+   * predicted for `ack` — the same moment, from both sides. Measuring against
+   * the body's CURRENT pose instead reads the round trip as error: at 50 m/s
+   * and a 100 ms round trip that is five metres of lag the prediction never
+   * got wrong, which is past `hardSnap`, so every snapshot snaps.
    */
-  reconcile (
-    server: ServerPose,
-    replay: readonly InputFrame[],
-    toInput: (frame: InputFrame) => PredictInput,
-    spawn: Transform,
-    allowDrive: boolean,
-  ): PredictionResult {
+  reconcile ({ server, ack, replay, toInput, spawn, allowDrive }: ReconcileParams): PredictionResult {
     const body = this.rig.chassis
-    const t    = body.translation()
 
     _serverPos.set(server.x, server.y, server.z)
-    _bodyPos.set(t.x, t.y, t.z)
 
-    const error      = _serverPos.distanceTo(_bodyPos)
     const respawn    = this.respawnSeen !== null && this.respawnSeen !== server.respawnIndex
     this.respawnSeen = server.respawnIndex
 
@@ -285,34 +377,99 @@ export class LocalPrediction {
 
     this.boostMeter = server.boost
 
-    if (!respawn && error <= DEADBAND)
-      return { correctionM: 0, snapped: false }
+    // No record for `ack` means the history cannot answer — the first snapshots
+    // after a join, or the first after a snap cleared it. The present pose is
+    // the only reading available, which is what this used unconditionally
+    // before, and it errs towards correcting.
+    const t         = body.translation()
+    const predicted = this.history.find(ack, _predictedPos) ?? _bodyPos.set(t.x, t.y, t.z)
+    const error     = _serverPos.distanceTo(predicted)
 
-    // Remember where the ship was being drawn, so the correction can be hidden
-    // in the render offset rather than seen as a jump.
-    const hard = respawn || error > HARD_SNAP
-    if (!hard)
-      this.offset.add(_bodyPos).sub(_serverPos)
+    const { tier } = this.smoother.classify(error, respawn)
+    if (tier === 'none')
+      return { correctionM: 0, tier }
+
+    // Where the ship is being DRAWN from, before anything moves — which is a
+    // step behind the body, because that is what render interpolation is.
+    this.rig.interpolator.drawnPosition(_beforePos)
 
     this.applyServerPose(server)
 
-    // Replay only makes sense for a correction we are smoothing over. After a
-    // respawn the input the player was holding was for a ship that no longer
-    // exists where it was.
-    // Replayed through the SAME converter the server applies frames with — the
-    // mode passes it in — so a re-simulated tick is bit-identical to the one
-    // being corrected against.
-    if (!hard)
-      for (const frame of replay)
-        this.step(toInput(frame), spawn, allowDrive)
+    // A respawn replays nothing: the input the player was holding was for a
+    // ship that no longer exists where it was. Everything else replays, snap
+    // included — a desync is still a disagreement about where the ship is NOW,
+    // and leaving the body a round trip behind guarantees the next snapshot
+    // disagrees just as hard.
+    if (respawn)
+      // The ring now describes a trajectory the body is not on. A stale entry
+      // is worse than none: it would measure the next snapshot against a pose
+      // from before the relocation.
+      this.history.reset()
+    else
+      this.replayInput(replay, toInput, spawn, allowDrive)
 
-    if (hard) {
-      this.offset.set(0, 0, 0)
+    // The body's track is discontinuous now, so the blend across the cut has to
+    // go: `prev` is a pose from a trajectory the ship is not on any more.
+    this.rig.interpolator.teleport()
+
+    const settled = body.translation()
+    if (tier === 'blend')
+      // Hand the jump to the render, which walks it off over ~0.2 s. With the
+      // blend collapsed, this offset is the ONLY thing carrying visual
+      // continuity across the cut — so it is the drawn/corrected delta, not
+      // the raw server-versus-prediction error, which is measured at a
+      // different tick and which the replay has since moved on from.
+      //
+      // `absorb` accumulates rather than assigns, which is what makes a
+      // correction landing on top of a still-decaying one come out right.
+      this.smoother.absorb(
+        _beforePos.x - settled.x,
+        _beforePos.y - settled.y,
+        _beforePos.z - settled.z
+      )
+    else {
+      this.smoother.clear()
       this.rig.state.smoothedYawRate = 0
       this.rig.state.prevSpeed       = 0
     }
 
-    return { correctionM: error, snapped: hard }
+    return { correctionM: error, tier }
+  }
+
+  /**
+   * Re-simulate the frames the server has not answered for yet.
+   *
+   * Every frame goes through the SAME converter the server applies frames
+   * with — the mode passes it in — so a re-simulated tick is bit-identical to
+   * the one being corrected against.
+   *
+   * Each replayed frame is INTEGRATED. `step` only applies forces, because
+   * `world.step()` belongs to `physicsStepModule` and runs once all the
+   * modules have had their say; replaying N frames without stepping in between
+   * therefore leaves ONE frame's forces standing on a body that never moved,
+   * which is a prediction that can never converge on the pose it was just
+   * corrected to. There is exactly one dynamic body in this world — remote
+   * ships are interpolated transforms with no physics — so stepping it here
+   * moves nothing but the ship being replayed.
+   */
+  private replayInput (
+    replay: readonly InputFrame[],
+    toInput: (frame: InputFrame) => PredictInput,
+    spawn: Transform,
+    allowDrive: boolean,
+  ): void {
+    for (let i = 0; i < replay.length; i++) {
+      const frame = replay[i]
+      this.step(toInput(frame), spawn, allowDrive, frame.seq)
+
+      // The newest frame's forces are deliberately left standing: the caller's
+      // own `world.step()`, later in this same tick, is the step that frame was
+      // always going to be integrated by. Stepping it here as well would run
+      // the prediction one tick ahead of the input that justifies it, every
+      // time a snapshot lands.
+      if (i < replay.length - 1)
+        this.rig.world.step()
+    }
   }
 
   private applyServerPose (server: ServerPose): void {
@@ -320,26 +477,32 @@ export class LocalPrediction {
     body.setTranslation({ x: server.x, y: server.y, z: server.z }, true)
     body.setRotation({ x: server.qx, y: server.qy, z: server.qz, w: server.qw }, true)
 
-    // The snapshot carries no velocity for the local ship — the replay below
-    // rebuilds it from the input stream, which is more faithful than a
-    // quantised sample would be. Zeroing first stops the pre-correction
-    // velocity from being integrated on top of a pose it does not belong to.
-    body.setLinvel({ x: 0, y: 0, z: 0 }, true)
-    body.setAngvel({ x: 0, y: 0, z: 0 }, true)
+    // Velocity comes off the wire with the pose. `ShipState` has carried
+    // `vx…wz` since the bit-packed codec replaced the JSON snapshot, and this
+    // is the reason it does: a rewind that zeroes velocity instead puts the
+    // ship at a standstill at a pose that is a round trip old, and no amount
+    // of replaying gets it back up to speed within the frames available. The
+    // ship then only ever moves when it is corrected — half a metre at a time,
+    // thirty times a second.
+    body.setLinvel({ x: server.vx, y: server.vy, z: server.vz }, true)
+    body.setAngvel({ x: server.wx, y: server.wy, z: server.wz }, true)
+
+    // The body no longer holds the solved pose of any input frame, so the next
+    // `step` must not file it under the one it was about to. The replay
+    // re-records every frame it re-simulates on its way back to the present.
+    this.steppedSeq = 0
   }
 
   /**
    * Decay the visual offset and write it into `out`.
    *
-   * Exponential rather than linear so the correction is fastest when it is
-   * largest and tapers rather than stopping abruptly.
+   * Called once per RENDERED frame, not per tick: this is presentation, and a
+   * 144 Hz display should walk off a correction in the same wall time a 60 Hz
+   * one does. Exponential rather than linear so the correction is fastest when
+   * it is largest and tapers rather than stopping abruptly.
    */
   smoothing (dt: number, out: Vector3): Vector3 {
-    if (this.offset.lengthSq() > 1e-8)
-      this.offset.multiplyScalar(Math.pow(0.5, dt / SMOOTH_HALF_LIFE))
-    else
-      this.offset.set(0, 0, 0)
-
-    return out.copy(this.offset)
+    this.smoother.sample(dt, out)
+    return out
   }
 }

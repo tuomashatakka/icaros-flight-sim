@@ -33,7 +33,7 @@ export type { Baseline, Snapshot } from './codec/snapshot'
 export { InputButton, decodeInputPacket, emptyInputFrame, encodeInputPacket } from './codec/input'
 export type { InputFrame, InputPacket } from './codec/input'
 
-export { DEFAULT_SMOOTHING, ErrorSmoother, PendingInputs } from './prediction'
+export { DEFAULT_SMOOTHING, ErrorSmoother, PendingInputs, PredictedPoses } from './prediction'
 export type { Correction, CorrectionTier, SmoothingConfig } from './prediction'
 
 export { acceptPacket, createSeat, drainInput, encodeFor, snapshotHistory } from './seats'

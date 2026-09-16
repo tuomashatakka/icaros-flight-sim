@@ -84,7 +84,20 @@ what a summary field means. Invoke it when debugging runtime behaviour.
   own glyph (`Δlib/auth`); every other package answers to its own
   (`Σnet/room-link`, `Φconfig`, `Ψweapons`, …) — no slash after the glyph.
 - **No client ever simulates a remote ship.** One rapier world, one predicted
-  chassis; everyone else is an interpolated transform.
+  chassis; everyone else is an interpolated transform. That single dynamic body
+  is also what makes it safe for a prediction replay to step the client world.
+- **A prediction correction is three things that are only correct together.**
+  Measure the error at the tick the server acknowledged (not the one being
+  drawn), restore velocity as well as pose (the wire carries both), and step the
+  world between replayed frames (`step` applies forces; `physicsStepModule`
+  integrates). Get any one wrong and the prediction never converges, so every
+  snapshot corrects and the ship visibly steps forward 30 times a second — in
+  every mode. `reconcile` owns all three, plus the interpolator cut and the
+  render offset; the caller only cuts the camera, and only on `'snap'`.
+- **The render offset must be ADDED to the drawn pose**, in
+  `scenes/base.ts`, or the middle correction tier is dead code and every
+  blended correction is a visible pop. It is measured against
+  `interpolator.drawnPosition()` — a step behind the body — never the body.
 - **Never mark a Colyseus Schema field `.unreliable()`** while the transport is
   WebSocket: the field is then never patched at all.
 - **Rapier is the deterministic build, pinned exactly.** The SIMD build is not

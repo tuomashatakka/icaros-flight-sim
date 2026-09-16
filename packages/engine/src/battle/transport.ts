@@ -37,6 +37,9 @@ export { resolveServerUrl } from '../net/room-link'
 
 // One pilot, both channels joined. Field names match what the scene already
 //  reads, because the merge is an implementation detail and not a new concept.
+//  `vx…wz` are the wire's velocities: the codec has always carried them, and
+//  this view used to drop them — which left the local prediction rewinding to a
+//  standstill on every correction.
 export type ViewPlayer = {
   id:           string;
   team:         BattleTeam;
@@ -52,6 +55,12 @@ export type ViewPlayer = {
   qy:           number;
   qz:           number;
   qw:           number;
+  vx:           number;
+  vy:           number;
+  vz:           number;
+  wx:           number;
+  wy:           number;
+  wz:           number;
   kills:        number;
   deaths:       number;
   primaryCd:    number;
@@ -211,6 +220,10 @@ export class BattleTransport {
     return this.link.unacknowledged()
   }
 
+  serverAck (): number {
+    return this.link.serverAck()
+  }
+
   serverTick (): number {
     return this.link.serverTick()
   }
@@ -262,6 +275,12 @@ export class BattleTransport {
         qy:           pose?.qy ?? 0,
         qz:           pose?.qz ?? 0,
         qw:           pose?.qw ?? 1,
+        vx:           pose?.vx ?? 0,
+        vy:           pose?.vy ?? 0,
+        vz:           pose?.vz ?? 0,
+        wx:           pose?.wx ?? 0,
+        wy:           pose?.wy ?? 0,
+        wz:           pose?.wz ?? 0,
         kills:        entry.kills,
         deaths:       entry.deaths,
         primaryCd:    entry.primaryCd,
