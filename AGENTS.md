@@ -89,7 +89,12 @@ package also publishes an `exports` map, which is what makes
 handle. What used to live there — a hand-rolled matchmaker, a ticket table, a
 `/lobby` protocol, a room registry and a fixed-rate loop — is gone: Colyseus
 does matchmaking, seat reservation, reconnection and room lifecycle, and the
-rooms themselves moved beside the simulations they drive.
+rooms themselves moved beside the simulations they drive. Each room times its
+own `stepOnce` into a ring in `Ξtick-stats`, and `/health` reports p50, p95
+and max per room plus a rooms-per-process estimate. The monitor and playground
+mount only with `COLYSEUS_DEVTOOLS=1` (the dev scripts set it; a bare
+`bun src/index.ts` does not), and the root `Dockerfile` is the one place
+`NODE_ENV=production` is guaranteed.
 
 It runs on `@colyseus/bun-websockets`, so it stays a Bun process.
 
@@ -154,7 +159,7 @@ database and never fails because a `DATABASE_URL` happens to be exported.
 
 `window.__devBattle`'s `place()` and `face()` are gone with the hand-rolled
 protocol. They existed to poke a running match from a script;
-`@colyseus/playground` (mounted at `/playground` in dev) joins a real room and
+`@colyseus/playground` (mounted at `/playground` when `COLYSEUS_DEVTOOLS=1`) joins a real room and
 does it without a bespoke message family in the wire.
 
 **Screenshots are slow here and that is the environment, not a bug.** Capturing
@@ -432,7 +437,10 @@ so the thumb cluster is not drawn over the instruments. Everything at 16:9 or
 wider is untouched by all three.
 
 **Post-processing extends through `BaseSceneConfig.postEffects`.** Battle's chain
-lives in `packages/engine/src/battle/post.ts`. Two traps it documents: nothing may sample
+lives in `packages/engine/src/render/post.ts`, which also appends the SMAA/FXAA
+pass straight onto the composer after `OutputPass` (the base renderer runs with
+`antialias: false`: the composer's targets are never multisampled, so the flag
+only ever resolved the final quad). Two traps it documents: nothing may sample
 the composer's shared depth texture (it is attached to both render targets, so
 binding it while writing renders the frame black with no error — this is why
 there is no motion blur), and `createGodRaysPass` without a dedicated occlusion
@@ -538,6 +546,17 @@ a client cannot tell which decoded transform belongs to which roster entry.
 
 Measured: 30.3 B/ship full, 11.3 B/ship delta, ~5.3 KB/s down for 16 ships at
 30 Hz. A Schema patch is 7 bytes for a score change and 0 for an unchanged tick.
+The snapshot envelope is 152 bits: `serverTimeMs` travels as its low 32 bits and
+`decodeSnapshot` unwraps it against the receiver's clock. An input packet writes
+the first frame's `seq`/`clientTick` in full and one flag bit per following
+frame while the run stays consecutive (63 bits a frame instead of 126).
+
+**The client reconnects itself.** `RoomLink` disables the SDK's own retry loop
+(its defaults run for about a minute against the rooms' 15 s grace and never
+reach `onLeave` while retrying) and owns the loop: exponential backoff from
+500 ms to 4 s until `RECONNECT_GRACE_SEC` (in `Ξrates`, shared with both rooms)
+has elapsed, then `linkState` becomes `lost`. The visors show `RECONNECTING · n`
+in amber and `LINK LOST` in red.
 
 **Do not mark a Schema field `.unreliable()` on a WebSocket transport.** Colyseus
 0.18 supports the marker — it is the document's channel split — but an
@@ -701,6 +720,10 @@ packages/net/     The architecture document, as code. A leaf.
   src/rewind.ts   Lag compensation, generic over the entity.
   src/seats.ts    Per-connection input bookkeeping and baseline history.
   src/rates.ts    Every rate, with the reason attached.
+  src/messages.ts `MessageKind` — the message letters both rooms and the client agree on.
+  src/channels.ts The msgpackr event channel (`MessageType`, `encodeEvents`).
+  src/tick-stats.ts Per-room tick histograms; `/health` reads the registry.
+  src/rate-limit.ts The token bucket behind the API routes and room joins.
   src/dev/replay-cli.ts  `runReplayCli` — the shared CLI shell race's and
                   battle's own `dev/replay-cli.ts` call into. Not in the barrel.
 
@@ -758,9 +781,11 @@ packages/engine/  Depends on state, core, physics, net, race, battle. The
                   Everything here is presentation or prediction; no rules.
   scenes/base.ts  The one composition root that stayed here — the shared scene
                   skeleton every mode's `mountX` in `packages/game/` builds on.
-  net/            Shared client netcode: room-link.ts (the Colyseus binding),
-                  prediction.ts, remote-hull.ts, ticket.ts, telemetry-publish.ts.
-  race/           transport.ts — joins the two channels into one view.
+  net/            Shared client netcode: room-link.ts (the Colyseus binding,
+                  owns reconnection), mode-transport.ts (the transport skeleton
+                  both modes extend), prediction.ts, remote-hull.ts, ticket.ts,
+                  telemetry-publish.ts.
+  race/           transport.ts — the race half on `ModeTransportBase`.
   battle/         transport.ts, pools.ts, opponents.ts, projectiles.ts,
                   visuals.ts, plus the scenery and the post chain.
   levels/         The four tracks' MESHES. The data is in packages/race.

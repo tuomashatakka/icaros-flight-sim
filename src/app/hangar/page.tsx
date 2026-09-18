@@ -9,7 +9,7 @@ import styles from './hangar.module.css'
 
 export default function HangarPage () {
   // Stable identity: a new function would tear down the WebGL context. Ship
-  // changes flow through zustand into app state instead of remounting.
+  // changes flow through the client stores into app state instead of remounting.
   const mount = useCallback(async (canvas: HTMLCanvasElement) => mountHangar(canvas), [])
 
   return <div className={ styles.page }>

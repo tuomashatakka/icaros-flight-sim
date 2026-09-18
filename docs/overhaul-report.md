@@ -844,6 +844,35 @@ budget in CI). Rapier WASM is already dynamic-imported and single-flighted.
 
 ## 7. Roadmap
 
+> **Status, 2026-09-18 (same day, on `main`).** Phases 1 and 2 were executed
+> from this section; the gates held (0 type errors, 0 lint errors under the
+> committed toolchain, 425 tests, all eight replay hashes unchanged, leak greps
+> empty).
+>
+> | item | state | commit |
+> | --- | --- | --- |
+> | 1 client reconnection | landed | `44fe9d4` |
+> | 2 devtools fail-closed, Dockerfile, first server test | landed | `3364b18` |
+> | 3 rate limits, name clamp, per-IP join limiter | landed | `2693192` |
+> | 4 AA pass, half-res DoF, dead LOD branch | landed | `9215731` |
+> | 5 doc drift | landed | with this note |
+> | 6 lint ratchet | deferred | an eslint-config bump (4.0.1 → 4.1.0) sits uncommitted in the tree and moves the count; ratchet once it lands |
+> | 7 Next boundaries | landed | `278dcb3` |
+> | 8 tick histogram on `/health` | landed | `cc00a70` |
+> | 9 sim allocation cuts; Schema synced from live state | landed | `951ef2e`, `cc00a70` |
+> | 10 codec trims | landed | `bff82bb` |
+> | 11 one `MessageKind` | landed | `cc00a70` |
+> | 12 replay-burst instrumentation | landed | `353791a` |
+> | 13 hygiene | GC nits landed (`353791a`); knip, dead exports, zod removal, vitest alignment deferred with item 6 (manifest changes, one lockfile touch) | |
+> | 14 Tier-3 | clock injection (`bff82bb`) and the `STEP` tripwire (`test/step-consistency.test.ts`) landed; `AnyApp` typing deferred | |
+> | 15 mode-transport base | landed | `353791a` |
+> | 16 first `state` and `server` tests | landed | `packages/state/test`, `3364b18` |
+> | 17–21 (Phase 3) | not started | |
+>
+> Also open: the within-range `bun audit fix` (Next 16.2.9 carries two critical
+> advisories fixed in 16.3.3, inside the caret range) — a lockfile-only change
+> that the build must gate.
+
 Two gating classes, kept distinct because the replay hashes sample **sim
 state**, not wire bytes:
 

@@ -254,7 +254,7 @@ export function mountHangar (
     ],
   })
 
-  // Livery edits and ship picks arrive from the DOM panel through zustand.
+  // Livery edits and ship picks arrive from the DOM panel through the client stores.
   const unsubscribeShip = shipStore.select(
     s => s.currentConfig,
     shipConfig => app.setState({ shipConfig })

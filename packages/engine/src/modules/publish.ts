@@ -11,10 +11,10 @@ const PUBLISH_PERIOD = 1 / 15
 const ZONE_PERIOD = 10
 
 /**
- * Mirrors simulation outputs to zustand for stores and non-engine consumers.
+ * Mirrors simulation outputs to the client stores for non-engine consumers.
  *
  * The only engine -> `gameplayStore` writer. Throttled, because the old code called
- * `setSpeed`/`setBoostMeter` every physics tick — 60 zustand writes a second,
+ * `setSpeed`/`setBoostMeter` every physics tick — 60 store writes a second,
  * each re-rendering the HUD tree.
  */
 /**
