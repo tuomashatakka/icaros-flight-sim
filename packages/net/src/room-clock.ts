@@ -16,7 +16,13 @@ export type ClockPong = {
   serverTick:   number;
 }
 
-/** Build a room's PONG reply to a client's PING. */
-export function pongFor (t0: number, serverTick: number): ClockPong {
-  return { t0, serverTimeMs: Date.now(), serverTick }
+/**
+ * Build a room's PONG reply to a client's PING.
+ *
+ * `nowMs` defaults to the wall clock, so every real caller is unaffected; a
+ * test injects a fixed value so the reply is assertable without depending on
+ * `Date.now()`.
+ */
+export function pongFor (t0: number, serverTick: number, nowMs: number = Date.now()): ClockPong {
+  return { t0, serverTimeMs: nowMs, serverTick }
 }

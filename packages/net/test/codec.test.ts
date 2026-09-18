@@ -8,11 +8,12 @@
 
 import { describe, expect, it } from 'vitest'
 
-import { BitReader, BitWriter } from 'Ξcodec/bits'
+import { BitReader, BitWriter, unwrap32 } from 'Ξcodec/bits'
 import { QUAT_BITS, packQuaternion, unpackQuaternion } from 'Ξcodec/quantize'
 import { DEFAULT_SHIP_CODEC, ShipField, ShipFlags, changedFields, emptyShipState } from 'Ξcodec/ship-state'
-import { StaleBaselineError, baselineOf, decodeSnapshot, encodeSnapshot } from 'Ξcodec/snapshot'
+import { StaleBaselineError, baselineOf, buildSnapshot, decodeSnapshot, encodeSnapshot } from 'Ξcodec/snapshot'
 import { decodeInputPacket, emptyInputFrame, encodeInputPacket } from 'Ξcodec/input'
+import { MAX_INPUT_FRAMES } from 'Ξrates'
 
 import type { ShipState } from 'Ξcodec/ship-state'
 
@@ -82,7 +83,7 @@ describe('smallest-three quaternion', () => {
 describe('snapshot', () => {
   it('round-trips a full snapshot within a quantisation step', () => {
     const snapshot = { serverTick: 4096, serverTimeMs: 1699999999999, baselineTick: 0, lastProcessedInput: 77, ships: [ shipAt(1), shipAt(2, { x: -500, health: 12 }) ], removed: []}
-    const decoded  = decodeSnapshot(encodeSnapshot(snapshot, null), null)
+    const decoded  = decodeSnapshot(encodeSnapshot(snapshot, null), null, snapshot.serverTimeMs)
 
     expect(decoded.serverTick).toBe(4096)
     expect(decoded.serverTimeMs).toBe(1699999999999)
@@ -142,6 +143,56 @@ describe('snapshot', () => {
     expect(changedFields(a, { ...a, x: a.x + 1e-6 }, DEFAULT_SHIP_CODEC) & ShipField.POSITION).toBe(0)
     expect(changedFields(a, { ...a, x: a.x + 1 }, DEFAULT_SHIP_CODEC) & ShipField.POSITION).toBe(ShipField.POSITION)
   })
+
+  it('shrinks the envelope by 32 bits now that serverTimeMs travels as its low half', () => {
+    // serverTick(32) + serverTimeMs(32) + baselineTick(32) + lastProcessedInput(32)
+    // + shipCount(16) + removedCount(8) = 152 bits = 19 bytes — 4 bytes (32 bits)
+    // less than the 184-bit envelope a 64-bit serverTimeMs used to cost.
+    const snapshot = { serverTick: 1, serverTimeMs: 1, baselineTick: 0, lastProcessedInput: 0, ships: [], removed: []}
+    expect(encodeSnapshot(snapshot, null).byteLength).toBe(19)
+  })
+
+  it('round-trips serverTimeMs across a wrap boundary, given a reference on the far side of it', () => {
+    const period    = 2 ** 32
+    const trueMs    = 500 * period - 3
+    const reference = 500 * period + 7
+    const snapshot  = { serverTick: 1, serverTimeMs: trueMs, baselineTick: 0, lastProcessedInput: 0, ships: [], removed: []}
+
+    expect(decodeSnapshot(encodeSnapshot(snapshot, null), null, reference).serverTimeMs).toBe(trueMs)
+  })
+})
+
+describe('buildSnapshot', () => {
+  it('stamps the snapshot with an injected time instead of the wall clock', () => {
+    const snapshot = buildSnapshot(42, [], 123456)
+    expect(snapshot).toEqual({ serverTick: 42, serverTimeMs: 123456, baselineTick: 0, lastProcessedInput: 0, ships: [], removed: []})
+  })
+
+  it('stamps a different snapshot when the injected time differs', () => {
+    expect(buildSnapshot(1, [], 1000)).not.toEqual(buildSnapshot(1, [], 2000))
+  })
+})
+
+describe('unwrap32', () => {
+  it('recovers an ordinary time from a nearby reference', () => {
+    expect(unwrap32(1700000000000 >>> 0, 1700000000250)).toBe(1700000000000)
+  })
+
+  it('unwraps a time just below a period boundary from a reference just above it', () => {
+    const period    = 2 ** 32
+    const trueMs    = 500 * period - 3
+    const reference = 500 * period + 7
+
+    expect(unwrap32(trueMs >>> 0, reference)).toBe(trueMs)
+  })
+
+  it('unwraps a time just above a period boundary from a reference just below it', () => {
+    const period    = 2 ** 32
+    const trueMs    = 500 * period + 3
+    const reference = 500 * period - 7
+
+    expect(unwrap32(trueMs >>> 0, reference)).toBe(trueMs)
+  })
 })
 
 describe('input packet', () => {
@@ -171,6 +222,67 @@ describe('input packet', () => {
 
     const typical = encodeInputPacket({ frames: [ 1, 2, 3 ].map(s => emptyInputFrame(s, s)), lastAckSnapshot: 1, interpTick: 1 })
     expect(typical.byteLength).toBeLessThan(64)
+  })
+})
+
+describe('input packet: consecutive-frame delta', () => {
+  it('costs 64 fewer bits per following frame than a run broken by a gap would', () => {
+    const base        = { steer: 0.2, pitch: -0.1, strafe: 0, throttle: 0.5, brake: 0, buttons: 0, resetSeq: 0 }
+    const consecutive = [ 1, 2, 3, 4 ].map(seq => ({ ...base, seq, clientTick: 500 + seq }))
+    // Same four frames, but every one after the first breaks the run. The
+    // shift must vary per frame — shifting them all by the same amount would
+    // keep frames 2 and 3 exactly one apart from their (also shifted)
+    // predecessor, "accidentally" re-establishing a consecutive run.
+    const gapped = consecutive.map((frame, i) => i === 0 ? frame : { ...frame, seq: frame.seq + i * 10, clientTick: frame.clientTick + i * 10 })
+
+    const consecutiveBytes = encodeInputPacket({ frames: consecutive, lastAckSnapshot: 1, interpTick: 1 })
+    const gappedBytes      = encodeInputPacket({ frames: gapped, lastAckSnapshot: 1, interpTick: 1 })
+
+    // Three following frames: each one that breaks the run pays 64 bits (8
+    // bytes) more than one that continues it — one flag bit either way, plus
+    // the full 32 + 32 bits only when the run actually broke.
+    expect(gappedBytes.byteLength - consecutiveBytes.byteLength).toBe(3 * 8)
+
+    // The counters are what the flag scheme touches; quantised axes are
+    // already covered by the round-trip test above.
+    const counters = decodeInputPacket(consecutiveBytes).frames.map(f => ({ seq: f.seq, clientTick: f.clientTick }))
+    expect(counters).toEqual(consecutive.map(f => ({ seq: f.seq, clientTick: f.clientTick })))
+  })
+
+  it('round-trips exactly across a dropped frame', () => {
+    const frames = [
+      { seq: 10, clientTick: 200, steer: 0.4, pitch: 0, strafe: -0.3, throttle: 1, brake: 0, buttons: 0b0010, resetSeq: 0 },
+      // The run breaks here, as if a frame between these two never made it out.
+      { seq: 12, clientTick: 202, steer: -0.1, pitch: 0.2, strafe: 0, throttle: 0.3, brake: 0.1, buttons: 0, resetSeq: 1 },
+      { seq: 13, clientTick: 203, steer: 0, pitch: 0, strafe: 0, throttle: 0, brake: 0, buttons: 0, resetSeq: 1 },
+    ]
+
+    const decoded = decodeInputPacket(encodeInputPacket({ frames, lastAckSnapshot: 5, interpTick: 5 }))
+
+    expect(decoded.frames).toHaveLength(3)
+    expect(decoded.frames[0]).toMatchObject({ seq: 10, clientTick: 200 })
+    expect(decoded.frames[1]).toMatchObject({ seq: 12, clientTick: 202 })
+    expect(decoded.frames[2]).toMatchObject({ seq: 13, clientTick: 203 })
+    expect(decoded.frames[1].steer).toBeCloseTo(-0.1, 2)
+    expect(decoded.frames[2].resetSeq).toBe(1)
+  })
+
+  it('leaves a single frame unchanged in size', () => {
+    const packet = encodeInputPacket({ frames: [ emptyInputFrame(1, 1) ], lastAckSnapshot: 0, interpTick: 0 })
+
+    // header 32 + 32 + 8 = 72 bits, plus one frame always written in full:
+    // 32 + 32 (counters) + 30 + 16 + 8 + 8 (axes/levels/buttons/resetSeq) = 126
+    // bits — no flag bit exists for a frame with no predecessor to compare to.
+    expect(packet.byteLength).toBe(Math.ceil((72 + 126) / 8))
+  })
+
+  it('still caps at MAX_INPUT_FRAMES when more are offered, keeping the newest', () => {
+    const frames  = Array.from({ length: MAX_INPUT_FRAMES + 5 }, (_, i) => emptyInputFrame(i + 1, i + 1))
+    const decoded = decodeInputPacket(encodeInputPacket({ frames, lastAckSnapshot: 0, interpTick: 0 }))
+
+    expect(decoded.frames).toHaveLength(MAX_INPUT_FRAMES)
+    expect(decoded.frames[0].seq).toBe(frames[frames.length - MAX_INPUT_FRAMES].seq)
+    expect(decoded.frames.at(-1)?.seq).toBe(frames.at(-1)?.seq)
   })
 })
 

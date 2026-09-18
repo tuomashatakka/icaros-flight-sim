@@ -10,6 +10,17 @@
  * Axes are quantised to 10 bits, which is finer than any input device resolves
  * and — more to the point — is applied identically on both sides, so the frame
  * the client predicted with is bit-for-bit the frame the server replays.
+ *
+ * `seq` and `clientTick` are consecutive for almost every frame after the
+ * first — one packet is the unacknowledged tail of a single continuous stream
+ * (see `PendingInputs` in `prediction.ts`), so writing both in full on every
+ * frame spends 64 bits confirming what only a dropped frame can make untrue.
+ * The FIRST frame writes both counters in full; every frame after it writes
+ * one flag bit — 1 when `seq` and `clientTick` both advanced by exactly one
+ * from the previous frame, encoding nothing further; 0 when the run broke,
+ * followed by the full 32 + 32 bits. Lossless either way: a broken run costs
+ * one bit more than writing the counters outright would have, and an unbroken
+ * one costs 63 bits less.
  */
 
 import { BitReader, BitWriter } from './bits'
@@ -68,9 +79,17 @@ export function encodeInputPacket (packet: InputPacket): Uint8Array {
   writer.writeBits(packet.interpTick, 32)
   writer.writeBits(frames.length, 8)
 
-  for (const frame of frames) {
-    writer.writeBits(frame.seq, 32)
-    writer.writeBits(frame.clientTick, 32)
+  frames.forEach((frame, i) => {
+    const previous    = frames[i - 1]
+    const consecutive = i > 0 && frame.seq === previous.seq + 1 && frame.clientTick === previous.clientTick + 1
+
+    if (i > 0)
+      writer.writeBool(consecutive)
+    if (i === 0 || !consecutive) {
+      writer.writeBits(frame.seq, 32)
+      writer.writeBits(frame.clientTick, 32)
+    }
+
     writer.writeBits(quantize(frame.steer, -1, 1, AXIS_BITS), AXIS_BITS)
     writer.writeBits(quantize(frame.pitch, -1, 1, AXIS_BITS), AXIS_BITS)
     writer.writeBits(quantize(frame.strafe, -1, 1, AXIS_BITS), AXIS_BITS)
@@ -78,7 +97,7 @@ export function encodeInputPacket (packet: InputPacket): Uint8Array {
     writer.writeBits(quantize(frame.brake, 0, 1, LEVEL_BITS), LEVEL_BITS)
     writer.writeBits(frame.buttons & 0xff, 8)
     writer.writeBits(frame.resetSeq & 0xff, 8)
-  }
+  })
 
   return writer.finish()
 }
@@ -91,19 +110,27 @@ export function decodeInputPacket (bytes: Uint8Array): InputPacket {
   const count           = Math.min(reader.readBits(8), MAX_INPUT_FRAMES)
 
   const frames: InputFrame[] = []
+  let seq        = 0
+  let clientTick = 0
 
-  for (let i = 0; i < count; i++)
+  for (let i = 0; i < count; i++) {
+    const consecutive = i > 0 && reader.readBool()
+
+    seq        = consecutive ? seq + 1 : reader.readBits(32)
+    clientTick = consecutive ? clientTick + 1 : reader.readBits(32)
+
     frames.push({
-      seq:        reader.readBits(32),
-      clientTick: reader.readBits(32),
-      steer:      dequantize(reader.readBits(AXIS_BITS), -1, 1, AXIS_BITS),
-      pitch:      dequantize(reader.readBits(AXIS_BITS), -1, 1, AXIS_BITS),
-      strafe:     dequantize(reader.readBits(AXIS_BITS), -1, 1, AXIS_BITS),
-      throttle:   dequantize(reader.readBits(LEVEL_BITS), 0, 1, LEVEL_BITS),
-      brake:      dequantize(reader.readBits(LEVEL_BITS), 0, 1, LEVEL_BITS),
-      buttons:    reader.readBits(8),
-      resetSeq:   reader.readBits(8),
+      seq,
+      clientTick,
+      steer:    dequantize(reader.readBits(AXIS_BITS), -1, 1, AXIS_BITS),
+      pitch:    dequantize(reader.readBits(AXIS_BITS), -1, 1, AXIS_BITS),
+      strafe:   dequantize(reader.readBits(AXIS_BITS), -1, 1, AXIS_BITS),
+      throttle: dequantize(reader.readBits(LEVEL_BITS), 0, 1, LEVEL_BITS),
+      brake:    dequantize(reader.readBits(LEVEL_BITS), 0, 1, LEVEL_BITS),
+      buttons:  reader.readBits(8),
+      resetSeq: reader.readBits(8),
     })
+  }
 
   return { frames, lastAckSnapshot, interpTick }
 }

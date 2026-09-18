@@ -161,3 +161,27 @@ export class BitReader {
     return this.bitPos >= this.bytes.length * 8
   }
 }
+
+/**
+ * Reconstruct a value from its low 32 bits against a trusted reference.
+ *
+ * `codec/snapshot.ts` sends `serverTimeMs` as only its low 32 bits — epoch
+ * milliseconds wrap at 2^32 (~49.7 days) at an arbitrary wall-clock moment, so
+ * the other half is redundant for a field nothing there quantises anyway.
+ * `referenceMs` resolves the ambiguity: replace ITS low 32 bits with `low`, then
+ * pick whichever of that candidate, one period earlier or one period later
+ * lands nearest the reference. That recovers the original exactly whenever the
+ * reference is within +-2^31 ms (~24.8 days) of it — any live wall clock
+ * comparing itself to a peer's is — and picks the wrong period past that.
+ */
+export function unwrap32 (low: number, referenceMs: number): number {
+  const period    = 2 ** 32
+  const candidate = Math.floor(referenceMs / period) * period + low
+
+  let best = candidate
+  for (const shifted of [ candidate - period, candidate + period ])
+    if (Math.abs(shifted - referenceMs) < Math.abs(best - referenceMs))
+      best = shifted
+
+  return best
+}

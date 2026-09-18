@@ -12,9 +12,15 @@
  * packets, so the server only ever deltas against a snapshot it knows arrived.
  * That is what makes this safe over a lossy channel: a dropped snapshot costs
  * one bigger snapshot later, never a permanently wrong ship.
+ *
+ * `serverTimeMs` rides the wire as only its low 32 bits, not the full 64: epoch
+ * milliseconds wrap at 2^32 (~49.7 days) at an arbitrary wall-clock moment, so
+ * the other half is redundant for a field nothing here quantises. `unwrap32`
+ * (`bits.ts`) reconstructs it on the way back in, against `decodeSnapshot`'s
+ * `referenceMs` — the receiver's own clock, by default.
  */
 
-import { BitReader, BitWriter } from './bits'
+import { BitReader, BitWriter, unwrap32 } from './bits'
 import { ALL_SHIP_FIELDS, DEFAULT_SHIP_CODEC, changedFields, emptyShipState, readShipState, writeShipState } from './ship-state'
 
 import type { ShipCodecConfig, ShipState } from './ship-state'
@@ -42,7 +48,8 @@ export function encodeSnapshot (snapshot: Snapshot, baseline: Baseline | null, c
   const useDelta = baseline !== null && baseline.tick === snapshot.baselineTick && snapshot.baselineTick !== 0
 
   writer.writeBits(snapshot.serverTick, 32)
-  writer.writeFloat64(snapshot.serverTimeMs)
+  // Low 32 bits only — `decodeSnapshot` unwraps the rest against a reference.
+  writer.writeBits(Math.round(snapshot.serverTimeMs) >>> 0, 32)
   writer.writeBits(useDelta ? snapshot.baselineTick : 0, 32)
   writer.writeBits(snapshot.lastProcessedInput, 32)
   writer.writeBits(Math.min(snapshot.ships.length, MAX_SHIPS), 16)
@@ -65,11 +72,11 @@ export function encodeSnapshot (snapshot: Snapshot, baseline: Baseline | null, c
   return writer.finish()
 }
 
-export function decodeSnapshot (bytes: Uint8Array, baseline: Baseline | null, config: ShipCodecConfig = DEFAULT_SHIP_CODEC): Snapshot {
+export function decodeSnapshot (bytes: Uint8Array, baseline: Baseline | null, referenceMs: number = Date.now(), config: ShipCodecConfig = DEFAULT_SHIP_CODEC): Snapshot {
   const reader = new BitReader(bytes)
 
   const serverTick         = reader.readBits(32)
-  const serverTimeMs       = reader.readFloat64()
+  const serverTimeMs       = unwrap32(reader.readBits(32), referenceMs)
   const baselineTick       = reader.readBits(32)
   const lastProcessedInput = reader.readBits(32)
   const count              = reader.readBits(16)
@@ -124,7 +131,11 @@ export function baselineOf (snapshot: Snapshot): Baseline {
  * `encodeFor` in `seats.ts`; `removed` has no equivalent in either sim yet.
  * Race and battle read their ships completely differently, but the envelope
  * around them should not be a second place the two formats could drift.
+ *
+ * `nowMs` defaults to the wall clock, so every real caller is unaffected; a
+ * test injects a fixed value so the result is assertable without depending on
+ * `Date.now()`.
  */
-export function buildSnapshot (serverTick: number, ships: ShipState[]): Snapshot {
-  return { serverTick, serverTimeMs: Date.now(), baselineTick: 0, lastProcessedInput: 0, ships, removed: []}
+export function buildSnapshot (serverTick: number, ships: ShipState[], nowMs: number = Date.now()): Snapshot {
+  return { serverTick, serverTimeMs: nowMs, baselineTick: 0, lastProcessedInput: 0, ships, removed: []}
 }
