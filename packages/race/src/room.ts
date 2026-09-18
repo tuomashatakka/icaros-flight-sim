@@ -15,9 +15,11 @@
  * rapier's `world.timestep` and the `dt` `vehicleConfig` is tuned against.
  */
 
-import { Room } from '@colyseus/core'
-import { STEP, TICK_HZ, acceptPacket, createSeat, decodeInputPacket, drainInput, encodeFor, pongFor, snapshotHistory, ticksPerSnapshot } from 'Ξ'
+import { Room, ServerError } from '@colyseus/core'
+import { STEP, TICK_HZ, acceptPacket, createRateLimiter, createSeat, decodeInputPacket, drainInput, encodeFor, pongFor, snapshotHistory, ticksPerSnapshot } from 'Ξ'
+import { RECONNECT_GRACE_SEC } from 'Ξrates'
 import { createSimClock } from 'Φclock'
+import { sanitisePilotName } from 'Ðauth/pilot-name'
 import { verifyTicket } from 'Ðauth/ticket'
 import { recordMatchEnd, recordMatchStart, recordRaceResults, withDatabase } from 'Ð'
 
@@ -28,7 +30,7 @@ import { isTrackId, trackBundle } from './levels'
 import { raceSnapshotOf } from './snapshot'
 import { toRaceInput } from './input'
 
-import type { Client } from '@colyseus/core'
+import type { AuthContext, Client } from '@colyseus/core'
 import type { InputFrame, InputPacket, Seat } from 'Ξ'
 import type { ShipId } from 'Φships'
 import type { TrackId } from './levels'
@@ -44,11 +46,17 @@ export const MessageKind = {
   PONG:     'q',
 } as const
 
-/** Seconds a dropped racer's ship is held, so a reconnect comes back to it. */
-const RECONNECT_GRACE_SEC = 15
-
 /** Bots added so a lobby of one is still a race. */
 const DEFAULT_GRID = 4
+
+/**
+ * Twenty joins a minute per IP.
+ *
+ * Best-effort per process, like every token bucket built on `Ξrate-limit` —
+ * the floor under an attacker who can reach many processes is a WAF rule, not
+ * this module. See AGENTS.md / docs/overhaul-report.md §4.3 N3.
+ */
+const joinLimiter = createRateLimiter({ capacity: 20, refillPerSecond: 20 / 60 })
 
 export type RaceRoomOptions = {
   trackId?: TrackId;
@@ -72,7 +80,14 @@ export class RaceRoom extends Room<{ state: RaceStateType }> {
   private readonly startedAt = Date.now()
   private everRaced = false
 
-  static async onAuth (token: string): Promise<unknown> {
+  static async onAuth (token: string, _options: unknown, context: AuthContext): Promise<unknown> {
+    // `context.ip` is resolved by Colyseus itself (x-real-ip, then
+    // x-forwarded-for's first hop, then the transport's own peer address), so
+    // it is reachable here on every real network join; only a server-initiated
+    // one (bots, tests) has no auth context at all, and never reaches this.
+    if (context.ip && !joinLimiter.take(context.ip))
+      throw new ServerError(429, 'too many joins from this address')
+
     // A guest is a legitimate visitor, not a failure: the ticket route mints one
     // for a signed-out browser too. Only a FORGED or expired ticket is refused.
     const ticket = token ? await verifyTicket(token) : null
@@ -109,7 +124,7 @@ export class RaceRoom extends Room<{ state: RaceStateType }> {
 
   async onJoin (client: Client, options: { name?: string; shipId?: ShipId } = {}): Promise<void> {
     const auth  = client.auth as { pilotId: string | null; name: string } | undefined
-    const racer = this.sim.addPlayer(auth?.name ?? options.name ?? 'Pilot', options.shipId ?? 'icaras')
+    const racer = this.sim.addPlayer(sanitisePilotName(auth?.name ?? options.name), options.shipId ?? 'icaras')
 
     this.pilotOf.set(racer.id, auth?.pilotId ?? null)
     this.seats.set(client.sessionId, createSeat(racer.id, this.assignNetIndex(racer.id)))

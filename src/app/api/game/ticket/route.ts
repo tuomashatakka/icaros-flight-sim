@@ -23,7 +23,8 @@
  *   answers 503 and names the variable rather than 500-ing anonymously.
  */
 
-import { mintTicket } from 'Ð'
+import { mintTicket, sanitisePilotName } from 'Ð'
+import { createRateLimiter } from 'Ξrate-limit'
 
 import { auth } from '../../../../lib/auth'
 
@@ -32,6 +33,31 @@ import type { Session } from 'next-auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
+
+/**
+ * Thirty tickets a minute per IP — a browser mints one on every load of the
+ * lobby and every level, not just at sign-in, so this budget is generous
+ * compared to registration's.
+ *
+ * One instance at module scope: see the identical note in
+ * `src/app/api/register/route.ts` for why, and for what it does not cover.
+ */
+const LIMIT   = { capacity: 30, refillPerSecond: 30 / 60 }
+const limiter = createRateLimiter(LIMIT)
+
+/** `x-forwarded-for` carries the whole proxy chain; only its first hop is the client. */
+function clientIp (request: Request): string {
+  return request.headers.get('x-forwarded-for')?.split(',')[0]?.trim() ||
+    request.headers.get('x-real-ip')?.trim() ||
+    'unknown'
+}
+
+function rateLimited (): Response {
+  return Response.json(
+    { error: 'rate-limited' },
+    { status: 429, headers: { 'Retry-After': String(Math.ceil(1 / LIMIT.refillPerSecond)) }},
+  )
+}
 
 /**
  * Read the session, or decide there isn't one.
@@ -51,13 +77,16 @@ async function currentSession (): Promise<Session | null> {
 }
 
 export async function GET (request: Request): Promise<Response> {
+  if (!limiter.take(clientIp(request)))
+    return rateLimited()
+
   const session = await currentSession()
-  const asked   = new URL(request.url).searchParams.get('name')?.slice(0, 24)
+  const asked   = sanitisePilotName(new URL(request.url).searchParams.get('name'))
 
   // A signed-in pilot's name is the server's to decide, not the query
   // string's; only a guest gets to pick one.
   const pilotId = session?.user?.id ?? null
-  const name    = pilotId ? session?.user?.name ?? 'Pilot' : asked || 'Pilot'
+  const name    = pilotId ? session?.user?.name ?? 'Pilot' : asked
 
   try {
     return Response.json({ ticket: await mintTicket({ pilotId, name }), name, registered: Boolean(pilotId) })

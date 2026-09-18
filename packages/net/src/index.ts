@@ -44,3 +44,6 @@ export type { ClockPong } from './room-clock'
 
 export { MessageType, decodeEvents, encodeEvents } from './channels'
 export type { MessageKey, NetChannel } from './channels'
+
+export { MAX_RATE_LIMIT_KEYS, createRateLimiter } from './rate-limit'
+export type { RateLimiter, RateLimiterOptions } from './rate-limit'

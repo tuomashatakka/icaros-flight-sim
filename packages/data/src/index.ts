@@ -28,6 +28,8 @@ export type { CredentialResult } from './auth/credentials'
 
 export { dummyHash, hashPassword, verifyPassword } from './auth/hash'
 
+export { sanitisePilotName } from './auth/pilot-name'
+
 export { getDatabase, setDatabase, withDatabase } from './runtime'
 
 export { TICKET_TTL_SECONDS, mintTicket, verifyTicket } from './auth/ticket'

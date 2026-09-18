@@ -14,9 +14,11 @@
  * `stepHovercraft` would retune every ship and desync every prediction.
  */
 
-import { Room } from '@colyseus/core'
-import { STEP, TICK_HZ, acceptPacket, createSeat, decodeInputPacket, drainInput, encodeFor, pongFor, snapshotHistory, ticksPerSnapshot } from 'Ξ'
+import { Room, ServerError } from '@colyseus/core'
+import { STEP, TICK_HZ, acceptPacket, createRateLimiter, createSeat, decodeInputPacket, drainInput, encodeFor, pongFor, snapshotHistory, ticksPerSnapshot } from 'Ξ'
+import { RECONNECT_GRACE_SEC } from 'Ξrates'
 import { createSimClock } from 'Φclock'
+import { sanitisePilotName } from 'Ðauth/pilot-name'
 import { verifyTicket } from 'Ðauth/ticket'
 import { recordMatchEnd, recordMatchPlayers, recordMatchStart, withDatabase } from 'Ð'
 
@@ -28,7 +30,7 @@ import { createBattleRewind } from './rewind'
 import { battleSnapshotOf } from './snapshot'
 import { toBattleInput } from './input'
 
-import type { Client } from '@colyseus/core'
+import type { AuthContext, Client } from '@colyseus/core'
 import type { InputFrame, InputPacket, Seat } from 'Ξ'
 import type { BattleStateType } from './state'
 import type { BattlePlayer } from './sim'
@@ -44,8 +46,14 @@ export const MessageKind = {
   PONG:     'q',
 } as const
 
-/** Seconds a dropped pilot's ship is held, so a reconnect comes back to it. */
-const RECONNECT_GRACE_SEC = 15
+/**
+ * Twenty joins a minute per IP.
+ *
+ * Best-effort per process, like every token bucket built on `Ξrate-limit` —
+ * the floor under an attacker who can reach many processes is a WAF rule, not
+ * this module. See AGENTS.md / docs/overhaul-report.md §4.3 N3.
+ */
+const joinLimiter = createRateLimiter({ capacity: 20, refillPerSecond: 20 / 60 })
 
 export type BattleRoomOptions = {
   arenaId?: string;
@@ -81,7 +89,14 @@ export class BattleRoom extends Room<{ state: BattleStateType }> {
    */
   private readonly capturesOf = new Map<string, number>()
 
-  static async onAuth (token: string): Promise<unknown> {
+  static async onAuth (token: string, _options: unknown, context: AuthContext): Promise<unknown> {
+    // `context.ip` is resolved by Colyseus itself (x-real-ip, then
+    // x-forwarded-for's first hop, then the transport's own peer address), so
+    // it is reachable here on every real network join; only a server-initiated
+    // one (bots, tests) has no auth context at all, and never reaches this.
+    if (context.ip && !joinLimiter.take(context.ip))
+      throw new ServerError(429, 'too many joins from this address')
+
     // A guest is a legitimate visitor, not a failure: the ticket route mints one
     // for a signed-out browser too. Only a FORGED or expired ticket is refused.
     const ticket = token ? await verifyTicket(token) : null
@@ -122,7 +137,7 @@ export class BattleRoom extends Room<{ state: BattleStateType }> {
 
   async onJoin (client: Client, options: { name?: string; shipId?: ShipId; loadout?: Loadout } = {}): Promise<void> {
     const auth = client.auth as { pilotId: string | null; name: string } | undefined
-    const name = auth?.name ?? options.name ?? 'Pilot'
+    const name = sanitisePilotName(auth?.name ?? options.name)
 
     const player = this.sim.addPlayer(name, teamForJoin(this.sim), options.shipId ?? 'icaras', options.loadout)
 
