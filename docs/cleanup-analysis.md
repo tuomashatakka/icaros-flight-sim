@@ -1,5 +1,11 @@
 # Codebase cleanup analysis
 
+> **Continued in [`overhaul-report.md`](./overhaul-report.md)** (baseline
+> `34661ed`, 2026-09-18), which re-measures this ledger after the package
+> split, closes it item by item in its §2.3, and carries the current roadmap.
+> Status notes below are as of the package-split branch and are not updated
+> further here.
+
 Baseline: `claude/hud-gui-overhaul-dxp9e3` at `16a5adf` (the current state of the
 codebase; `main` is strictly behind it). Measured, not guessed: `bun run
 typecheck` clean, `bun run lint` 0 errors / 63 warnings, `bun run test` 25 files /
