@@ -1,0 +1,72 @@
+/*
+ * Shared look for the three Next.js route boundaries: error, loading and
+ * not-found. Each is a sibling of every route rather than one route's own
+ * page, so they read from the root design tokens in globals.css directly
+ * instead of a themed per-route wash — the boundary can surface under a
+ * track, the arena, the hangar or the editor, and should not look like it
+ * belongs to any one of them.
+ */
+
+.page {
+  width: 100%;
+  height: 100%;
+  min-height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+  background: var(--background);
+}
+
+.panel {
+  max-width: 26rem;
+  padding: 2rem;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--card);
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.85rem;
+}
+
+.title {
+  margin: 0;
+  font-size: clamp(1.5rem, 5vw, 2rem);
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.message {
+  margin: 0;
+  color: var(--muted-foreground);
+  font-size: 0.95rem;
+  line-height: 1.5;
+}
+
+.primary {
+  padding: 0.6rem 1.1rem;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  background: var(--primary);
+  color: var(--background);
+  font: inherit;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.primary:hover {
+  opacity: 0.9;
+}
+
+/* No spinner: a single line that breathes, using the reset's own `pulse` —
+   unobtrusive is the point, since this can flash between routes that are
+   otherwise instant. */
+.loading {
+  margin: 0;
+  font-size: 0.78rem;
+  letter-spacing: 0.22em;
+  text-transform: uppercase;
+  color: var(--muted-foreground);
+  animation: pulse 1.6s ease-in-out infinite;
+}
