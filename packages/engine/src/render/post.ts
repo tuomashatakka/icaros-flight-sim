@@ -41,7 +41,7 @@ import type { Pass } from 'three/addons/postprocessing/Pass.js'
 import type { ShaderPass } from 'three/addons/postprocessing/ShaderPass.js'
 import type { EffectContext, GradePass } from 'threejs-scene/modules/post'
 import { createCinematicLUT, createGradePass } from 'threejs-scene/modules/post'
-import { createAnamorphic, createChromaticAberration, createLUT, createRadialBlur } from 'threejs-scene/modules/post/webgl'
+import { createAnamorphic, createChromaticAberration, createFXAA, createLUT, createRadialBlur, createSMAA } from 'threejs-scene/modules/post/webgl'
 import { DofPass } from './dof-pass'
 import type { ScenePost } from '../scenes/base'
 import { reducedMotion } from '../lifecycle'
@@ -151,6 +151,8 @@ export function createScenePost (options: ScenePostOptions = {}): ScenePostHandl
   let chromatic:  ShaderPass | null = null
   let anamorphic: Pass | null       = null
   let dof:        DofPass | null    = null
+  let smaa:       Pass | null       = null
+  let fxaa:       Pass | null       = null
 
   // Decays toward 0 every frame; `pulse` only ever raises it, so overlapping
   // hits reinforce instead of cutting each other off.
@@ -212,6 +214,38 @@ export function createScenePost (options: ScenePostOptions = {}): ScenePostHandl
           chromatic:  0,
         })
         passes.push(grade)
+
+        // Edge AA belongs on the tonemapped LDR image, not the linear HDR chain
+        // above, so it goes straight onto the composer instead of through the
+        // return: `effects` results are spliced BEFORE `OutputPass` by
+        // `addPassBeforeOutput`, but `EffectComposer.addPass` appends to the
+        // end — after `OutputPass`, which `createComposer` has already added by
+        // the time this callback runs. `composer.setSize` (the module's resize
+        // hook) walks every pass it holds, so these two need no resize wiring
+        // of their own. SMAA carries the look above the low tier; FXAA — one
+        // texture read against SMAA's three passes — takes over at level 0, on
+        // the same ladder `anamorphic`/`dof` already flip on.
+        smaa         = createSMAA()
+        fxaa         = createFXAA()
+        smaa.enabled = level >= 1
+        fxaa.enabled = level === 0
+        ctx.composer.addPass(smaa)
+        ctx.composer.addPass(fxaa)
+
+        // The module disposes only the passes this callback RETURNS, and the
+        // composer handle's own dispose frees just its render targets — so two
+        // passes appended behind its back would keep SMAA's edge and weight
+        // targets alive across every scene teardown. Hanging their disposal on
+        // the composer they were appended to keeps the leak fix beside the
+        // thing that caused it.
+        const composerDispose = ctx.composer.dispose.bind(ctx.composer)
+        ctx.composer.dispose  = () => {
+          smaa?.dispose()
+          fxaa?.dispose()
+          smaa = null
+          fxaa = null
+          composerDispose()
+        }
 
         return passes
       },
@@ -283,6 +317,10 @@ export function createScenePost (options: ScenePostOptions = {}): ScenePostHandl
         chromatic.enabled = level > 0
       if (radial && level === 0)
         radial.enabled = false
+      if (smaa)
+        smaa.enabled = level >= 1
+      if (fxaa)
+        fxaa.enabled = level === 0
     },
   }
 }

@@ -148,9 +148,14 @@ export class DofPass extends Pass {
     this.quad     = new FullScreenQuad(this.material)
     this.copyQuad = new FullScreenQuad(this.copyMaterial)
 
+    // Half-resolution, deliberately: a blur's own output is blurred by
+    // definition, so a full-res target bought nothing visible and cost ~4x the
+    // VRAM and fill on the one tier that runs this pass. `uTexel` above stays
+    // sized to the FULL `tDiffuse`/`tDepth` the taps actually sample — only
+    // this working target, and what the copy quad reads from it, shrink.
     // No depth attachment, deliberately: this is the target the blur may write
     // to while the composer's shared depth texture is bound for reading.
-    this.target = new THREE.WebGLRenderTarget(Math.max(1, width), Math.max(1, height), {
+    this.target = new THREE.WebGLRenderTarget(Math.max(1, Math.floor(width / 2)), Math.max(1, Math.floor(height / 2)), {
       minFilter:   THREE.LinearFilter,
       magFilter:   THREE.LinearFilter,
       type:        THREE.HalfFloatType,
@@ -172,7 +177,9 @@ export class DofPass extends Pass {
   setSize (width: number, height: number): void {
     const w = Math.max(1, Math.round(width))
     const h = Math.max(1, Math.round(height))
-    this.target.setSize(w, h)
+    // Same half-res target as the constructor; `uTexel` still describes the
+    // full-res `tDiffuse`/`tDepth`, which are not resized here.
+    this.target.setSize(Math.max(1, Math.floor(w / 2)), Math.max(1, Math.floor(h / 2)))
     this.material.uniforms.uTexel.value.set(1 / w, 1 / h)
   }
 

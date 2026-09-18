@@ -361,7 +361,10 @@ export async function mountBaseScene<TState extends object> (
     clock,
     camera:   rig.camera,
     scene:    { background: environment.background },
-    renderer: { shadows: true },
+    // The composer's targets are never multisampled (its `WebGLRenderTarget`s
+    // carry no `samples`), so this bought only a resolve on the final quad; a
+    // dedicated SMAA/FXAA pass in render/post.ts does the actual AA now.
+    renderer: { shadows: true, antialias: false },
     use:      modules,
 
     render (frame) {

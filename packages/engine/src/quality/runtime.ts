@@ -86,7 +86,6 @@ export function createRendererQuality (options: OptionsType): RendererQuality {
   const timer                               = createGpuTimer(renderer)
   const _size                               = new THREE.Vector2()
   const particleCounts                      = new WeakMap<THREE.BufferGeometry, number>()
-  const lodDistances                        = new WeakMap<THREE.LOD, number[]>()
   let appliedStage                        = -1
   let currentSettings: QualitySettings
   let applied: QualitySettings | null     = null
@@ -136,13 +135,6 @@ export function createRendererQuality (options: OptionsType): RendererQuality {
         const count    = particleCounts.get(geometry) ?? geometry.getAttribute('position')?.count ?? 0
         particleCounts.set(geometry, count)
         geometry.setDrawRange(0, Math.floor(count * settings.particleScale))
-      }
-      if (object instanceof THREE.LOD) {
-        const distances = lodDistances.get(object) ?? object.levels.map(level => level.distance)
-        lodDistances.set(object, distances)
-        object.levels.forEach((level, index) => {
-          level.distance = distances[index] * settings.lodScale
-        })
       }
     })
   }
