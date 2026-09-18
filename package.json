@@ -19,7 +19,7 @@
     "dev:shot": "node scripts/dev-cli.mjs shot",
     "dev:console": "node scripts/dev-cli.mjs console",
     "dev:eval": "node scripts/dev-cli.mjs eval",
-    "dev:server": "bun --watch packages/server/src/index.ts",
+    "dev:server": "COLYSEUS_DEVTOOLS=1 bun --watch packages/server/src/index.ts",
     "dev:all": "node scripts/dev-all.mjs",
     "dev:scenario": "bun packages/race/src/dev/replay-cli.ts",
     "dev:replay": "bun packages/battle/src/dev/replay-cli.ts",

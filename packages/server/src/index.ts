@@ -61,8 +61,9 @@ server.define('battle', BattleRoom)
   .filterBy([ 'arenaId' ])
 
 if (config.devTools) {
-  // Mounted only outside production: the monitor exposes every room's live
-  // state, and the playground will happily join one.
+  // Mounted only when explicitly opted in (COLYSEUS_DEVTOOLS=1, set by the dev
+  // scripts): the monitor exposes every room's live state with no auth, and
+  // the playground will happily join one.
   const app                           = transport.getExpressApp()
   const [{ monitor }, { playground }] = await Promise.all([
     import('@colyseus/monitor'),

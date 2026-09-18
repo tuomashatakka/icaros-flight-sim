@@ -43,9 +43,17 @@ function flag (name: string, fallback = false): boolean {
 
 export function loadConfig (): ServerConfig {
   return {
-    host:     process.env.HOST ?? '0.0.0.0',
-    port:     int('PORT', 9003),
-    devTools: flag('COLYSEUS_DEVTOOLS', process.env.NODE_ENV !== 'production'),
+    host: process.env.HOST ?? '0.0.0.0',
+    port: int('PORT', 9003),
+
+    // Fails closed. `/colyseus` and `/playground` (index.ts) hand out every
+    // room's live player and position state with no auth in front of them, and
+    // nothing guarantees NODE_ENV is set correctly on whatever host runs this —
+    // there was no Dockerfile or platform config pinning it at all. Keying the
+    // default off `NODE_ENV !== 'production'` meant one forgotten env var
+    // shipped an open monitor; an explicit COLYSEUS_DEVTOOLS=1 is opt-in only,
+    // and only the dev scripts set it.
+    devTools: flag('COLYSEUS_DEVTOOLS', false),
     raceGrid: int('RACE_GRID_BOTS', 4),
   }
 }

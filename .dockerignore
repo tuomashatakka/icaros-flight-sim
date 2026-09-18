@@ -1,0 +1,14 @@
+# Keeps the server image build context small and out of the host's own
+# state: a node_modules built for the host's OS/arch, a stale Next build, the
+# git history, the Next-only public assets and docs, none of which the game
+# server touches at runtime.
+#
+# Anchored the same way .gitignore is: an unanchored `data` would also match
+# `packages/data`, the Drizzle package the server needs to boot.
+/node_modules
+node_modules/
+/.next
+/.git
+/public
+/docs
+/data

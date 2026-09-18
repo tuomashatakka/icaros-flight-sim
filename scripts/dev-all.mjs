@@ -64,7 +64,9 @@ for (const key of [ 'DATABASE_URL', 'DB_DRIVER', 'GAME_TOKEN_SECRET', 'AUTH_SECR
 
 const targets = [
   { name: 'client', color: '\x1b[36m', args: [ 'run', 'dev' ]},
-  { name: 'server', color: '\x1b[35m', args: [ 'run', 'dev:server' ]},
+  // devTools defaults closed (packages/server/src/config.ts); the dev spawn
+  // opts back in explicitly so the monitor and playground come up here too.
+  { name: 'server', color: '\x1b[35m', args: [ 'run', 'dev:server' ], env: { COLYSEUS_DEVTOOLS: '1' }},
 ]
 
 const children = []
@@ -78,7 +80,7 @@ function prefix (target, chunk) {
 }
 
 for (const target of targets) {
-  const child = spawn('bun', target.args, { cwd: ROOT, env, stdio: [ 'ignore', 'pipe', 'pipe' ]})
+  const child = spawn('bun', target.args, { cwd: ROOT, env: { ...env, ...target.env }, stdio: [ 'ignore', 'pipe', 'pipe' ]})
 
   child.stdout.on('data', chunk => prefix(target, chunk))
   child.stderr.on('data', chunk => prefix(target, chunk))
