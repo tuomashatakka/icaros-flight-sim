@@ -43,6 +43,7 @@ let _ray: RAPIER.Ray | null = null
 const throttles   = new Float64Array(THRUSTER_RIG.length)
 const padDistance = new Float64Array(4)
 const padHit      = new Uint8Array(4)
+const padLift     = [ 0, 0, 0, 0 ]
 
 const AIR_DENSITY = 1.225
 
@@ -413,7 +414,12 @@ export function stepHovercraft (params: HovercraftStepParams): HovercraftStepRes
   const damping = 2 * 1.2 * Math.sqrt(stiffness * mass / 4) *
     (suspensionCompression / vehicleConfig.suspensionCompression)
 
-  const padLift = [ 0, 0, 0, 0 ]
+  // Hoisted to module scope and shared by every ship and tick, so it must be
+  // re-zeroed here rather than reallocated: the loops below only WRITE
+  // padLift[i] for a grounded pad (padHit[i]), so a bare hoist would leak the
+  // last tick's — or a different ship's — lift into a pad that just left the
+  // ground.
+  padLift.fill(0)
   for (let i = 0; i < 4; i++) {
     if (!padHit[i])
       continue

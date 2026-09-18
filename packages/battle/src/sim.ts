@@ -175,6 +175,21 @@ export class BattleSim {
   private poseSource: ((player: BattlePlayer) => Vec3) | null = null
 
   /**
+   * `hitCandidates()` memo, valid only for the (tick, poseSource) pair it was
+   * built under.
+   *
+   * `stepLock` alone calls `hitCandidates()` once per player, so an unmemoized
+   * map allocated an `{ id, team, position }` per player PER player — O(n^2)
+   * small objects a tick. Keyed on `poseSource` by REFERENCE rather than
+   * `tickNo` alone, because the fire pass below swaps `poseSource` per shooter
+   * (lag compensation rewinds each shooter's view independently): a tick-only
+   * key would hand one shooter's hit test another shooter's rewound poses.
+   */
+  private candidatesCache:  HitCandidate[] | null = null
+  private candidatesTick:   number = -1
+  private candidatesSource: ((player: BattlePlayer) => Vec3) | null = null
+
+  /**
    * Optional lag compensation, installed by the server.
    *
    * Given the shooter, returns the pose source their shots should resolve
@@ -215,11 +230,18 @@ export class BattleSim {
 
   /** Everything a hit test may touch, at the poses currently in force. */
   private hitCandidates (): HitCandidate[] {
-    return this.players.map(player => ({
+    if (this.candidatesCache && this.candidatesTick === this.tickNo && this.candidatesSource === this.poseSource)
+      return this.candidatesCache
+
+    this.candidatesCache  = this.players.map(player => ({
       id:       player.id,
       team:     player.team,
       position: this.poseOf(player),
     }))
+    this.candidatesTick   = this.tickNo
+    this.candidatesSource = this.poseSource
+
+    return this.candidatesCache
   }
 
   private constructor (arena: BattleArena, config: BattleConfig, physics: Physics) {
