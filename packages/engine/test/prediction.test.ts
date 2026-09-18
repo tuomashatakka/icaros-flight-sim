@@ -41,6 +41,7 @@ import { NEUTRAL_RACE_INPUT } from 'Λtypes'
 import { LocalPrediction } from 'Σnet/prediction'
 
 import type { InputFrame } from 'Ξ'
+import type { Transform } from 'Φtypes'
 import type { ServerPose } from 'Σnet/prediction'
 
 
@@ -291,6 +292,58 @@ describe('a correction the prediction could not avoid', () => {
     const cruise   = median(run.frameSteps)
     const settling = run.frameSteps.filter(step => Math.abs(step - cruise) > cruise * 0.02)
     expect(settling.length).toBeGreaterThanOrEqual(4)
+  })
+})
+
+describe('replay burst instrumentation', () => {
+  it('reports the frame count and increments bursts when a correction replays', async () => {
+    // A bare client half — no server, no room — because the thing under test
+    // is `replayInput`'s own bookkeeping, not reconciliation's convergence.
+    const { spec } = trackBundle('flats')
+    const RAPIER   = await initRapier()
+    const client   = createPhysics(RAPIER)
+    attachBoxColliders(client, spec.colliders, spec.colliderOffset)
+
+    const spawn: Transform = { position: [ 0, 2, 0 ], quaternion: [ 0, 0, 0, 1 ] }
+    const { chassis }   = createHovercraft(client.world, spawn)
+    const interpolator  = new BodyInterpolator(chassis)
+    const prediction    = new LocalPrediction({ chassis, world: client.world, state: createHovercraftState(), interpolator })
+
+    const pending       = new PendingInputs()
+    const REPLAY_FRAMES = 5
+    const replay: InputFrame[] = []
+    for (let i = 0; i < REPLAY_FRAMES; i++)
+      replay.push(pending.push(fromRaceInput({ ...NEUTRAL_RACE_INPUT, throttle: true }, i)))
+
+    const bursts = prediction.replayStats().bursts
+
+    // Far past `hardSnap`, so the tier can never come back `'none'` — this is
+    // about the burst a correction replays, not whether this particular error
+    // happens to clear the deadband.
+    const server: ServerPose = {
+      x: 500, y: 2, z: 500,
+      qx: 0, qy: 0, qz: 0, qw: 1,
+      vx: 0, vy: 0, vz: 0,
+      wx: 0, wy: 0, wz: 0,
+      aimAngle:     0,
+      boost:        1,
+      respawnIndex: 0,
+    }
+
+    const result = prediction.reconcile({
+      server,
+      ack: 0,
+      replay,
+      toInput: toRaceInput,
+      spawn,
+      allowDrive: true,
+    })
+
+    expect(result.tier).not.toBe('none')
+    expect(prediction.replayStats().lastFrames).toBe(REPLAY_FRAMES)
+    expect(prediction.replayStats().bursts).toBe(bursts + 1)
+
+    client.free()
   })
 })
 

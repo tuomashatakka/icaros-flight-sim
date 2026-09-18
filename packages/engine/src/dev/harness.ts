@@ -3,6 +3,7 @@ import { DEFAULT_TUNING, gameplayStore, raceStore, raceTimers, tuningActions, tu
 import { STEP } from 'Φclock'
 import type { ShipTuning } from 'Ƨ'
 import { readHudPanelMetrics } from '../hud/panel'
+import { readPredictionReplayStats } from '../net/prediction'
 import { createLegend } from './legend'
 import { createOverlays } from './overlay'
 import { readDevParams } from './params'
@@ -156,6 +157,7 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
       const info     = app.ctx.renderer.info
       const debug    = vehicle.current?.debug ?? null
       const gameplay = gameplayStore.get()
+      const replay   = readPredictionReplayStats()
 
       return {
         ok:        true,
@@ -189,6 +191,21 @@ export function attachDevHarness (deps: DevDeps): DevHarness {
           currentSpeed: round(debug.currentSpeed, 2),
           targetSpeed:  round(debug.targetSpeed, 2),
           contacts:     debug.contacts,
+        },
+
+        // R4: a bad-RTT correction can replay up to `MAX_INPUT_FRAMES` ticks
+        // synchronously, on purpose (see `prediction.ts`) — this is the
+        // counter that makes the size of that burst visible instead of
+        // inferred from a dropped frame. `null` before the first `reconcile`.
+        prediction: {
+          replay: replay && {
+            bursts:     replay.bursts,
+            lastFrames: replay.lastFrames,
+            lastMs:     round(replay.lastMs, 3),
+            maxFrames:  replay.maxFrames,
+            maxMs:      round(replay.maxMs, 3),
+            totalMs:    round(replay.totalMs, 3),
+          },
         },
 
         race: {

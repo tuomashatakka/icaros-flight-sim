@@ -3,7 +3,10 @@
  *
  * Battle's twin, and deliberately so: the netcode underneath is `RoomLink`,
  * shared by both, and all that differs is which schema hangs off the room and
- * how the two channels are joined back together.
+ * how the two channels are joined back together. `ModeTransportBase` is the
+ * shared half of that join (see its own doc); this file is what is left once
+ * the ten `RoomLink` delegates and the memoised merge are factored out — the
+ * racer roster, the lap/gate fields, and the wire connect options.
  *
  * That symmetry is the point of the whole refactor. Race used to have no wire
  * at all — its rules lived in a zustand store driven by rapier sensor
@@ -13,9 +16,9 @@
 import { RaceState } from 'Λstate'
 import { fromRaceInput } from 'Λinput'
 
-import { RoomLink } from '../net/room-link'
+import { ModeTransportBase } from '../net/mode-transport'
 
-import type { NetBodyInterpolator, ShipState } from 'Ξ'
+import type { NetBodyInterpolator, Snapshot } from 'Ξ'
 import type { RaceStateType } from 'Λstate'
 import type { RaceEvent, RaceInput, RaceStatus } from 'Λ'
 import type { TrackId } from 'Λ'
@@ -102,15 +105,15 @@ export type RaceConnectOptions = {
   server?: string;
 }
 
-export class RaceTransport {
-  private readonly link = new RoomLink<RaceStateType, RaceEvent>()
-  private frameView:     RaceFrame | null = null
-  private frameSnapshot: ShipState[] | null = null
-  private frameStateVersion = -1
+export class RaceTransport extends ModeTransportBase<RaceStateType, RaceEvent, RaceView, RaceFrame, ViewRacer, NetRacer> {
 
-  get clock () {
-    return this.link.clock
-  }
+  // Reused in place across rebuilds: nothing outside this file reads either
+  //  Map by name (checked against `packages/game/src/race.ts` and the rest of
+  //  `engine`), so nobody can be holding one from a tick ago the way
+  //  `battle/transport.ts`'s `playersById` is. The `racers` ARRAY and each
+  //  `ViewRacer` inside it stay freshly allocated every rebuild regardless.
+  private readonly racersById       = new Map<string, ViewRacer>()
+  private readonly racersByNetIndex = new Map<number, ViewRacer>()
 
   connect (options: RaceConnectOptions): void {
     void this.link.connect({
@@ -122,83 +125,20 @@ export class RaceTransport {
     })
   }
 
-  close (): void {
-    this.link.close()
-  }
-
   pushInput (input: RaceInput, clientTick: number) {
     return this.link.pushInput(fromRaceInput(input, clientTick))
   }
 
-  flushInput (interpTick: number): void {
-    this.link.flush(interpTick)
+  protected rosterEntries (): Iterable<[string, { netIndex: number }]> {
+    return this.link.state?.racers ?? []
   }
 
-  unacknowledged () {
-    return this.link.unacknowledged()
-  }
-
-  renderTimeMs (): number {
-    return this.link.renderTimeMs()
-  }
-
-  serverTick (): number {
-    return this.link.serverTick()
-  }
-
-  serverAck (): number {
-    return this.link.serverAck()
-  }
-
-  drainEvents (): RaceEvent[] {
-    return this.link.drainEvents()
-  }
-
-  noteCorrection (metres: number): void {
-    this.link.noteCorrection(metres)
-  }
-
-  stats (): NetStats {
-    return this.link.stats()
-  }
-
-  localId (): string | null {
-    const index = this.link.netIndex
-    if (index < 0)
-      return null
-
-    for (const [ id, entry ] of this.link.state?.racers ?? [])
-      if (entry.netIndex === index)
-        return id
-    return null
-  }
-
-  localState (): ViewRacer | null {
-    return this.frame()?.local ?? null
-  }
-
-  remotes (): readonly NetRacer[] {
-    return this.frame()?.remotes ?? []
-  }
-
-  // Join the two channels once per binary snapshot or Schema patch. Calls in
-  // between return the same read-only frame and indexes.
-  frame (): RaceFrame | null {
-    const state = this.link.state
-    if (!state)
-      return null
-
-    const snapshot = this.link.latest()
-    if (this.frameView && this.frameSnapshot === snapshot?.ships && this.frameStateVersion === this.link.stateVersion)
-      return this.frameView
-
-    const poses = new Map<number, ShipState>()
-    for (const ship of snapshot?.ships ?? [])
-      poses.set(ship.id, ship)
+  protected buildFrame (state: RaceStateType, snapshot: Snapshot | null): RaceFrame {
+    const poses = this.refillPoses(snapshot)
 
     const racers: ViewRacer[] = []
-    const racersById          = new Map<string, ViewRacer>()
-    const racersByNetIndex    = new Map<number, ViewRacer>()
+    this.racersById.clear()
+    this.racersByNetIndex.clear()
     for (const [ id, entry ] of state.racers) {
       const pose             = poses.get(entry.netIndex)
       const racer: ViewRacer = {
@@ -235,44 +175,30 @@ export class RaceTransport {
         respawnIndex:   pose?.respawnIndex ?? 0,
       }
       racers.push(racer)
-      racersById.set(id, racer)
-      racersByNetIndex.set(entry.netIndex, racer)
+      this.racersById.set(id, racer)
+      this.racersByNetIndex.set(entry.netIndex, racer)
     }
 
-    const remotes: NetRacer[] = []
-    const remotesById         = new Map<string, NetRacer>()
-    const remotesByNetIndex   = new Map<number, NetRacer>()
-    for (const remote of this.link.remotes()) {
-      const racer = racersByNetIndex.get(remote.netIndex)
-      if (!racer)
-        continue
+    const remotes = this.joinRemotes(this.racersByNetIndex, (racer, remote) => ({
+      id:     racer.id,
+      name:   racer.name,
+      interp: remote.interp,
+      state:  racer,
+    }))
 
-      const joined = { id: racer.id, name: racer.name, interp: remote.interp, state: racer }
-      remotes.push(joined)
-      remotesById.set(joined.id, joined)
-      remotesByNetIndex.set(remote.netIndex, joined)
-    }
-
-    this.frameSnapshot     = snapshot?.ships ?? null
-    this.frameStateVersion = this.link.stateVersion
-    this.frameView         = {
+    return {
       tick:      state.serverTick,
       status:    state.status as RaceStatus,
       countdown: state.countdown,
       trackId:   state.trackId,
       laps:      state.laps,
       racers,
-      racersById,
-      racersByNetIndex,
+      racersById:        this.racersById,
+      racersByNetIndex:  this.racersByNetIndex,
       remotes,
-      remotesById,
-      remotesByNetIndex,
-      local:     racersByNetIndex.get(this.link.netIndex) ?? null,
+      remotesById:       this.remotesById,
+      remotesByNetIndex: this.remotesByNetIndex,
+      local:     this.racersByNetIndex.get(this.link.netIndex) ?? null,
     }
-    return this.frameView
-  }
-
-  latest (): RaceView | null {
-    return this.frame()
   }
 }

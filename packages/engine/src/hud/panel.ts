@@ -128,7 +128,17 @@ export class HudPanel {
   center:            boolean
   hovered:           string | null = null
   private contentTransformActive = false
-  private renderKey: string | null = null
+
+  // The four `render()` inputs, kept as separate primitives rather than a
+  //  built-and-compared key string — that string was allocated every call
+  //  purely to `===` it against the last one, on the common path where
+  //  nothing changed and the draw is about to be skipped anyway. `null`/`-1`
+  //  sentinels guarantee the first call always redraws.
+  private lastKey:     string | null = null
+  private lastTitle:   string | null = null
+  private lastHovered: string | null = null
+  private lastWidth  = -1
+  private lastHeight = -1
 
   /** The glass fill, cached: it depends only on canvas size, never on a frame. */
   private glassFill: CanvasGradient | null = null
@@ -201,24 +211,33 @@ export class HudPanel {
     this.texture.dispose()
     this.texture.needsUpdate = true
 
-    // Both are memoised against the old size, and the render key is what would
-    // otherwise let a facet skip the redraw its new raster needs.
-    this.glassFill = null
-    this.renderKey = null
+    // Both are memoised against the old size, and the cached render inputs are
+    // what would otherwise let a facet skip the redraw its new raster needs.
+    this.glassFill   = null
+    this.lastKey     = null
+    this.lastTitle   = null
+    this.lastHovered = null
+    this.lastWidth   = -1
+    this.lastHeight  = -1
     return true
   }
 
   /** Draw and upload only when displayed state, interaction, or layout changed. */
   render (key: string, elapsed: number, draw: () => void): boolean {
-    const renderKey = `${key}|${this.title}|${this.hovered ?? ''}|${this.canvas.width}x${this.canvas.height}`
-    if (renderKey === this.renderKey)
+    const { width, height } = this.canvas
+    if (key === this.lastKey && this.title === this.lastTitle && this.hovered === this.lastHovered &&
+        width === this.lastWidth && height === this.lastHeight)
       return false
 
     const started = performance.now()
     this.begin()
     draw()
     this.finish(elapsed)
-    this.renderKey = renderKey
+    this.lastKey     = key
+    this.lastTitle   = this.title
+    this.lastHovered = this.hovered
+    this.lastWidth   = width
+    this.lastHeight  = height
     metrics.drawMs += performance.now() - started
     metrics.draws++
     metrics.textureUploads++

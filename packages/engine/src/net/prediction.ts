@@ -202,6 +202,41 @@ const _bodyPos      = new Vector3()
 const _predictedPos = new Vector3()
 const _beforePos    = new Vector3()
 
+/**
+ * One reconciliation's replay burst, measured rather than capped.
+ *
+ * The report weighed shrinking `MAX_INPUT_FRAMES` against the rare
+ * synchronous hitch a bad-RTT correction can cause, and rejected it: a
+ * smaller cap trades that rare hitch for common, visible under-correction on
+ * the very next snapshot. This is the visibility half of that trade —
+ * `bursts`/`lastFrames`/`maxFrames` show how often and how far a correction
+ * has to replay, `lastMs`/`maxMs`/`totalMs` how long it cost — so the spike
+ * shows up in `dev:console` / `__dev.probe()` instead of being inferred from
+ * a dropped frame.
+ */
+export type ReplayStats = {
+  bursts:     number;
+  lastFrames: number;
+  lastMs:     number;
+  maxFrames:  number;
+  maxMs:      number;
+  totalMs:    number;
+}
+
+// Dev-only escape hatch for `__dev.probe()`. `VehicleHandle` (in
+// `packages/engine/src/vehicle.ts`) only exposes `debug`, and threading a new
+// field through it and every mode's composition root just to reach a counter
+// object is a lot of plumbing for something the harness only ever reads. There
+// is exactly one `LocalPrediction` alive in a client at a time — one rapier
+// world, one predicted chassis, per the module doc above — so the most
+// recently constructed instance IS "the" prediction, the same way
+// `readHudPanelMetrics` in `hud/panel.ts` reads a module-level aggregate
+// rather than being threaded through every caller that builds a panel.
+
+export function readPredictionReplayStats (): ReplayStats | null {
+  return LocalPrediction.active?.replayStats() ?? null
+}
+
 export class LocalPrediction {
   readonly rig: PredictionRig
 
@@ -225,8 +260,35 @@ export class LocalPrediction {
   private lastResetSeq = 0
   private respawnSeen: number | null = null
 
+  /**
+   * The replay burst behind the last few corrections, updated in place.
+   *
+   * Two `performance.now()` calls per correction — up to 30 Hz, and usually
+   * far less, since a correction only fires outside the deadband — is cheap
+   * enough that this needs no `NODE_ENV` gate, unlike `COLLECT_FORCES` above.
+   * Nothing here is ever reset automatically: a dev session wants the
+   * SESSION's worst burst, not one counter that quietly clears itself.
+   */
+  /** The live prediction, for the dev harness; the constructor claims it. */
+  static active: LocalPrediction | null = null
+
+  private readonly replayStatsData: ReplayStats = {
+    bursts:     0,
+    lastFrames: 0,
+    lastMs:     0,
+    maxFrames:  0,
+    maxMs:      0,
+    totalMs:    0,
+  }
+
   constructor (rig: PredictionRig) {
     this.rig = rig
+    LocalPrediction.active = this
+  }
+
+  /** The current replay-burst stats. See `replayInput` and `ReplayStats`. */
+  replayStats (): ReplayStats {
+    return this.replayStatsData
   }
 
   get boost (): number {
@@ -458,6 +520,12 @@ export class LocalPrediction {
     spawn: Transform,
     allowDrive: boolean,
   ): void {
+    // Timed unconditionally rather than past some frame-count threshold: a
+    // burst this small is exactly the steady-state case R4 measured against,
+    // and `bursts`/`totalMs` need every one of them counted for a mean to mean
+    // anything.
+    const startedAt = performance.now()
+
     for (let i = 0; i < replay.length; i++) {
       const frame = replay[i]
       this.step(toInput(frame), spawn, allowDrive, frame.seq)
@@ -470,6 +538,15 @@ export class LocalPrediction {
       if (i < replay.length - 1)
         this.rig.world.step()
     }
+
+    const ms    = performance.now() - startedAt
+    const stats = this.replayStatsData
+    stats.bursts++
+    stats.lastFrames = replay.length
+    stats.lastMs     = ms
+    stats.maxFrames  = Math.max(stats.maxFrames, replay.length)
+    stats.maxMs      = Math.max(stats.maxMs, ms)
+    stats.totalMs   += ms
   }
 
   private applyServerPose (server: ServerPose): void {
