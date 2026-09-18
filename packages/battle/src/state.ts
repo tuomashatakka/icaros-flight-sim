@@ -20,9 +20,10 @@
  */
 
 import { schema, t } from '@colyseus/schema'
+import { WEAPONS } from './weapons'
 
 import type { SchemaType } from '@colyseus/schema'
-import type { BattleSnapshot } from './types'
+import type { BattleSim } from './sim'
 
 
 export const PlayerState = schema({
@@ -99,27 +100,38 @@ export type PlayerStateType = SchemaType<typeof PlayerState>
 export type BattleStateType = SchemaType<typeof BattleState>
 
 /**
- * Mirror a sim snapshot into the synchronised state.
+ * Mirror the sim's live state into the synchronised state.
  *
  * Only the slow half; poses never touch this. Writes are guarded by an equality
  * check because assigning an unchanged value still marks the field dirty, and a
  * roster of sixteen ships would otherwise re-encode itself every patch.
+ *
+ * Reads `sim` directly rather than a `BattleSnapshot` — every field below is
+ * already a plain scalar on `BattleSim`/`BattlePlayer`/`BattleZone`/
+ * `BattleFlag`, so building the whole snapshot tree first (`sim.snapshot()`,
+ * which also computes pose and velocity — neither of which this sync touches)
+ * would be an allocation this 30-Hz-adjacent path has no use for. `tick` is
+ * still taken as a parameter: it is the ROOM's own counter (`this.tickNo`),
+ * not the sim's — see `battleSnapshotOf`, which takes it the same way.
+ * `snapshot()` stays the right call for `recordResult` and anywhere else that
+ * wants the full tree.
  */
 export function syncBattleState (
   state: BattleStateType,
-  snapshot: BattleSnapshot,
+  sim: BattleSim,
+  tick: number,
   netIndexOf: (playerId: string) => number,
 ): void {
-  set(state, 'status', snapshot.status)
-  set(state, 'countdown', round(snapshot.countdown))
-  set(state, 'timeLeft', round(snapshot.timeLeft))
-  set(state, 'scoreRed', snapshot.scores.red)
-  set(state, 'scoreBlue', snapshot.scores.blue)
-  set(state, 'serverTick', snapshot.tick)
+  set(state, 'status', sim.status)
+  set(state, 'countdown', round(Math.max(0, Math.ceil(sim.countdown))))
+  set(state, 'timeLeft', round(Math.max(0, sim.config.matchTime - sim.elapsed)))
+  set(state, 'scoreRed', sim.scores.red)
+  set(state, 'scoreBlue', sim.scores.blue)
+  set(state, 'serverTick', tick)
 
   const seen = new Set<string>()
 
-  for (const player of snapshot.players) {
+  for (const player of sim.players) {
     seen.add(player.id)
 
     let entry = state.players.get(player.id)
@@ -131,25 +143,25 @@ export function syncBattleState (
     set(entry, 'netIndex', netIndexOf(player.id))
     set(entry, 'health', Math.max(0, Math.min(255, Math.round(player.health))))
     set(entry, 'maxHealth', Math.max(0, Math.min(255, Math.round(player.maxHealth))))
-    set(entry, 'boost', Math.max(0, Math.min(255, Math.round(player.boost * 255))))
+    set(entry, 'boost', Math.max(0, Math.min(255, Math.round(player.boostMeter * 255))))
     set(entry, 'kills', player.kills)
     set(entry, 'deaths', player.deaths)
-    set(entry, 'lockPhase', player.lockPhase)
-    set(entry, 'lockTarget', player.lockTarget ?? '')
-    set(entry, 'lockMeter', round(player.lockMeter))
-    set(entry, 'primaryCd', round(player.primaryCd))
-    set(entry, 'secondaryCd', round(player.secondaryCd))
+    set(entry, 'lockPhase', player.lock.phase)
+    set(entry, 'lockTarget', player.lock.targetId ?? '')
+    set(entry, 'lockMeter', round(player.lock.progress))
+    set(entry, 'primaryCd', round(player.cooldown.primary / WEAPONS[player.loadout.primary].cooldown))
+    set(entry, 'secondaryCd', round(player.cooldown.secondary / WEAPONS[player.loadout.secondary].cooldown))
   }
 
   for (const id of [ ...state.players.keys() ])
     if (!seen.has(id))
       state.players.delete(id)
 
-  for (const zone of snapshot.zones) {
-    let entry = state.zones.get(zone.id)
+  for (const zone of sim.zones) {
+    let entry = state.zones.get(zone.def.id)
     if (!entry) {
-      entry = new ZoneState({ id: zone.id })
-      state.zones.set(zone.id, entry)
+      entry = new ZoneState({ id: zone.def.id })
+      state.zones.set(zone.def.id, entry)
     }
     set(entry, 'owner', zone.owner ?? '')
     set(entry, 'progress', round(zone.progress))
@@ -157,7 +169,7 @@ export function syncBattleState (
     set(entry, 'contested', zone.contested)
   }
 
-  for (const flag of snapshot.flags) {
+  for (const flag of sim.flags) {
     let entry = state.flags.get(flag.team)
     if (!entry) {
       entry = new FlagState({ team: flag.team })
@@ -165,9 +177,9 @@ export function syncBattleState (
     }
     set(entry, 'state', flag.state)
     set(entry, 'carrierId', flag.carrierId ?? '')
-    set(entry, 'x', round(flag.x))
-    set(entry, 'y', round(flag.y))
-    set(entry, 'z', round(flag.z))
+    set(entry, 'x', round(flag.position[0]))
+    set(entry, 'y', round(flag.position[1]))
+    set(entry, 'z', round(flag.position[2]))
   }
 
   // The objective a pilot carries is on the flag, but the HUD asks the pilot —

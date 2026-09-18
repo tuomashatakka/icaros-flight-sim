@@ -21,6 +21,7 @@ import { BunWebSockets } from '@colyseus/bun-websockets'
 import { BattleRoom } from 'Ψroom'
 import { RaceRoom } from 'Λroom'
 import { TRACK_IDS } from 'Λ'
+import { tickStatsSummary } from 'Ξtick-stats'
 import { describeDatabase, openDatabase, setDatabase } from 'Ð'
 
 import { loadConfig } from './config'
@@ -101,6 +102,7 @@ transport.getExpressApp().get('/health', (_request, response) => {
     uptime: Math.round(process.uptime()),
     rooms:  matchMaker.stats.local,
     tracks: TRACK_IDS,
+    tick:   tickStatsSummary(),
   })
 })
 

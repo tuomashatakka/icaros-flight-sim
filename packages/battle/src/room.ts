@@ -15,8 +15,9 @@
  */
 
 import { Room, ServerError } from '@colyseus/core'
-import { STEP, TICK_HZ, acceptPacket, createRateLimiter, createSeat, decodeInputPacket, drainInput, encodeFor, pongFor, snapshotHistory, ticksPerSnapshot } from 'Ξ'
+import { MessageKind, STEP, TICK_HZ, acceptPacket, createRateLimiter, createSeat, decodeInputPacket, drainInput, encodeFor, pongFor, snapshotHistory, ticksPerSnapshot } from 'Ξ'
 import { RECONNECT_GRACE_SEC } from 'Ξrates'
+import { TickHistogram, registerTickStats, unregisterTickStats } from 'Ξtick-stats'
 import { createSimClock } from 'Φclock'
 import { sanitisePilotName } from 'Ðauth/pilot-name'
 import { verifyTicket } from 'Ðauth/ticket'
@@ -37,14 +38,6 @@ import type { BattlePlayer } from './sim'
 import type { ShipId } from 'Φships'
 import type { Loadout } from './weapons'
 
-
-export const MessageKind = {
-  INPUT:    'i',
-  SNAPSHOT: 's',
-  EVENTS:   'e',
-  PING:     'p',
-  PONG:     'q',
-} as const
 
 /**
  * Twenty joins a minute per IP.
@@ -70,6 +63,7 @@ export class BattleRoom extends Room<{ state: BattleStateType }> {
   private readonly seats = new Map<string, Seat>()
   private readonly netIndexOf = new Map<string, number>()
   private readonly history = snapshotHistory()
+  private readonly tickStats = new TickHistogram()
 
   private tickNo = 0
   private netSeq = 0
@@ -104,6 +98,8 @@ export class BattleRoom extends Room<{ state: BattleStateType }> {
   }
 
   async onCreate (options: BattleRoomOptions = {}): Promise<void> {
+    registerTickStats(this.roomId, this.tickStats)
+
     this.botFill = options.botFill ?? true
     this.sim     = await BattleSim.create(apexArena())
 
@@ -194,6 +190,7 @@ export class BattleRoom extends Room<{ state: BattleStateType }> {
    * beats two that can be interrupted between.
    */
   async onDispose (): Promise<void> {
+    unregisterTickStats(this.roomId)
     await this.recordResult()
     this.sim?.dispose()
   }
@@ -240,6 +237,8 @@ export class BattleRoom extends Room<{ state: BattleStateType }> {
   }
 
   private stepOnce (dt: number): void {
+    const startedAt = performance.now()
+
     this.applyInputs()
     this.sim.step(dt)
     this.tickNo++
@@ -257,6 +256,8 @@ export class BattleRoom extends Room<{ state: BattleStateType }> {
 
     if (this.tickNo % ticksPerSnapshot() === 0)
       this.broadcastSnapshot()
+
+    this.tickStats.record((performance.now() - startedAt) * 1000)
   }
 
   private applyInputs (): void {
@@ -275,7 +276,12 @@ export class BattleRoom extends Room<{ state: BattleStateType }> {
     const snapshot = battleSnapshotOf(this.sim, this.tickNo, id => this.netIndexOf.get(id) ?? 0)
 
     this.history.push(snapshot)
-    syncBattleState(this.state, this.sim.snapshot(), id => this.netIndexOf.get(id) ?? 0)
+    // Reads the sim's live players/zones/flags directly rather than
+    //  `this.sim.snapshot()` — that allocates a whole object tree, every field
+    //  of it, thirty times a second, just to feed a sync that only reads a
+    //  handful of scalars per entity. `snapshot()` stays the right call for
+    //  `recordResult`, which runs once per room rather than 30 times a second.
+    syncBattleState(this.state, this.sim, this.tickNo, id => this.netIndexOf.get(id) ?? 0)
 
     // One encode per distinct baseline, not per client: sixteen clients that
     // have all acknowledged the same snapshot share one buffer.

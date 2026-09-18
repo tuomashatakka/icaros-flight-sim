@@ -24,7 +24,7 @@
 
 import { Client, CloseCode } from '@colyseus/sdk'
 import {
-  INTERP_DELAY_MS, NetBodyInterpolator, NetClock, PendingInputs, RECONNECT_GRACE_SEC, SNAPSHOT_HZ,
+  INTERP_DELAY_MS, MessageKind, NetBodyInterpolator, NetClock, PendingInputs, RECONNECT_GRACE_SEC, SNAPSHOT_HZ,
   StaleBaselineError, baselineOf, decodeSnapshot, encodeInputPacket,
 } from 'Ξ'
 
@@ -46,13 +46,7 @@ const RECONNECT_MAX_DELAY_MS     = 4000
 //  should not grow without bound.
 const MAX_BUFFERED_EVENTS = 128
 
-export const MessageKind = {
-  INPUT:    'i',
-  SNAPSHOT: 's',
-  EVENTS:   'e',
-  PING:     'p',
-  PONG:     'q',
-} as const
+export { MessageKind }
 
 /**
  * Resolve the game server's URL.

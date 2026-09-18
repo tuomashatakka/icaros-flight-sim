@@ -13,7 +13,7 @@
 import { schema, t } from '@colyseus/schema'
 
 import type { SchemaType } from '@colyseus/schema'
-import type { RaceSnapshot } from './types'
+import type { RaceSim } from './sim'
 
 
 export const RacerState = schema({
@@ -60,21 +60,31 @@ export const RaceState = schema({
 export type RacerStateType = SchemaType<typeof RacerState>
 export type RaceStateType = SchemaType<typeof RaceState>
 
-/** Mirror a sim snapshot into the synchronised state. Poses never touch this. */
+/**
+ * Mirror the sim's live racers into the synchronised state. Poses never touch
+ * this.
+ *
+ * Reads `sim` directly rather than a `RaceSnapshot` — every field below is
+ * already a plain scalar on `RaceSim`/`Racer`/`RaceProgress`, so building the
+ * whole snapshot tree first (`sim.snapshot()`, which also computes pose,
+ * speed and grounded — none of which this sync touches) would be an
+ * allocation this 30-Hz-adjacent path has no use for. `snapshot()` stays the
+ * right call for `recordResult` and anywhere else that wants the full tree.
+ */
 export function syncRaceState (
   state: RaceStateType,
-  snapshot: RaceSnapshot,
+  sim: RaceSim,
   netIndexOf: (racerId: string) => number,
 ): void {
-  set(state, 'trackId', snapshot.trackId)
-  set(state, 'status', snapshot.status)
-  set(state, 'countdown', round(snapshot.countdown))
-  set(state, 'laps', snapshot.laps)
-  set(state, 'serverTick', snapshot.tick)
+  set(state, 'trackId', sim.track.id)
+  set(state, 'status', sim.status)
+  set(state, 'countdown', round(sim.countdown))
+  set(state, 'laps', sim.track.laps)
+  set(state, 'serverTick', sim.tick)
 
   const seen = new Set<string>()
 
-  for (const racer of snapshot.racers) {
+  for (const racer of sim.racers) {
     seen.add(racer.id)
 
     let entry = state.racers.get(racer.id)
@@ -85,13 +95,13 @@ export function syncRaceState (
 
     set(entry, 'netIndex', netIndexOf(racer.id))
     set(entry, 'health', Math.max(0, Math.min(255, Math.round(racer.health))))
-    set(entry, 'lap', racer.lap)
+    set(entry, 'lap', racer.progress.lap)
     set(entry, 'position', racer.position)
-    set(entry, 'nextCheckpoint', racer.nextCheckpoint)
-    set(entry, 'finished', racer.finished)
-    set(entry, 'elapsed', round(racer.elapsed))
-    set(entry, 'lapElapsed', round(racer.lapElapsed))
-    set(entry, 'bestLap', racer.bestLap === null ? -1 : round(racer.bestLap))
+    set(entry, 'nextCheckpoint', racer.progress.nextCheckpoint)
+    set(entry, 'finished', racer.progress.finished)
+    set(entry, 'elapsed', round(racer.progress.elapsed))
+    set(entry, 'lapElapsed', round(racer.progress.lapElapsed))
+    set(entry, 'bestLap', racer.progress.bestLap === null ? -1 : round(racer.progress.bestLap))
   }
 
   for (const id of [ ...state.racers.keys() ])

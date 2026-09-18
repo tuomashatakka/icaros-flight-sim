@@ -16,8 +16,9 @@
  */
 
 import { Room, ServerError } from '@colyseus/core'
-import { STEP, TICK_HZ, acceptPacket, createRateLimiter, createSeat, decodeInputPacket, drainInput, encodeFor, pongFor, snapshotHistory, ticksPerSnapshot } from 'Ξ'
+import { MessageKind, STEP, TICK_HZ, acceptPacket, createRateLimiter, createSeat, decodeInputPacket, drainInput, encodeFor, pongFor, snapshotHistory, ticksPerSnapshot } from 'Ξ'
 import { RECONNECT_GRACE_SEC } from 'Ξrates'
+import { TickHistogram, registerTickStats, unregisterTickStats } from 'Ξtick-stats'
 import { createSimClock } from 'Φclock'
 import { sanitisePilotName } from 'Ðauth/pilot-name'
 import { verifyTicket } from 'Ðauth/ticket'
@@ -37,14 +38,6 @@ import type { TrackId } from './levels'
 import type { RaceStateType } from './state'
 import type { RaceInput } from './types'
 
-
-export const MessageKind = {
-  INPUT:    'i',
-  SNAPSHOT: 's',
-  EVENTS:   'e',
-  PING:     'p',
-  PONG:     'q',
-} as const
 
 /** Bots added so a lobby of one is still a race. */
 const DEFAULT_GRID = 4
@@ -71,6 +64,7 @@ export class RaceRoom extends Room<{ state: RaceStateType }> {
   private readonly seats = new Map<string, Seat>()
   private readonly netIndexOf = new Map<string, number>()
   private readonly history = snapshotHistory()
+  private readonly tickStats = new TickHistogram()
 
   private netSeq = 0
   private started = false
@@ -95,6 +89,8 @@ export class RaceRoom extends Room<{ state: RaceStateType }> {
   }
 
   async onCreate (options: RaceRoomOptions = {}): Promise<void> {
+    registerTickStats(this.roomId, this.tickStats)
+
     const trackId  = isTrackId(options.trackId) ? options.trackId : 'flats'
     const { spec } = trackBundle(trackId)
 
@@ -181,6 +177,7 @@ export class RaceRoom extends Room<{ state: RaceStateType }> {
    * ordered correctly beats two that can be interrupted between.
    */
   async onDispose (): Promise<void> {
+    unregisterTickStats(this.roomId)
     await this.recordResult()
     this.sim?.dispose()
   }
@@ -226,6 +223,8 @@ export class RaceRoom extends Room<{ state: RaceStateType }> {
   }
 
   private stepOnce (dt: number): void {
+    const startedAt = performance.now()
+
     for (const seat of this.seats.values())
       for (const frame of drainInput(seat))
         this.sim.setInput(seat.playerId, toRaceInput(frame))
@@ -238,13 +237,20 @@ export class RaceRoom extends Room<{ state: RaceStateType }> {
 
     if (this.sim.tick % ticksPerSnapshot() === 0)
       this.broadcastSnapshot()
+
+    this.tickStats.record((performance.now() - startedAt) * 1000)
   }
 
   private broadcastSnapshot (): void {
     const snapshot = raceSnapshotOf(this.sim, id => this.netIndexOf.get(id) ?? 0)
 
     this.history.push(snapshot)
-    syncRaceState(this.state, this.sim.snapshot(), id => this.netIndexOf.get(id) ?? 0)
+    // Reads the sim's live racers directly rather than `this.sim.snapshot()` —
+    //  that allocates a whole object tree, every field of it, thirty times a
+    //  second, just to feed a sync that only reads a handful of scalars off
+    //  each racer. `snapshot()` stays the right call for `recordResult`, which
+    //  runs once per room rather than 30 times a second.
+    syncRaceState(this.state, this.sim, id => this.netIndexOf.get(id) ?? 0)
 
     // One encode per distinct baseline, not per client.
     const cache = new Map<number, Uint8Array>()

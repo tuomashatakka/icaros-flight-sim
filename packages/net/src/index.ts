@@ -47,3 +47,6 @@ export type { MessageKey, NetChannel } from './channels'
 
 export { MAX_RATE_LIMIT_KEYS, createRateLimiter } from './rate-limit'
 export type { RateLimiter, RateLimiterOptions } from './rate-limit'
+
+export { MessageKind } from './messages'
+export type { MessageKindValue } from './messages'
