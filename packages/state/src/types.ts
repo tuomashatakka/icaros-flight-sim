@@ -84,6 +84,20 @@ export type RaceHudState = {
 
   /** Why the game server could not be reached, or `null`. */
   linkError: string | null;
+
+  /**
+   * Where the link is in its lifecycle — mirrors `RoomLink`'s `RoomLinkState`.
+   *
+   * Duplicated rather than imported: `Σ` (engine) depends on `Ƨ` (state), not
+   * the other way around, so this package cannot import the engine's type any
+   * more than `NetHealth` below can import `NetStats`. Optional so the HUD can
+   * fall back to "not reconnecting" without every existing `RaceHudState`
+   * literal (`INITIAL_RACE_HUD` included) needing the two new fields.
+   */
+  linkState?: 'idle' | 'joining' | 'connected' | 'reconnecting' | 'lost';
+
+  /** Reconnect attempts made against the current drop. See `linkState`. */
+  reconnectAttempt?: number;
 }
 
 /** The live clocks: advanced every sim step, read directly by the HUD. */
@@ -157,6 +171,12 @@ export type NetHealth = {
 
   /** Why the link is down, or `null` while it is up. */
   linkError: string | null;
+
+  /** Where the link is in its lifecycle. See `RaceHudState.linkState`. */
+  linkState?: 'idle' | 'joining' | 'connected' | 'reconnecting' | 'lost';
+
+  /** Reconnect attempts made against the current drop. */
+  reconnectAttempt?: number;
 }
 
 export type BattleSessionStatus = BattleStatus | 'idle' | 'connecting' | 'queued' | 'error'

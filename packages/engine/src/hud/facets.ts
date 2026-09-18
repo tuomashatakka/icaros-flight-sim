@@ -46,8 +46,8 @@ function panelRenderKey (panel: HudPanel, data: HudData, frame: HudFrame): strin
     const heading = quantise(headingFrom(frame.hullQuaternion), 1)
     const bearing = frame.target ? quantise(bearingTo(frame.shipPosition, frame.target), 1) : null
     const status  = data.mode === 'race'
-      ? [ data.race.status, data.race.linkError, quantise(data.clocks.countdown, 1), frame.telemetry.boosting ]
-      : [ data.battle.status, quantise(data.battle.countdown, 1), quantise(data.battle.timeLeft, 1), data.battle.net.linkError, data.battle.net.synced, data.battle.net.rttMs, data.battle.net.jitterMs ]
+      ? [ data.race.status, data.race.linkError, data.race.linkState, data.race.reconnectAttempt, quantise(data.clocks.countdown, 1), frame.telemetry.boosting ]
+      : [ data.battle.status, quantise(data.battle.countdown, 1), quantise(data.battle.timeLeft, 1), data.battle.net.linkError, data.battle.net.linkState, data.battle.net.reconnectAttempt, data.battle.net.synced, data.battle.net.rttMs, data.battle.net.jitterMs ]
     return [ ...common, ...status, ...pose, heading, bearing, quantise(frame.aimPitch, 0.01), quantise(frame.steer, 0.01), quantise(frame.strafe, 0.01) ].join('|')
   }
 
@@ -63,7 +63,7 @@ function panelRenderKey (panel: HudPanel, data: HudData, frame: HudFrame): strin
       bottomRight:  [ race.currentLap, race.laps, frame.checkpointNumber, quantise(data.clocks.lapElapsed, 0.001), data.zone, data.shipId, quantise(telemetry.speed / Math.max(data.targetSpeed, 1), 0.01), data.tuningOpen ],
       center:       [ race.currentLap, race.laps, quantise(data.clocks.elapsed, 0.001), race.bestLap, telemetry.boosting ],
     }
-    return [ ...common, race.status, race.linkError, ...byPanel[panel.name] ].join('|')
+    return [ ...common, race.status, race.linkError, race.linkState, race.reconnectAttempt, ...byPanel[panel.name] ].join('|')
   }
 
   const battle                             = data.battle
@@ -366,6 +366,15 @@ function drawZonePips (panel: HudPanel, data: BattleHudData): void {
 /** The one line at the top of the visor. */
 function raceStatusLine (data: RaceHudData, boosting: boolean): string {
   const race = data.race
+  // A drop mid-race takes priority over everything below: the countdown or
+  // finish text underneath is stale the moment the link is not the one that
+  // produced it. `linkError` stays null for the whole reconnect attempt (see
+  // `RoomLink`), so this has to check `linkState` first or a reconnecting link
+  // would fall straight through to the ordinary flight lines.
+  if (race.linkState === 'reconnecting')
+    return `RECONNECTING · ${race.reconnectAttempt ?? 0}`
+  if (race.linkState === 'lost')
+    return 'LINK LOST'
   // Free flight, not a dead ship: with no room to hold the grid the prediction
   // drives unconditionally (see the `racing` policy in `mountRace`). The detail
   // line under this one names the server that could not be reached.
@@ -376,6 +385,37 @@ function raceStatusLine (data: RaceHudData, boosting: boolean): string {
   if (race.status === 'finished')
     return 'COURSE COMPLETE'
   return boosting ? 'BOOST · FLIGHT' : 'CRUISE · FLIGHT'
+}
+
+/**
+ * The line at the top of battle's attitude panel — the mode's twin of
+ * `raceStatusLine`, and pulled out of the panel's draw callback for the same
+ * reason: five priority-ordered outcomes inline pushed that callback's own
+ * complexity past the lint ceiling.
+ */
+function battleStatusLine (battle: BattleHudData['battle']): string {
+  if (battle.net.linkState === 'reconnecting')
+    return `RECONNECTING · ${battle.net.reconnectAttempt ?? 0}`
+  if (battle.net.linkState === 'lost')
+    return 'LINK LOST'
+  if (battle.status === 'countdown')
+    return `DEPLOY · ${Math.max(1, Math.ceil(battle.countdown))}`
+  if (battle.status === 'finished')
+    return 'MATCH OVER'
+  if (battle.status === 'live')
+    return `COMBAT · ${formatHudClock(battle.timeLeft)}`
+  return battle.status.toUpperCase()
+}
+
+/** The small NET readout, kept in step with `battleStatusLine` above it. */
+function battleNetLine (net: BattleHudData['battle']['net']): string {
+  if (net.linkState === 'reconnecting')
+    return `RECONNECTING · ${net.reconnectAttempt ?? 0}`
+  if (net.linkState === 'lost')
+    return 'LINK LOST'
+  if (net.linkError)
+    return 'NO LINK'
+  return net.synced ? `${net.rttMs}ms ±${net.jitterMs}` : 'SYNCING'
 }
 
 /** A holographic bracket frame around a target readout's name/distance block. */
@@ -413,8 +453,11 @@ function drawRacePanels (panels: Record<HudPanelKey, HudPanel>, data: RaceHudDat
   const topCenter = panels.topCenter
   topCenter.title = 'attitude'
   renderPanel(topCenter, data, frame, () => {
+    // Amber while there is still a seat to come back to; red once there is
+    //  none left to try for. Anything else keeps the plain flight colour.
+    const linkColor = race.linkState === 'reconnecting' ? THEME.accent : race.linkError ? THEME.red : PALE.blue
     drawTrackedText(topCenter.context, raceStatusLine(data, telemetry.boosting), 320, 60, {
-      align: 'center', color: race.linkError ? THEME.red : PALE.blue, size: 15, glow: true,
+      align: 'center', color: linkColor, size: 15, glow: true,
     })
     if (race.linkError)
       topCenter.text({ x: 320, y: 82, size: 12, align: 'center', alpha: 0.7, color: THEME.red, value: race.linkError })
@@ -526,25 +569,17 @@ function drawBattlePanels (panels: Record<HudPanelKey, HudPanel>, data: BattleHu
   const topCenter = panels.topCenter
   topCenter.title = 'attitude'
   renderPanel(topCenter, data, frame, () => {
-    const status = battle.status === 'countdown'
-      ? `DEPLOY · ${Math.max(1, Math.ceil(battle.countdown))}`
-      : battle.status === 'finished'
-        ? 'MATCH OVER'
-        : battle.status === 'live'
-          ? `COMBAT · ${formatHudClock(battle.timeLeft)}`
-          : battle.status.toUpperCase()
-    drawTrackedText(topCenter.context, status, 320, 60, { align: 'center', color: topCenter.accent, size: 15, glow: true })
+    // Amber while there is still a seat to come back to; red once there is
+    //  none left to try for.
+    const linkState   = battle.net.linkState
+    const statusColor = linkState === 'reconnecting' ? THEME.accent : linkState === 'lost' ? THEME.red : topCenter.accent
+    drawTrackedText(topCenter.context, battleStatusLine(battle), 320, 60, { align: 'center', color: statusColor, size: 15, glow: true })
     drawAttitude(topCenter, frame.hullQuaternion, frame.aimPitch, frame.target ? bearingTo(frame.shipPosition, frame.target) : null)
 
     // NET reads real connection health now. It used to show a hash-match tally
     // from a verifier that compared the local sim against a hash the local sim
     // had just produced — it was pinned to OK by construction.
-    const net = battle.net.linkError
-      ? 'NO LINK'
-      : battle.net.synced
-        ? `${battle.net.rttMs}ms ±${battle.net.jitterMs}`
-        : 'SYNCING'
-    topCenter.text({ x: 36, y: 292, size: 12, alpha: 0.5, value: `TURN ${signedPercent(frame.steer)} · STRAFE ${signedPercent(frame.strafe)} · NET ${net}` })
+    topCenter.text({ x: 36, y: 292, size: 12, alpha: 0.5, value: `TURN ${signedPercent(frame.steer)} · STRAFE ${signedPercent(frame.strafe)} · NET ${battleNetLine(battle.net)}` })
     topCenter.button({ id: 'battle-attitude-view', x: 500, y: 268, width: 108, height: 32, label: frame.cameraBlend > 0.5 ? 'cockpit' : 'chase', action: 'view', active: frame.cameraBlend > 0.5, size: 12 })
   })
 

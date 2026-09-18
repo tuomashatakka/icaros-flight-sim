@@ -46,6 +46,15 @@ export const MAX_REWIND_MS = 250
 /** Unacknowledged input frames bundled into one packet before the oldest is dropped. */
 export const MAX_INPUT_FRAMES = 32
 
+/**
+ * Seconds a room holds a dropped player's seat open via `allowReconnection`.
+ *
+ * Shared by both halves on purpose: it is how long the SERVER keeps the seat,
+ * which is also how long it is worth the CLIENT spending its own reconnect
+ * attempts — trying past this window can only ever find the seat gone.
+ */
+export const RECONNECT_GRACE_SEC = 15
+
 export const STEP = 1 / TICK_HZ
 
 export function ticksPerSnapshot (tickHz = TICK_HZ, snapshotHz = SNAPSHOT_HZ): number {

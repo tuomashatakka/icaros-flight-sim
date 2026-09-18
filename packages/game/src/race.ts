@@ -282,13 +282,20 @@ export async function mountRace (
 
       // Hoisted out of `update` so the per-frame path stays one straight line:
       //  the store only hears about the link when the link changes its mind.
+      // `reconnectAttempt` ticks up across a whole backoff sequence, so it is
+      //  part of the dedup key too — otherwise the HUD's attempt counter would
+      //  freeze on whatever it read the first time.
       let lastLinkError: string | null = null
+      let lastLinkState: string | undefined
+      let lastReconnectAttempt = -1
       const reportLink = () => {
-        const linkError = transport.stats().linkError
-        if (linkError === lastLinkError)
+        const stats = transport.stats()
+        if (stats.linkError === lastLinkError && stats.linkState === lastLinkState && stats.reconnectAttempt === lastReconnectAttempt)
           return
-        lastLinkError = linkError
-        raceActions.sync({ linkError })
+        lastLinkError        = stats.linkError
+        lastLinkState        = stats.linkState
+        lastReconnectAttempt = stats.reconnectAttempt
+        raceActions.sync({ linkError: stats.linkError, linkState: stats.linkState, reconnectAttempt: stats.reconnectAttempt })
       }
 
       const raceNetModule: AppModule<RaceState> = defineModule<RaceState>({
