@@ -9,13 +9,16 @@ import { vehicleConfig } from './config'
  * mount, and whatever the ship then does is rapier integrating `tau = r x F`
  * against the real inertia tensor.
  *
- * That is the whole point of the placement below. A lateral thruster bolted to
- * the tail cannot strafe without also yawing, because a force off the centre of
- * mass is a torque — so the coupling is not a feel hack layered on top, it is
- * the arithmetic. Move a mount and the handling changes; there is no second
- * place to go and correct it.
+ * That is the whole point of the placement below. A force off the centre of mass
+ * is a torque, so where a nozzle is bolted decides what else it does besides
+ * push — the coupling is not a feel hack layered on top, it is the arithmetic.
+ * Move a mount and the handling changes; there is no second place to go and
+ * correct it.
  *
- * Body axes: +X right, +Y up, +Z forward.
+ * Body axes: +Y up, +Z forward, and therefore +X is PORT — the pilot's LEFT.
+ * three.js is right-handed, so with the nose on +Z the starboard side is -X.
+ * This file used to say "+X right", and the lateral pair was named off that:
+ * the nozzle called `lateral.R` pushed the ship to port.
  */
 
 export type ThrusterGroup = 'main' | 'retro' | 'lateral' | 'lift' | 'rcs'
@@ -59,12 +62,17 @@ const LIFT   = WEIGHT * 0.5
 // same total so top speed lands in the same place it used to.
 const MAIN  = thrust * 2
 const RETRO = MAIN * 0.55
-// Strafe is SUPPOSED to swing the nose — that is why the nozzles are at the
-// tail. But the arm is over a metre, so full lateral thrust out-torques the yaw
-// jets outright and the ship just spins. Sized instead so the induced yaw stays
-// inside what a counter-steer can cancel: strafing costs you heading, and you
-// can choose to pay it back.
-const LATERAL = MAIN * 0.22
+// A strafe is a sidestep, so it has to arrive quickly: ~5 m/s^2 of lateral
+// acceleration, settling against the lateral drag a little under 10 m/s.
+const LATERAL = MAIN * 0.34
+
+// The lateral nozzles sit ON the centre of mass, fore and aft. They used to be
+// at the tail, a metre behind it, so every strafe was mostly a yaw — about
+// 95 degrees of it in two seconds, in the direction AWAY from the strafe
+// (push the tail right and the nose goes left), which the rate loop could not
+// hold because the tail arm out-torqued the yaw jets. Pressing strafe-right
+// turned the ship left. On the COM station a strafe is a translation.
+const LATERAL_Z = 0
 
 // Sized against the yaw inertia, not picked by feel: reaching `maxYawRate` in
 // roughly a third of a second needs tau = I_yy * 4.4 rad/s^2, and the moment arm
@@ -72,10 +80,11 @@ const LATERAL = MAIN * 0.22
 // fraction of it.
 const RCS = 620
 
-// Lateral nozzles cant slightly UP. A force with +Y applied behind the COM lifts
-// the tail, which drops the nose — the "front tip nudges down when you strafe"
-// the brief asks for. Canting them down would pitch the nose UP instead; the
-// sign is not arbitrary and it is easy to get backwards.
+// Lateral nozzles cant slightly UP and sit above the COM on the flank opposite
+// the push. Both put a roll into the strafe — the +Y cant lifts the flank it is
+// bolted to, the height puts the push above the roll axis — and both roll the
+// ship the SAME way, into the direction of travel. Canting them down would
+// bank the ship out of the strafe instead; the sign is easy to get backwards.
 const LATERAL_CANT = 0.42
 const LATERAL_NORM = Math.hypot(1, LATERAL_CANT)
 
@@ -92,12 +101,12 @@ const lateral = (sign: number): readonly [number, number, number] => [
  * balanced throttle is pure translation and DIFFERENTIAL throttle is free yaw
  * authority — no dedicated steering jet needed until the mains saturate.
  *
- * `lateral` sits behind the COM and above it, which is where all three coupled
- * behaviours come from at once (taking a rightward push, F = +X):
- *   tau_y = r_z * F_x  ->  r_z < 0, so the nose swings toward the strafe
- *   tau_z = -r_y * F_x ->  r_y > 0, so the ship banks INTO the strafe
- *   tau_x = -r_z * F_y ->  the +Y cant drops the nose
- * `test/thrusters.test.ts` pins those three signs, because they are the design.
+ * `lateral` sits on the COM station and above it (taking a push to starboard,
+ * F = -X, from the nozzle on the port flank, r_x > 0):
+ *   tau_y = r_z * F_x - r_x * F_z = 0     ->  no yaw: a strafe moves sideways
+ *   tau_z = r_x * F_y - r_y * F_x > 0     ->  port side up, the ship banks INTO it
+ *   tau_x = r_y * F_z - r_z * F_y = 0     ->  no pitch
+ * `test/thrusters.test.ts` pins those signs, because they are the design.
  *
  * `lift` sits at the four corners at the old wheel positions. Corner mounting is
  * what makes surface-following emergent: one pad over a rise pushes harder than
@@ -111,12 +120,12 @@ export const THRUSTER_RIG: readonly Thruster[] = [
   { id: 'retro.R', group: 'retro', pos: [ 0.34, 0, front - 0.25 ], dir: [ 0, 0, -1 ], maxForce: RETRO },
 
   // Named for the direction they push the SHIP, not the flank they bolt to —
-  // the one that shoves you left is mounted starboard, exhaust pointing out.
-  { id: 'lateral.L', group: 'lateral', pos: [ 0.3, 0.12, back + 0.25 ], dir: lateral(-1), maxForce: LATERAL },
-  { id: 'lateral.R', group: 'lateral', pos: [ -0.3, 0.12, back + 0.25 ], dir: lateral(1), maxForce: LATERAL },
+  // the one that shoves you right (-X) is mounted to port (+X), exhaust out.
+  { id: 'lateral.L', group: 'lateral', pos: [ -0.3, 0.12, LATERAL_Z ], dir: lateral(1), maxForce: LATERAL },
+  { id: 'lateral.R', group: 'lateral', pos: [ 0.3, 0.12, LATERAL_Z ], dir: lateral(-1), maxForce: LATERAL },
 
   // Yaw jets. Mounted at the extreme tail on the roll axis (y = 0), so steering
-  // torques the ship without also rolling it — that coupling belongs to strafe,
+  // torques the ship without also rolling it — the bank belongs to strafe,
   // which is a different control with a different feel. A single tail jet does
   // push the tail sideways as well as rotate it, and that is correct for a craft
   // with no bow thruster: you steer by kicking the back out. Lateral drag is ~24x

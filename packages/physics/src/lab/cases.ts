@@ -313,7 +313,7 @@ export const CRASH_CASES: readonly CrashCase[] = [
 
   {
     id:       'strafe-ledge',
-    title:    'strafe off a ledge onto a lower deck',
+    title:    'strafe left off a ledge onto a lower deck',
     lane:     5,
     duration: 9,
     spawn:    { position: [ -6, 1, 0 ], quaternion: FACING_Z },
@@ -322,7 +322,8 @@ export const CRASH_CASES: readonly CrashCase[] = [
       { id: 'lower', position: [ 26, -7, 0 ], rotation: [ 0, 0, 0 ], half: [ 26, 1, 60 ], colour: '#151827' },
     ],
     timeline: [
-      at(0, { strafe: 1 }),
+      // Facing +Z, the pilot's left is +X, which is where the lower deck is.
+      at(0, { strafe: -1 }),
       at(3, { strafe: 0 }),
     ],
     checks: [

@@ -558,9 +558,10 @@ export function stepHovercraft (params: HovercraftStepParams): HovercraftStepRes
   throttles[RETRO_L] = retroLevel
   throttles[RETRO_R] = retroLevel
 
-  // Strafe. Deliberately uncompensated — the yaw, roll and nose-dip it induces
-  // are the point, not artefacts to cancel. See the placement note in
-  // `thrusters.ts`; `strafe > 0` is rightward, which is `lateral.R`.
+  // Strafe. `strafe > 0` is to STARBOARD — the pilot's right, the same sense
+  // as `steer > 0` — which is `lateral.R`, pushing -X. The nozzles sit on the
+  // COM station, so this is a sideways push with a bank into it and no yaw;
+  // see the placement note in `thrusters.ts`.
   const strafeVal = allowDrive && input.strafe ? Math.max(-1, Math.min(1, input.strafe)) : 0
   if (strafeVal > 0)
     throttles[LATERAL_R] = strafeVal * strafeSpeedScale / 0.14

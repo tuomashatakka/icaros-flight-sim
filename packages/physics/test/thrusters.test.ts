@@ -6,13 +6,13 @@ import { vehicleConfig } from 'Φconfig'
 /**
  * The rig's GEOMETRY is the handling model.
  *
- * Every coupling the ship has — strafing swinging the nose, banking into a
- * slide, the nose dipping — is `tau = r x F` for a nozzle bolted somewhere
- * specific. There is no code downstream that adds those effects, so moving a
- * mount point by a few centimetres silently changes how the ship drives and
- * nothing else would notice. These pin the signs.
+ * Every coupling the ship has — banking into a strafe, a pad over a rise
+ * pitching the hull — is `tau = r x F` for a nozzle bolted somewhere specific.
+ * There is no code downstream that adds those effects, so moving a mount point
+ * by a few centimetres silently changes how the ship drives and nothing else
+ * would notice. These pin the signs.
  *
- * Body axes: +X right, +Y up, +Z forward. Per the repo convention a POSITIVE
+ * Body axes: +Y up, +Z forward, so +X is PORT (the pilot's left). A POSITIVE
  * torque about +Y is a LEFT turn.
  */
 
@@ -32,33 +32,41 @@ const torqueOf = (id: string) => {
 }
 
 describe('thruster rig geometry', () => {
-  it('puts every propulsion nozzle behind the centre of mass', () => {
-    // The brief: thrusters live at the rear, so horizontal thrust cannot help
-    // but rotate the ship. A nozzle that crept forward of the COM would flip the
-    // sign of the coupling rather than merely weakening it.
+  it('puts the main and yaw nozzles behind the centre of mass', () => {
+    // A yaw jet or a main that crept forward of the COM would flip the sign of
+    // its torque rather than merely weakening it.
     for (const t of THRUSTER_RIG)
-      if (t.group === 'main' || t.group === 'lateral' || t.group === 'rcs')
+      if (t.group === 'main' || t.group === 'rcs')
         expect(t.pos[2], `${t.id} should be aft of the COM`).toBeLessThan(0)
   })
 
-  it('couples a rightward strafe into yaw, roll and pitch at once', () => {
-    const tau = torqueOf('lateral.R')
-
-    expect(tau.y, 'nose swings toward the strafe (right = negative about +Y)').toBeLessThan(0)
-    expect(tau.z, 'banks INTO the strafe, right side down').toBeLessThan(0)
-    expect(tau.x, 'front tip nudges DOWN').toBeGreaterThan(0)
+  it('names each lateral nozzle for the way it pushes the pilot', () => {
+    // +X is port. `lateral.R` must push to starboard, or `strafe > 0` — the same
+    // sense as `steer > 0` — slides the ship to the left.
+    expect(byId('lateral.R').dir[0]).toBeLessThan(0)
+    expect(byId('lateral.L').dir[0]).toBeGreaterThan(0)
   })
 
-  it('mirrors that coupling exactly for a leftward strafe', () => {
+  it('strafes sideways without yawing or pitching', () => {
+    // The nozzles used to sit a metre aft, and a strafe was then mostly a yaw
+    // AWAY from the key — the tail pushed right swings the nose left.
+    const tau = torqueOf('lateral.R')
+
+    expect(tau.y, 'no yaw').toBeCloseTo(0, 6)
+    expect(tau.x, 'no pitch').toBeCloseTo(0, 6)
+  })
+
+  it('banks into a strafe to starboard, port side up', () => {
+    // Positive about +Z (forward) lifts +X, the port side.
+    expect(torqueOf('lateral.R').z).toBeGreaterThan(0)
+  })
+
+  it('mirrors that bank exactly for a leftward strafe', () => {
     const right = torqueOf('lateral.R')
     const left  = torqueOf('lateral.L')
 
-    expect(left.y).toBeCloseTo(-right.y, 6)
     expect(left.z).toBeCloseTo(-right.z, 6)
-    // Pitch does NOT mirror: both nozzles cant upward, so either strafe drops
-    // the nose. A sign flip here would mean one direction pitches you up.
-    expect(left.x).toBeCloseTo(right.x, 6)
-    expect(left.x).toBeGreaterThan(0)
+    expect(left.y).toBeCloseTo(0, 6)
   })
 
   it('produces no net torque from balanced main thrust', () => {
@@ -71,10 +79,10 @@ describe('thruster rig geometry', () => {
     expect(torqueOf('rcs.L').y).toBeGreaterThan(0)
   })
 
-  it('gives the yaw jets enough authority to cancel a full strafe', () => {
-    // If a strafe can out-torque the steering the ship just spins, and the
-    // coupling stops being a trade-off and becomes a loss of control.
-    expect(Math.abs(torqueOf('rcs.R').y)).toBeGreaterThan(Math.abs(torqueOf('lateral.R').y))
+  it('gives the yaw jets authority over anything a strafe could induce', () => {
+    // If a strafe can out-torque the steering the ship just spins — which it
+    // did, while the lateral pair sat at the tail.
+    expect(Math.abs(torqueOf('rcs.R').y)).toBeGreaterThan(Math.abs(torqueOf('lateral.R').y) * 4)
   })
 
   it('mounts the hover pads at four corners', () => {

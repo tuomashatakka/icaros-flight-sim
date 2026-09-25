@@ -34,14 +34,17 @@ function makeWorld () {
 }
 
 type Probe = {
-  y:        number;
-  speed:    number;
-  fwdSpeed: number;
-  yawRate:  number;
-  pitch:    number;
-  roll:     number;
-  up:       number;
-  grounded: boolean;
+  y: number;
+
+  /** Velocity to STARBOARD (the pilot's right, -X in body axes), m/s. */
+  sideSpeed: number;
+  speed:     number;
+  fwdSpeed:  number;
+  yawRate:   number;
+  pitch:     number;
+  roll:      number;
+  up:        number;
+  grounded:  boolean;
 }
 
 /** Run `ticks` of one input and report the final state. */
@@ -71,11 +74,11 @@ function run (input: Partial<HovercraftInput>, ticks: number, settle = 120) {
   for (let i = 0; i < settle; i++)
     step(NEUTRAL)
 
-  const control = { ...NEUTRAL, ...input }
-  const q       = new Quaternion()
-  const fwd     = new Vector3()
-  const up      = new Vector3()
-  const right   = new Vector3()
+  const control   = { ...NEUTRAL, ...input }
+  const q         = new Quaternion()
+  const fwd       = new Vector3()
+  const up        = new Vector3()
+  const starboard = new Vector3()
 
   for (let i = 0; i < ticks; i++) {
     step(control)
@@ -87,18 +90,21 @@ function run (input: Partial<HovercraftInput>, ticks: number, settle = 120) {
     q.set(r.x, r.y, r.z, r.w)
     fwd.set(0, 0, 1).applyQuaternion(q)
     up.set(0, 1, 0).applyQuaternion(q)
-    right.set(1, 0, 0).applyQuaternion(q)
+    // Body +X is PORT: with +Y up and the nose on +Z, three's right-handed
+    // frame puts the pilot's right on -X.
+    starboard.set(-1, 0, 0).applyQuaternion(q)
 
     samples.push({
-      y:        t.y,
-      speed:    Math.hypot(v.x, v.y, v.z),
-      fwdSpeed: v.x * fwd.x + v.y * fwd.y + v.z * fwd.z,
-      yawRate:  w.x * up.x + w.y * up.y + w.z * up.z,
-      // Positive pitch = nose down, positive roll = right side down.
-      pitch:    Math.asin(Math.max(-1, Math.min(1, -fwd.y))),
-      roll:     Math.asin(Math.max(-1, Math.min(1, -right.y))),
-      up:       up.y,
-      grounded: false,
+      y:         t.y,
+      sideSpeed: v.x * starboard.x + v.y * starboard.y + v.z * starboard.z,
+      speed:     Math.hypot(v.x, v.y, v.z),
+      fwdSpeed:  v.x * fwd.x + v.y * fwd.y + v.z * fwd.z,
+      yawRate:   w.x * up.x + w.y * up.y + w.z * up.z,
+      // Positive pitch = nose down, positive roll = right (starboard) side down.
+      pitch:     Math.asin(Math.max(-1, Math.min(1, -fwd.y))),
+      roll:      Math.asin(Math.max(-1, Math.min(1, -starboard.y))),
+      up:        up.y,
+      grounded:  false,
     })
   }
 
@@ -137,16 +143,21 @@ console.log(`steer=+1   yaw rate ${fmt(yawRate)}   (want negative: +steer is a R
 check('steer right yaws right', yawRate < -0.2)
 check('upright through a turn', Math.min(...turn.map(s => s.up)) > 0.8)
 
-// --- 4. Strafe coupling — the whole reason the thrusters sit at the tail ----
+// --- 4. Strafe — a sidestep, not a turn --------------------------------------
+// The lateral nozzles used to sit a metre behind the COM, so a strafe was mostly
+// a yaw AWAY from the key: pressing strafe-right turned the ship left. They sit
+// on the COM station now, and `strafe > 0` is to starboard, like `steer > 0`.
 const strafe = run({ throttle: true, strafe: 1 }, 90)
 const sYaw   = last(strafe).yawRate
 const sRoll  = last(strafe).roll
 const sPitch = last(strafe).pitch
-console.log(`strafe=+1  yaw ${fmt(sYaw)}  roll ${fmt(sRoll)}  pitch ${fmt(sPitch)}`)
-console.log('           (want: yaw < 0 into the strafe, roll > 0 banking into it, pitch > 0 nose down)')
-check('strafe induces yaw toward the strafe', sYaw < -0.02)
+const sSide  = last(strafe).sideSpeed
+console.log(`strafe=+1  side ${fmt(sSide)}  yaw ${fmt(sYaw)}  roll ${fmt(sRoll)}  pitch ${fmt(sPitch)}`)
+console.log('           (want: side > 0 to starboard, no yaw, roll > 0 banking into it, nose level)')
+check('strafe slides the ship to starboard', sSide > 3)
+check('strafe does not yaw the ship', Math.abs(sYaw) < 0.02)
 check('strafe banks into the strafe', sRoll > 0.005)
-check('strafe dips the nose', sPitch > 0.003)
+check('strafe keeps the nose level', Math.abs(sPitch) < 0.02)
 
 // --- 5. Braking ------------------------------------------------------------
 // Holding brake from a standstill is the reverse gear. It has to stay a parking

@@ -3,7 +3,7 @@
   "track": "flats",
   "ticks": 120,
   "countdown": 0,
-  "note": "Lateral authority in isolation. The rig yaws, banks and dips into a strafe by design.",
+  "note": "Lateral authority in isolation. A full right strafe: the ship slides to starboard and banks into it, with no yaw.",
   "racers": [
     {
       "name": "Probe",
