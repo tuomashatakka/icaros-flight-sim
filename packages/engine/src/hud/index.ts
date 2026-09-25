@@ -37,7 +37,13 @@ type SharedHudOptions<TState extends object> = {
 
   /** The route's `touch` parameter, from the page's `useSearchParams`. */
   forcedTouch?: string | null;
-  target(frame: HudFrame): void;
+
+  /**
+   * Fill the mode's fields on the frame. EVERY rendered frame, because the
+   * sight is placed every frame; `refresh` is true on the frames the HUD's
+   * repaint budget allows the expensive part — a ray-march — to run on.
+   */
+  target(frame: HudFrame, refresh: boolean): void;
 }
 
 /**
@@ -143,16 +149,18 @@ function sharedHudModule<TState extends object> ({
           frame.aimPitch      = view.aimPitch
           frame.focusDistance = view.focusDistance
           frame.drawHz        = view.drawHz
-          frame.steer    = controls.steer
-          frame.strafe   = controls.strafe
+          frame.steer         = controls.steer
+          frame.strafe        = controls.strafe
 
-          // The HUD never draws faster than this either, so the reticle is
-          // still no staler than the frame it is painted on.
-          const period = 1 / Math.min(Math.max(view.drawHz, 10), 60)
-          if (view.elapsed - refreshedAt >= period) {
+          // The pose-derived part of the sight runs every frame — it is what
+          // the pipper is drawn at, and a stale one trails the guns through a
+          // turn. What the shot HITS is a ray-march, and that stays on the
+          // repaint budget.
+          const period  = 1 / Math.min(Math.max(view.drawHz, 10), 60)
+          const refresh = view.elapsed - refreshedAt >= period
+          if (refresh)
             refreshedAt = view.elapsed
-            target(frame)
-          }
+          target(frame, refresh)
 
           spatial.update(frame)
         },
@@ -247,14 +255,16 @@ export function raceHudModule<TState extends object> (
 /**
  * @param readSight - Where the guns point and what the shot hits, or null while
  * the predicted chassis does not exist yet. Supplied by the scene because only
- * it has the predicted pose, the weapon's reach and a rapier world to ask.
+ * it has the weapon's reach and a rapier world to ask. Aimed from the pose the
+ * ship is DRAWN at, so the pipper sits on the guns the player can see; the
+ * ray-march only runs when `refresh` is set.
  */
 export function battleHudModule<TState extends object> (
   canvas: HTMLCanvasElement,
   telemetry: Telemetry,
   controls: Controls,
   handle: HandleType,
-  readSight: () => HudSight | null,
+  readSight: (position: THREE.Vector3, quaternion: THREE.Quaternion, refresh: boolean) => HudSight | null,
   hudScene: THREE.Scene,
   forcedTouch?: string | null
 ): AppModule<TState> {
@@ -280,14 +290,14 @@ export function battleHudModule<TState extends object> (
     source,
     hudScene,
     forcedTouch,
-    target (frame) {
+    target (frame, refresh) {
       const battle = battleStore.get()
       const locked = battle.lockOn.targetId !== null
 
       // `target` used to be hardcoded null with the label pinned to the arena
       // name, so every range readout in battle showed zero and the reticle
       // label always fell through to FREE VECTOR.
-      frame.sight            = readSight()
+      frame.sight            = readSight(frame.shipPosition, frame.hullQuaternion, refresh)
       frame.target           = locked ? frame.sight?.impact ?? null : null
       frame.targetLabel      = locked ? battle.lockOn.name?.toUpperCase() ?? 'CONTACT' : 'APEX ARENA'
       frame.checkpointNumber = 0

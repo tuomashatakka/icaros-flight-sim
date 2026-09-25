@@ -50,6 +50,19 @@ export type Telemetry = {
 
   /** Impact shake magnitude; decays in the render phase on real time. */
   shake: number;
+
+  /**
+   * Felt acceleration, smoothed, in the SHIP's axes (+X port, +Y up, +Z
+   * forward), m/s^2. The camera leans back under thrust and swings out through
+   * a corner off this.
+   */
+  accel: THREE.Vector3;
+
+  /**
+   * Collision acceleration accumulated since the render phase last read it,
+   * ship axes. The camera takes it as a kick and zeroes it.
+   */
+  jolt: THREE.Vector3;
 }
 
 export function createTelemetry (): Telemetry {
@@ -64,6 +77,8 @@ export function createTelemetry (): Telemetry {
     velocity:      new THREE.Vector3(),
     crashSeq:      0,
     shake:         0,
+    accel:         new THREE.Vector3(),
+    jolt:          new THREE.Vector3(),
   }
 }
 

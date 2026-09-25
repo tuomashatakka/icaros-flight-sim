@@ -1,10 +1,9 @@
 import { TEAM_COLORS } from 'Ψarena'
 import type { Controls } from '../input'
-import { chamferPath, drawCornerBrackets, drawHoloPlate, drawHoloStick, drawPlate, drawPlateLabel, drawScanlines, drawTrackedText, glowText } from './chrome'
+import { chamferPath, drawCornerBrackets, drawPlate, drawPlateLabel, drawTrackedText, glowText } from './chrome'
 import type { Rect } from './chrome'
 import { HudPanel } from './panel'
-import { drawHudSight } from './sight'
-import { touchLayout } from './touch-layout'
+import { drawKillFeed } from './sight'
 import type { SafeAreaInsets } from './touch-layout'
 import { formatHudRaceTime } from './interaction'
 import { HUD_FONT_MONO as FONT, HUD_HUES as HUES, HUD_THEME as THEME, HUD_TUNING_SPECS } from './tokens'
@@ -195,6 +194,42 @@ function footerButtons (
     const y     = stacked ? rowY - (buttons.length - 1 - index) * (height + 8) : rowY
     overlayButton(overlay, { ...button, x, y, width, height })
   })
+}
+
+/**
+ * Everything the full-screen sheet draws that can change without a clock.
+ *
+ * The sheet used to be marked dirty on EVERY panel repaint, so a 1280x720
+ * raster was cleared, redrawn and re-uploaded at the panel cadence whether or
+ * not a single pixel of it had changed — for most of a race it holds nothing
+ * but empty space. It repaints now when this key moves, or while something on
+ * it is animating (see `overlayLive`).
+ */
+export function overlayKey (data: HudData): string {
+  if (data.mode === 'race') {
+    const race = data.race
+    return [
+      'race',
+      race.status,
+      race.status === 'countdown' ? Math.ceil(data.clocks.countdown) : 0,
+      data.tuningOpen,
+      data.tuningOpen ? Object.values(data.tuning).join(',') : '',
+      race.finished,
+      race.status === 'finished' ? race.standings.map(entry => `${entry.id}:${entry.position}:${entry.bestLap}`).join(',') : '',
+    ].join('|')
+  }
+
+  const battle = data.battle
+  return [
+    'battle',
+    battle.status,
+    battle.status === 'countdown' ? Math.ceil(battle.countdown) : 0,
+    battle.toasts.join(','),
+    battle.killFeed.map(entry => `${entry.killer}>${entry.victim}:${entry.weapon}`).join(','),
+    battle.myHealth / Math.max(1, battle.maxHealth) < 0.3,
+    battle.status === 'finished' ? `${battle.scores.red}:${battle.scores.blue}` : '',
+    battle.error ?? '',
+  ].join('|')
 }
 
 export function isHudBlockingOverlay (data: HudData): boolean {
@@ -401,147 +436,16 @@ function drawTuning (
   context.restore()
 }
 
-/**
- * A touch control's accent, by name.
- *
- * Named hues rather than roles: the rail is a physical layout and the colour is
- * how a thumb tells two adjacent plates apart without reading either label.
- * Collapsing them onto shades of one primary is exactly what made the cluster
- * unreadable at a glance.
- */
-const ACCENTS = {
-  cyan:    HUES.cyan,
-  magenta: HUES.magenta,
-  amber:   HUES.amber,
-  violet:  HUES.violet,
-  green:   HUES.green,
-} as const
-
-/**
- * The on-screen controls, in the visor's own language.
- *
- * Geometry comes from `touchLayout` and nothing here invents a coordinate:
- * that record is the single source for the drawing AND — because regions are
- * emitted while drawing — for the hitboxes, so the two cannot drift.
- */
-function drawTouchControls (
-  overlay: HudPanel,
-  data: HudData,
-  frame: HudFrame,
-  controls: Controls,
-  insets: SafeAreaInsets,
-  cssSize: CssSizeType,
-  stickX: Record<'move' | 'aim', number>,
-  stickY: Record<'move' | 'aim', number>,
-  held: ReadonlySet<HudActionId>,
-  phase: number
-): void {
-  const { context, canvas } = overlay
-  const layout              = touchLayout({
-    width:     canvas.width,
-    height:    canvas.height,
-    cssWidth:  cssSize.width,
-    cssHeight: cssSize.height,
-    insets,
-    mode:      data.mode,
-  })
-
-  // The controls slide up from the edge they live on as they arrive, so the
-  // rail comes in from the sides and the thumb cluster from the bottom.
-  const rise = (1 - phase) * canvas.height * 0.06
-
-  context.save()
-  context.globalAlpha = revealAlpha(phase)
-  context.translate(0, rise)
-
-  for (const stick of layout.sticks) {
-    drawHoloStick(context, stick.centerX, stick.centerY, stick.radius, {
-      offsetX: stickX[stick.stick],
-      offsetY: stickY[stick.stick],
-      engaged: Math.hypot(stickX[stick.stick], stickY[stick.stick]) > 0.02,
-      label:   stick.label,
-      accent:  HUES.cyan,
-    })
-    overlay.region({
-      id:     `stick:${stick.stick}`,
-      kind:   'stick',
-      stick:  stick.stick,
-      x:      stick.centerX - stick.radius,
-      y:      stick.centerY - stick.radius,
-      width:  stick.radius * 2,
-      height: stick.radius * 2,
-    })
-  }
-
-  for (const button of layout.buttons) {
-    const accent = ACCENTS[button.accent]
-    const active = button.hold
-      ? held.has(button.action) || liveHold(button.action, controls)
-      : false
-
-    drawHoloPlate(context, button.rect, { accent, active })
-    drawScanlines(context, button.rect, frame.elapsed, accent)
-    drawPlateLabel(
-      context,
-      button.label,
-      button.rect.x + button.rect.width * 0.5,
-      button.rect.y + button.rect.height * 0.5,
-      { size: Math.max(11, Math.min(button.rect.height * 0.26, button.rect.width * 0.19)), color: accent }
-    )
-    overlay.region({
-      id:     button.id,
-      kind:   button.hold ? 'hold' : 'button',
-      x:      button.rect.x,
-      // Regions are the SETTLED positions, not the animated ones: a control
-      // that has to be chased while it slides in is worse than one that is
-      // tappable a beat before it looks ready.
-      y:      button.rect.y,
-      width:  button.rect.width,
-      height: button.rect.height,
-      action: button.action,
-    })
-  }
-
-  context.restore()
-}
-
-/**
- * Whether a hold action is engaged right now.
- *
- * Read off `Controls` where it exists there, so a key and a thumb light the
- * same plate. The lateral and brake axes are shared with the sticks, so those
- * fall back to the pressed set rather than claiming a stick's deflection.
- */
-function liveHold (action: HudActionId, controls: Controls): boolean {
-  switch (action) {
-    case 'boost':
-      return controls.boost
-    case 'fire-primary':
-      return controls.fire
-    case 'fire-secondary':
-      return controls.fireSecondary
-    default:
-      return false
-  }
-}
-
 export type DrawHudOverlayOptions = {
   overlay:    HudPanel;
   data:       HudData;
   frame:      HudFrame;
   crashUntil: number;
   copyUntil:  number;
-  isTouch:    boolean;
-  controls:   Controls;
-  stickX:     Record<'move' | 'aim', number>;
-  stickY:     Record<'move' | 'aim', number>;
 
   /** Safe-area insets in CSS pixels, and the surface they were measured on. */
   insets:  SafeAreaInsets;
   cssSize: { width: number; height: number };
-
-  /** Hold actions with a finger on them, for the ones `Controls` cannot report. */
-  held: ReadonlySet<HudActionId>;
 
   /** Arrival phase of whichever blocking layer is up, 0..1. */
   modalPhase: number;
@@ -557,9 +461,6 @@ export type DrawHudOverlayOptions = {
 
   /** True while the blocking layer is on its way out rather than in. */
   modalClosing: boolean;
-
-  /** Arrival phase of the touch controls, 0..1. */
-  touchPhase: number;
 
   /**
    * A line describing why the touch rail is or is not on screen.
@@ -578,17 +479,11 @@ export function drawHudOverlay ({
   frame,
   crashUntil,
   copyUntil,
-  isTouch,
-  controls,
-  stickX,
-  stickY,
   insets,
   cssSize,
-  held,
   modalPhase,
   modalData,
   modalClosing,
-  touchPhase,
   touchDebug,
 }: DrawHudOverlayOptions): void {
   const { context, canvas } = overlay
@@ -634,19 +529,9 @@ export function drawHudOverlay ({
   if (modalClosing)
     overlay.regions.length = regionMark
 
-  // Outside every branch above, and LAST.
-  //
-  // The controls used to live inside `drawLiveLayers`, which meant any
-  // full-screen layer took them away: a battle whose server never answered
-  // reports `status: 'error'`, and that is the ordinary state of a client-only
-  // deployment with no game server reachable — so the one build where the
-  // player most needs an on-screen stick was the one build that drew none.
-  // A finish card and the tuning popover did the same thing for the same
-  // reason. None of them is a reason to stop flying, so none of them may take
-  // the controls away; drawing last also puts their regions above a modal's in
-  // the hit test, so a stick under a card is still a stick.
-  if (isTouch)
-    drawTouchControls(overlay, data, frame, controls, insets, cssSize, stickX, stickY, held, touchPhase)
+  // The thumb controls are not drawn here any more: they are the visor's own
+  // touch deck (`touch-deck.ts`), hit-tested BEFORE this sheet, so a stick
+  // under a finish card is still a stick — the rule the old draw order kept.
 
   // Last, and outside every branch above, so it reports even when the thing it
   //  is reporting on drew nothing at all.
@@ -671,10 +556,10 @@ export function drawHudOverlay ({
   overlay.texture.needsUpdate = true
 
   function drawLiveLayers (): void {
-    // The sight is screen space by necessity — see `hud/sight.ts`. It draws
-    // under the countdown and the touch controls so neither is ever occluded
-    // by a reticle that happens to swing across them.
-    drawHudSight(overlay, data, frame)
+    // The sight is its own per-frame layer now (`hud/sight.ts`); the kill feed
+    // is the one piece of it that is plain text in a corner.
+    if (data.mode === 'battle')
+      drawKillFeed(overlay, data.battle, Math.min(width, height))
     drawCountdown(overlay, data)
   }
 }

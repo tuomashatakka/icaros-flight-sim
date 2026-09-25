@@ -76,6 +76,13 @@ export type HudStationInput = {
   hullQuaternion: THREE.Quaternion;
 }
 
+/**
+ * With the thumb deck up in landscape: how much of the frame the visor keeps,
+ * and how far its centre lifts, in frame half-heights.
+ */
+const TOUCH_FIT  = 0.7
+const TOUCH_LIFT = 0.12
+
 export type HudStation = {
   position:   THREE.Vector3;
   quaternion: THREE.Quaternion;
@@ -92,7 +99,14 @@ export function createHudStation (): HudStation {
   }
 }
 
-export function hudStation (out: HudStation, input: HudStationInput): HudStation {
+/**
+ * @param touchDeck - True while the thumb controls are part of the visor. They
+ * sit in the frame's outer strips and its bottom band, so the visor folds
+ * inward and lifts to make room — the controls are then the visor's outer ring
+ * rather than plates stuck over its instruments. Landscape only: portrait
+ * already drops the visor clear of the thumb band.
+ */
+export function hudStation (out: HudStation, input: HudStationInput, touchDeck = false): HudStation {
   const { camera, hudQuaternion } = input
 
   const perspective = camera instanceof THREE.PerspectiveCamera ? camera : null
@@ -127,9 +141,21 @@ export function hudStation (out: HudStation, input: HudStationInput): HudStation
   // band opens the sightline and closes the collision with the same number.
   const drop = Math.min(0, VISOR_HALF_HEIGHT * fit / FRAME_HALF_HEIGHT - (1 - THUMB_BAND))
 
+  // Landscape with the deck up: the sticks own the outer sixth of the frame on
+  // each side and the utility row the bottom band, so the visor folds in to
+  // the middle and rises clear of them. Uniformly, for the reason above.
+  const deck    = touchDeck && drop === 0
+  const deckFit = deck ? Math.min(fit, TOUCH_FIT) : fit
+  const lift    = deck ? TOUCH_LIFT : 0
+
   out.position.copy(camera.position)
   out.quaternion.copy(hudQuaternion)
-  out.scale.set(fovScale * fit, fovScale * fit)
+  out.scale.set(fovScale * deckFit, fovScale * deckFit)
+
+  if (lift > 0) {
+    _up.set(0, 1, 0).applyQuaternion(out.quaternion)
+    out.position.addScaledVector(_up, lift * FRAME_HALF_HEIGHT * fovScale)
+  }
 
   // Along the station's OWN up, not the world's, so the dash stays under the
   // sightline through a roll instead of sliding across the canopy.

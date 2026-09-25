@@ -3,7 +3,10 @@ import { createApp, createSeededRng, defineModule } from 'threejs-scene'
 import type { App, AppModule, FrameContext } from 'threejs-scene'
 import { postProcessing } from 'threejs-scene/modules/post'
 import type { PostProcessingOptions } from 'threejs-scene/modules/post'
-import { setCameraView } from 'Ƨ'
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js'
+import type { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js'
+import { setCameraView, settingsStore } from 'Ƨ'
+import type { SettingsState } from 'Ƨ'
 import { initRapier } from 'Φrapier'
 import { createSimClock } from 'Φclock'
 import { createPhysics } from 'Φworld'
@@ -29,6 +32,7 @@ import { publishModule } from '../modules/publish'
 import type { PublishHandle } from '../modules/publish'
 import { attachBridge } from '../bridge'
 import { createRendererQuality } from '../quality/runtime'
+import type { PostBudget } from '../quality/runtime'
 import { publishSceneLifecycle, reducedMotion, sceneLifecycleState } from '../lifecycle'
 import { createFocusProbe } from '../render/focus-probe'
 
@@ -67,6 +71,15 @@ const _renderOffset   = new THREE.Vector3()
 const _shipQuaternion = new THREE.Quaternion()
 const _hudQuaternion  = new THREE.Quaternion()
 const _hudLead        = new THREE.Quaternion()
+const _cssSize        = new THREE.Vector2()
+
+/** The felt-motion record handed to the rig, mutated in place each frame. */
+const _motion = {
+  accel:    new THREE.Vector3(),
+  jolt:     new THREE.Vector3(),
+  speed:    0,
+  boosting: false,
+}
 
 /** The HUD's per-frame record, mutated in place so the render phase allocates nothing. */
 const _view: HudViewFrame = {
@@ -94,6 +107,12 @@ const _view: HudViewFrame = {
 const MAX_AIM_PITCH = 0.31
 
 type AppContext<TState extends object> = Parameters<AppModule<TState>['build']>[0]
+
+const controlOptions = (settings: SettingsState) => ({
+  pointerLock: settings.pointerLock,
+  sensitivity: settings.mouseSensitivity,
+  invertY:     settings.invertMouseY,
+})
 
 /** The slice of the post module a scene is allowed to fill in. */
 export type ScenePost = Pick<PostProcessingOptions, 'depth' | 'effects' | 'onFrame' | 'onResize'>
@@ -206,7 +225,9 @@ export type BaseSceneConfig<TState extends object> = {
     controls: Controls
   ) => void;
   onDispose?: () => void;
-  onQuality?: (effects: 0 | 1 | 2) => void;
+
+  /** The post chain's budget: the quality stage with the player's switches over it. */
+  onPost?: (budget: PostBudget) => void;
 
   /** Per-frame report for the post chain. See `ScenePostView`. */
   onPostView?: (view: ScenePostView) => void;
@@ -260,7 +281,11 @@ export async function mountBaseScene<TState extends object> (
 
   const publish: PublishType = { current: null }
 
-  let composer: { render(delta: number): void } | null = null
+  let composer: EffectComposer | null = null
+
+  // False when the player has switched the lens chain off: the scene is then
+  //  drawn straight to the screen and the composer never runs at all.
+  let postEnabled = true
 
   const seed = resolveSeed(config.seed ?? SEED)
   const rng  = createSeededRng(seed)
@@ -355,10 +380,15 @@ export async function mountBaseScene<TState extends object> (
     })
   )
 
+  const settings = settingsStore.get()
+
   const app = createApp<TState>(canvas, {
     state:    initialState,
     seed,
     clock,
+    // Always passed, 0 included: the cap lives on a manager shared by every
+    // loop on the page, so leaving it out would inherit the last scene's.
+    loop:     { fps: settings.frameCap },
     camera:   rig.camera,
     scene:    { background: environment.background },
     // The composer's targets are never multisampled (its `WebGLRenderTarget`s
@@ -375,15 +405,43 @@ export async function mountBaseScene<TState extends object> (
   })
 
   const quality = createRendererQuality({
-    renderer:  app.ctx.renderer,
-    scene:     app.ctx.scene,
+    renderer: app.ctx.renderer,
+    scene:    app.ctx.scene,
     sun,
-    onEffects: config.onQuality,
+    setPixelRatio (ratio) {
+      const renderer = app.ctx.renderer
+      renderer.getSize(_cssSize)
+      renderer.setPixelRatio(ratio)
+      renderer.setSize(_cssSize.x, _cssSize.y, false)
+      if (!composer)
+        return
+
+      // `EffectComposer.setPixelRatio` resizes every pass it holds to the new
+      // effective size. Bloom is then put back at CSS size, which is where the
+      // library's own resize hook keeps it: it is a blur, and a mip chain at
+      // device resolution is the most expensive way to draw one.
+      composer.setPixelRatio(ratio)
+      for (const pass of composer.passes)
+        if (pass instanceof UnrealBloomPass)
+          pass.setSize(_cssSize.x, _cssSize.y)
+    },
+    onPost (budget) {
+      postEnabled = budget.enabled
+      config.onPost?.(budget)
+    },
   })
 
-  function renderFrame (frame: FrameContext) {
-    frame = { ...frame, delta: Math.min(frame.delta, 1 / 30) }
+  const renderPhase = { delta: 0, elapsed: 0, frame: 0 } as FrameContext
+
+  function renderFrame (incoming: FrameContext) {
+    // Copied into one reused record rather than spread into a fresh object:
+    // this runs every rendered frame, and the render phase allocates nothing.
+    const frame   = renderPhase
+    frame.delta   = Math.min(incoming.delta, 1 / 30)
+    frame.elapsed = incoming.elapsed
+    frame.frame   = incoming.frame
     quality.beginFrame()
+    input.tick(frame.delta)
     if (controls.viewSeq !== lastViewSeq) {
       lastViewSeq = controls.viewSeq
       rig.toggleView()
@@ -429,7 +487,15 @@ export async function mountBaseScene<TState extends object> (
       _pan.panX  = controls.panX
       _pan.panY  = controls.panY
       _pan.pitch = aimNorm
-      rig.drive(frame.delta, _shipPosition, _shipQuaternion, _pan)
+
+      // The hull's effort, for the camera: felt acceleration, and whatever the
+      // world hit it with since the last frame — consumed here, once.
+      _motion.accel.copy(telemetry.accel)
+      _motion.jolt.copy(telemetry.jolt)
+      telemetry.jolt.set(0, 0, 0)
+      _motion.speed    = Math.min(1, telemetry.speed / Math.max(1, vehicleConfig.maxSpeed))
+      _motion.boosting = telemetry.boosting
+      rig.drive(frame.delta, _shipPosition, _shipQuaternion, _pan, _motion)
       rig.hudQuaternion(_hudQuaternion)
       rig.hudLead(_hudLead)
       sun.current?.follow(_shipPosition)
@@ -464,7 +530,7 @@ export async function mountBaseScene<TState extends object> (
     else
       onFrame?.(frame, _shipPosition, _shipQuaternion, rig, controls)
 
-    if (composer)
+    if (composer && postEnabled)
       composer.render(frame.delta)
     else
       app.ctx.renderer.render(app.ctx.scene, rig.camera)
@@ -518,7 +584,15 @@ export async function mountBaseScene<TState extends object> (
     })
   }
 
-  const detachControls = attachControls(canvas, controls)
+  const input = attachControls(canvas, controls, controlOptions(settings))
+
+  const applySettings = (next: SettingsState) => {
+    input.configure(controlOptions(next))
+    rig.configure({ chaseFov: next.fov, shakeScale: next.cameraShake, motionScale: next.cameraMotion })
+  }
+  applySettings(settings)
+
+  const unsubscribeSettings = settingsStore.subscribe(applySettings)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const detachBridge   = attachBridge(app as any)
 
@@ -573,7 +647,8 @@ export async function mountBaseScene<TState extends object> (
     onDispose?.()
     detachDev?.()
     focusProbe.dispose()
-    detachControls()
+    unsubscribeSettings()
+    input.detach()
     detachBridge()
     quality.dispose()
     composer = null

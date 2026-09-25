@@ -1,0 +1,221 @@
+/*
+ * The settings screen, in the menu's cockpit dress.
+ *
+ * Page, backdrop and the shared figures come from `main-menu.module.css` and
+ * `hud-chrome.module.css`; what is here is the form: labelled rows of
+ * segmented choices, switches and sliders on glass panels. Every colour is a
+ * `--hud-*` property — see `hud-theme.ts`.
+ */
+
+.inner {
+  max-width: 56rem;
+  gap: 1.5rem;
+}
+
+.header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem 2rem;
+  padding: 1.5rem 2rem;
+}
+
+.header > p {
+  flex-basis: 100%;
+  margin: 0;
+}
+
+.title {
+  margin: 0;
+  font: var(--hud-font-display);
+  font-size: clamp(2.2rem, 6vw, 3.4rem);
+  line-height: 1;
+  letter-spacing: 0.08em;
+  color: var(--hud-bright);
+}
+
+.headerActions {
+  display: flex;
+  gap: 0.75rem;
+  margin-left: auto;
+}
+
+.action {
+  padding: 0.6rem 1.1rem;
+  border: 1px solid color-mix(in srgb, var(--hud-primary) 45%, transparent);
+  color: var(--hud-bright);
+  cursor: pointer;
+}
+
+.action:hover,
+.action:focus-visible {
+  border-color: var(--hud-primary);
+  outline: none;
+}
+
+.panel {
+  padding: 1.5rem 2rem 1.75rem;
+  border: 1px solid color-mix(in srgb, var(--hud-primary) 22%, transparent);
+}
+
+.panelTitle {
+  margin: 0 0 1rem;
+  font-size: 0.72rem;
+  letter-spacing: 0.35em;
+  color: var(--hud-accent);
+}
+
+.row {
+  display: grid;
+  grid-template-columns: 11rem minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 0.5rem 1rem;
+  padding: 0.55rem 0;
+  border-top: 1px solid color-mix(in srgb, var(--hud-primary) 10%, transparent);
+}
+
+.label {
+  font-size: 0.72rem;
+  color: var(--hud-wash);
+}
+
+.hint,
+.value {
+  font-size: 0.72rem;
+  color: var(--hud-dim);
+  white-space: nowrap;
+}
+
+.value {
+  min-width: 4rem;
+  text-align: right;
+  color: var(--hud-bright);
+}
+
+.segmented {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+}
+
+.segment {
+  min-height: 2.2rem;
+  padding: 0.35rem 0.85rem;
+  border: 1px solid color-mix(in srgb, var(--hud-primary) 30%, transparent);
+  background: color-mix(in srgb, var(--hud-primary) 5%, transparent);
+  color: var(--hud-wash);
+  font: var(--hud-font-display);
+  font-size: 0.72rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  cursor: pointer;
+  justify-self: start;
+  transition:
+    border-color 0.15s,
+    background-color 0.15s,
+    color 0.15s;
+}
+
+.segment:hover,
+.segment:focus-visible {
+  border-color: var(--hud-primary);
+  outline: none;
+}
+
+.segment:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.selected {
+  border-color: var(--hud-primary);
+  background: color-mix(in srgb, var(--hud-primary) 22%, transparent);
+  color: var(--hud-bright);
+  box-shadow: 0 0 14px -4px var(--hud-primary);
+}
+
+.toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.6rem;
+  justify-self: start;
+  min-height: 2.2rem;
+  padding: 0.3rem 0.8rem 0.3rem 0.35rem;
+  border: 1px solid color-mix(in srgb, var(--hud-primary) 30%, transparent);
+  background: transparent;
+  color: var(--hud-dim);
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.toggle:focus-visible {
+  border-color: var(--hud-primary);
+  outline: none;
+}
+
+.knob {
+  width: 2.2rem;
+  height: 1.1rem;
+  background:
+    linear-gradient(var(--hud-dim), var(--hud-dim)) 0.2rem 50% / 0.7rem 0.7rem no-repeat,
+    color-mix(in srgb, var(--hud-primary) 8%, transparent);
+  transition: background-position 0.15s;
+}
+
+.on {
+  border-color: var(--hud-primary);
+  color: var(--hud-bright);
+}
+
+.on .knob {
+  background:
+    linear-gradient(var(--hud-primary), var(--hud-primary)) calc(100% - 0.2rem) 50% / 0.7rem 0.7rem no-repeat,
+    color-mix(in srgb, var(--hud-primary) 26%, transparent);
+}
+
+.range {
+  width: 100%;
+  accent-color: var(--hud-primary);
+}
+
+.note {
+  margin: 0.75rem 0 0;
+  font-size: 0.72rem;
+  color: var(--hud-dim);
+}
+
+.keys {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(16rem, 1fr));
+  gap: 0.35rem 1.5rem;
+  margin: 1.25rem 0 0;
+  padding-top: 1rem;
+  border-top: 1px solid color-mix(in srgb, var(--hud-primary) 10%, transparent);
+}
+
+.key {
+  display: grid;
+  grid-template-columns: 8.5rem 1fr;
+  gap: 0.75rem;
+  font-size: 0.78rem;
+}
+
+.key dt {
+  color: var(--hud-bright);
+}
+
+.key dd {
+  margin: 0;
+  color: var(--hud-wash);
+}
+
+@media (max-width: 40rem) {
+  .row {
+    grid-template-columns: 1fr;
+  }
+
+  .hint,
+  .value {
+    text-align: left;
+  }
+}

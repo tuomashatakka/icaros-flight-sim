@@ -3,6 +3,7 @@
 import { Suspense, useCallback } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { SceneCanvas } from 'Ʊscene-canvas'
+import { GameChrome } from 'Ʊgame-chrome'
 import { mountBattle } from 'Ɠbattle'
 import { shipStore } from 'Ƨ'
 import type { ShipId } from 'Ȼship/registry'
@@ -38,6 +39,7 @@ function BattleContent () {
 
   return <div className={ styles.page }>
     <SceneCanvas mount={ mount } fallback={ false } />
+    <GameChrome />
   </div>
 }
 

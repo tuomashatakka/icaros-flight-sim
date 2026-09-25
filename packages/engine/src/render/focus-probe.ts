@@ -49,12 +49,35 @@ export function createFocusProbe (physics: Physics, canvas: HTMLCanvasElement): 
 
   const ray = new RAPIER.Ray({ x: 0, y: 0, z: 0 }, { x: 0, y: 0, z: -1 })
 
+  // Where the canvas is, cached. `getBoundingClientRect` flushes layout, and
+  //  this listener runs at the MOUSE's rate — up to 1 kHz on a gaming mouse,
+  //  and a captured mouse reports every movement. Re-read only when the page
+  //  says something could have moved it.
+  const rect = { left: 0, top: 0, width: 0, height: 0 }
+  let rectStale = true
+  const invalidate = () => {
+    rectStale = true
+  }
+
   const onMove = (event: PointerEvent) => {
     // Mouse and pen only. A touch is a control input, not a gaze.
     if (event.pointerType === 'touch')
       return
 
-    const rect = canvas.getBoundingClientRect()
+    // A captured mouse has no position; the lens looks where the ship does.
+    if (document.pointerLockElement === canvas) {
+      hasPointer = false
+      return
+    }
+
+    if (rectStale) {
+      const next  = canvas.getBoundingClientRect()
+      rect.left   = next.left
+      rect.top    = next.top
+      rect.width  = next.width
+      rect.height = next.height
+      rectStale   = false
+    }
     if (rect.width <= 0 || rect.height <= 0)
       return
 
@@ -71,6 +94,8 @@ export function createFocusProbe (physics: Physics, canvas: HTMLCanvasElement): 
 
   canvas.addEventListener('pointermove', onMove, { passive: true })
   canvas.addEventListener('pointerleave', onLeave)
+  window.addEventListener('resize', invalidate, { passive: true })
+  window.addEventListener('scroll', invalidate, { passive: true, capture: true })
 
   return {
     setPointer (x, y) {
@@ -107,6 +132,8 @@ export function createFocusProbe (physics: Physics, canvas: HTMLCanvasElement): 
     dispose () {
       canvas.removeEventListener('pointermove', onMove)
       canvas.removeEventListener('pointerleave', onLeave)
+      window.removeEventListener('resize', invalidate)
+      window.removeEventListener('scroll', invalidate, { capture: true })
     },
   }
 }

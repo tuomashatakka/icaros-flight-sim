@@ -44,6 +44,7 @@ import { createCinematicLUT, createGradePass } from 'threejs-scene/modules/post'
 import { createAnamorphic, createChromaticAberration, createFXAA, createLUT, createRadialBlur, createSMAA } from 'threejs-scene/modules/post/webgl'
 import { DofPass } from './dof-pass'
 import type { ScenePost } from '../scenes/base'
+import type { PostBudget } from '../quality/runtime'
 import { reducedMotion } from '../lifecycle'
 
 
@@ -112,6 +113,13 @@ export type ScenePostHandle = {
 
   /** Runtime budget, independent of the safe startup choice. */
   setQuality(level: 0 | 1 | 2): void;
+
+  /**
+   * The full budget: the quality stage's level plus the player's own switches
+   * for depth of field, the speed streak and the edge AA. `enabled` belongs to
+   * the shell — it decides whether the composer runs at all.
+   */
+  setBudget(budget: PostBudget): void;
 }
 
 const BASE_TINT     = new THREE.Color('#e8eeff')
@@ -146,6 +154,15 @@ export function createScenePost (options: ScenePostOptions = {}): ScenePostHandl
 
   let level = quality === 'high' ? 2 : 1
 
+  // The player's switches. `level` gates them as well: nothing is turned ON
+  // by a setting that the stage has budgeted off.
+  let allowDof                                    = true
+  let allowMotion                                 = true
+  let antialias: PostBudget['antialias'] | 'auto' = 'auto'
+
+  const smaaOn = () => antialias === 'auto' ? level >= 1 : antialias === 'smaa'
+  const fxaaOn = () => antialias === 'auto' ? level === 0 : antialias === 'fxaa'
+
   let grade:      GradePass | null  = null
   let radial:     ShaderPass | null = null
   let chromatic:  ShaderPass | null = null
@@ -164,6 +181,22 @@ export function createScenePost (options: ScenePostOptions = {}): ScenePostHandl
   /** Where the lens is asked to focus, and where it actually is. */
   let focusTarget = 40
   let focus       = 40
+
+  function applyLevel (value: 0 | 1 | 2): void {
+    level = value
+    if (anamorphic)
+      anamorphic.enabled = level === 2
+    if (dof)
+      dof.enabled = level === 2 && allowDof
+    if (chromatic)
+      chromatic.enabled = level > 0
+    if (radial && (level === 0 || !allowMotion))
+      radial.enabled = false
+    if (smaa)
+      smaa.enabled = smaaOn()
+    if (fxaa)
+      fxaa.enabled = fxaaOn()
+  }
 
   return {
     options: {
@@ -188,7 +221,7 @@ export function createScenePost (options: ScenePostOptions = {}): ScenePostHandl
           dof = new DofPass(ctx.camera, ctx.depthTexture, ctx.width, ctx.height)
           dof.setFocus(focus, focusRange(focus))
           dof.setRadius(MAX_RADIUS)
-          dof.enabled = level === 2
+          dof.enabled = level === 2 && allowDof
           passes.push(dof)
         }
 
@@ -227,8 +260,8 @@ export function createScenePost (options: ScenePostOptions = {}): ScenePostHandl
         // the same ladder `anamorphic`/`dof` already flip on.
         smaa         = createSMAA()
         fxaa         = createFXAA()
-        smaa.enabled = level >= 1
-        fxaa.enabled = level === 0
+        smaa.enabled = smaaOn()
+        fxaa.enabled = fxaaOn()
         ctx.composer.addPass(smaa)
         ctx.composer.addPass(fxaa)
 
@@ -256,7 +289,7 @@ export function createScenePost (options: ScenePostOptions = {}): ScenePostHandl
         flash = Math.max(0, flash - frame.delta * 3.2)
 
         if (dof) {
-          dof.enabled = level === 2
+          dof.enabled = level === 2 && allowDof
           // Exponential rack, frame-rate independent. A lens that snapped would
           // read as a bug on every flick of the pointer across the horizon.
           focus += (focusTarget - focus) * (1 - Math.exp(-FOCUS_DAMPING * frame.delta))
@@ -270,7 +303,7 @@ export function createScenePost (options: ScenePostOptions = {}): ScenePostHandl
           const cruise                 = Math.max(0, (speed - 0.6) / 0.4) * 0.55
           const surge                  = Math.min(1, accel) * 1.05
           const ramp                   = Math.min(1.35, cruise + surge)
-          radial.enabled               = level > 0 && !reducedMotion() && ramp > 0.01
+          radial.enabled               = level > 0 && allowMotion && !reducedMotion() && ramp > 0.01
           radial.uniforms.uDecay.value = 0.25 + ramp * 0.62
         }
 
@@ -307,20 +340,13 @@ export function createScenePost (options: ScenePostOptions = {}): ScenePostHandl
         focusTarget = distance
     },
 
-    setQuality (value) {
-      level = value
-      if (anamorphic)
-        anamorphic.enabled = level === 2
-      if (dof)
-        dof.enabled = level === 2
-      if (chromatic)
-        chromatic.enabled = level > 0
-      if (radial && level === 0)
-        radial.enabled = false
-      if (smaa)
-        smaa.enabled = level >= 1
-      if (fxaa)
-        fxaa.enabled = level === 0
+    setQuality: applyLevel,
+
+    setBudget (budget) {
+      allowDof    = budget.dof
+      allowMotion = budget.motion
+      antialias   = budget.antialias
+      applyLevel(budget.level)
     },
   }
 }

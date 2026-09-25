@@ -191,7 +191,8 @@ export type Cannons = {
 
 /** A pair of hardpoint barrels with muzzle glows, parented to the ship root. */
 export function createCannons (): Cannons {
-  const group = new THREE.Group()
+  const group                       = new THREE.Group()
+  const muzzlePool: THREE.Vector3[] = []
 
   const bodyMat = new THREE.MeshStandardMaterial({
     color:     '#8b93ad',
@@ -216,7 +217,6 @@ export function createCannons (): Cannons {
   let geometry: THREE.BufferGeometry | null = null
 
   const glowGeo = new THREE.SphereGeometry(0.013, 8, 6)
-  const _muzzle = new THREE.Vector3()
 
   function rebuild (): void {
     group.clear()
@@ -271,12 +271,15 @@ export function createCannons (): Cannons {
         return out
 
       const z = muzzleZ(weapon)
-      for (const pod of group.children) {
+      group.children.forEach((pod, index) => {
         // The pods carry the hull's fitted scale, so the muzzle offset has to
         // ride through their matrix rather than being added in world units.
+        // Pooled: the sight asks for these every rendered frame now.
         pod.updateWorldMatrix(true, false)
-        out.push(pod.localToWorld(_muzzle.set(0, 0, z).clone()))
-      }
+
+        const point = muzzlePool[index] ?? (muzzlePool[index] = new THREE.Vector3())
+        out.push(pod.localToWorld(point.set(0, 0, z)))
+      })
       return out
     },
 

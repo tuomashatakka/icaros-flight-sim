@@ -213,7 +213,7 @@ export async function mountRace (
     initialState: initialRaceState(),
     bloom:        track.bloom,
     post:         post.options,
-    onQuality:    level => post.setQuality(level),
+    onPost:       budget => post.setBudget(budget),
     onPostView:   view => {
       post.setFocus(view.focusDistance)
       post.setMotion(view.speed, view.accel)

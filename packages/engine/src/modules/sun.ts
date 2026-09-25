@@ -14,7 +14,7 @@ export type SunHandle = {
   /** The key light itself — the dev overlay draws a helper on its shadow camera. */
   readonly light: THREE.DirectionalLight | null;
 
-  /** Resize and invalidate the shadow target at a quality boundary. */
+  /** Resize and invalidate the shadow target at a quality boundary. 0 turns shadows off. */
   setMapSize(size: number): void;
 }
 
@@ -91,7 +91,12 @@ export function sunModule (
         },
 
         setMapSize (size) {
-          if (!light || light.shadow.mapSize.x === size)
+          if (!light)
+            return
+          // Zero is "no shadows": the light stops casting, which drops the
+          // shadow pass entirely rather than rendering it into a tiny map.
+          light.castShadow = size > 0
+          if (size <= 0 || light.shadow.mapSize.x === size)
             return
           light.shadow.mapSize.set(size, size)
           light.shadow.map?.dispose()

@@ -43,7 +43,7 @@
  *                         exists where it was.
  */
 
-import { Vector3 } from 'three'
+import { Quaternion, Vector3 } from 'three'
 import { STEP } from 'Φclock'
 import { stepHovercraft } from 'Φvehicle-step'
 import type { BodyInterpolator } from 'Φinterpolation'
@@ -197,6 +197,28 @@ export type ReconcileParams = {
   allowDrive: boolean;
 }
 
+/**
+ * How fast the felt acceleration settles, per tick (~80 ms time constant).
+ *
+ * The raw per-tick `dv/dt` carries every hover-pad bob; the camera wants the
+ * surge, the braking and the cornering load, not the suspension noise.
+ */
+const ACCEL_SMOOTHING = 0.2
+
+/**
+ * Contact acceleration below this is not an impact, m/s^2.
+ *
+ * A hover pad catching a crest or the hull grazing a barrier at a shallow
+ * angle is a few m/s^2 of unexplained acceleration; a wall is hundreds.
+ */
+const JOLT_FLOOR = 18
+
+const GRAVITY_Y = -9.81
+
+const _velocity     = new Vector3()
+const _expected     = new Vector3()
+const _measured     = new Vector3()
+const _bodyQuat     = new Quaternion()
 const _serverPos    = new Vector3()
 const _bodyPos      = new Vector3()
 const _predictedPos = new Vector3()
@@ -253,10 +275,24 @@ export class LocalPrediction {
   private boostMeter = 1
   private groundedNow = false
   private airbrakeNow = 0
-  private debugNow:    VehicleDebug | null = null
+  private debugNow: VehicleDebug | null = null
   private thrustNow = 0
   private gLoadNow = 0
   private aimAngle = 0
+
+  // Felt motion, for the camera. `lastVelocity`/`lastNetForce` are the entry
+  //  velocity and applied force of the previous LIVE step, so the next one can
+  //  split what the velocity actually did into "what the rig pushed" and "what
+  //  something else did to it" — the second is a collision.
+  private readonly lastVelocity = new Vector3()
+  private readonly lastNetForce = new Vector3()
+  private motionValid = false
+  private replaying = false
+  private readonly accelBody = new Vector3()
+  private readonly joltBody = new Vector3()
+  private crashCount = 0
+  private shakeNow = 0
+  private readonly impacts = { crashes: 0, shake: 0 }
   private lastResetSeq = 0
   private respawnSeen: number | null = null
 
@@ -282,7 +318,7 @@ export class LocalPrediction {
   }
 
   constructor (rig: PredictionRig) {
-    this.rig = rig
+    this.rig               = rig
     LocalPrediction.active = this
   }
 
@@ -338,6 +374,32 @@ export class LocalPrediction {
     return this.debugNow
   }
 
+  /**
+   * Smoothed acceleration in the ship's own axes (+X port, +Y up, +Z forward),
+   * m/s^2. What the pilot's inner ear would report — the camera leans on it.
+   */
+  get acceleration (): Vector3 {
+    return this.accelBody
+  }
+
+  /**
+   * Collision acceleration since the last `drainImpacts`, ship axes, m/s^2.
+   *
+   * Contact impulses are the part of the velocity change the rig's own forces
+   * do not explain. Race's `crashSeq` flash and the camera's shake both used
+   * to hang off a vehicle module the network refactor deleted, so a wall had
+   * stopped doing anything at all to the view.
+   */
+  drainImpacts (out: Vector3): Readonly<{ crashes: number; shake: number }> {
+    out.copy(this.joltBody)
+    this.joltBody.set(0, 0, 0)
+    this.impacts.crashes = this.crashCount
+    this.impacts.shake   = this.shakeNow
+    this.crashCount      = 0
+    this.shakeNow        = 0
+    return this.impacts
+  }
+
   /** Predicted vertical trim, normalised to −1..1 for the HUD and the hull. */
   get aimNormalised (): number {
     return this.aimAngle / AIM_MAX
@@ -378,6 +440,9 @@ export class LocalPrediction {
     else if (input.aimPitch)
       this.aimAngle = Math.max(-AIM_MAX, Math.min(AIM_MAX, this.aimAngle + input.aimPitch * AIM_RATE * STEP))
 
+    if (!this.replaying)
+      this.senseMotion(resetRequested)
+
     const out = stepHovercraft({
       chassis:       this.rig.chassis,
       world:         this.rig.world,
@@ -400,6 +465,15 @@ export class LocalPrediction {
 
     const [ fx, fy, fz ] = out.netForce
     const g              = Math.hypot(fx, fy, fz) / (vehicleConfig.mass * 9.81)
+    if (!this.replaying) {
+      this.lastNetForce.set(fx, fy, fz)
+      if (out.crashDelta > 0) {
+        this.crashCount += out.crashDelta
+        this.shakeNow    = Math.max(this.shakeNow, out.shake)
+      }
+      if (out.respawned)
+        this.motionValid = false
+    }
     this.gLoadNow       += (g - this.gLoadNow) * G_SMOOTHING
     this.debugNow    = COLLECT_FORCES
       ? {
@@ -526,6 +600,10 @@ export class LocalPrediction {
     // anything.
     const startedAt = performance.now()
 
+    // Re-simulated frames are not felt twice: the camera already reacted to
+    // them once, live, and a replayed collision would shake the view on every
+    // correction that crosses one.
+    this.replaying = true
     for (let i = 0; i < replay.length; i++) {
       const frame = replay[i]
       this.step(toInput(frame), spawn, allowDrive, frame.seq)
@@ -538,6 +616,7 @@ export class LocalPrediction {
       if (i < replay.length - 1)
         this.rig.world.step()
     }
+    this.replaying = false
 
     const ms    = performance.now() - startedAt
     const stats = this.replayStatsData
@@ -568,6 +647,47 @@ export class LocalPrediction {
     // `step` must not file it under the one it was about to. The replay
     // re-records every frame it re-simulates on its way back to the present.
     this.steppedSeq = 0
+
+    // Nor is its velocity continuous with the last one felt: measured across a
+    // correction, the jump would read as a collision.
+    this.motionValid = false
+  }
+
+  /**
+   * Split the last tick's velocity change into thrust and contact.
+   *
+   * At a step's entry the body holds the velocity the previous step's forces
+   * produced, so `(v - v_prev) / dt` is what happened and
+   * `F_prev / m + g` is what the rig asked for. The remainder is whatever the
+   * world did to the hull — a wall, the deck on a hard landing, a crate.
+   */
+  private senseMotion (resetRequested: boolean): void {
+    const chassis = this.rig.chassis
+    const v       = chassis.linvel()
+    _velocity.set(v.x, v.y, v.z)
+
+    if (this.motionValid && !resetRequested) {
+      const r = chassis.rotation()
+      _bodyQuat.set(r.x, r.y, r.z, r.w).invert()
+
+      _measured.copy(_velocity).sub(this.lastVelocity)
+        .divideScalar(STEP)
+      _expected.copy(this.lastNetForce).divideScalar(vehicleConfig.mass)
+      _expected.y += GRAVITY_Y
+
+      // Contact first, while `_measured` is still in world axes.
+      _expected.subVectors(_measured, _expected)
+      if (_expected.lengthSq() > JOLT_FLOOR * JOLT_FLOOR)
+        this.joltBody.add(_expected.applyQuaternion(_bodyQuat))
+
+      _measured.applyQuaternion(_bodyQuat)
+      this.accelBody.lerp(_measured, ACCEL_SMOOTHING)
+    }
+    else
+      this.accelBody.multiplyScalar(1 - ACCEL_SMOOTHING)
+
+    this.lastVelocity.copy(_velocity)
+    this.motionValid = true
   }
 
   /**

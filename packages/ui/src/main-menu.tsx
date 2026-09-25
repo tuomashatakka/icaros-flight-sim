@@ -24,6 +24,7 @@ const DESTINATIONS = [
   // The crash lab is a diagnostic, not a game mode, and amber is the palette's
   // "not your own systems" lane — so it reads as one next to the three that are.
   { href: '/crash-lab', glyph: '◈', label: 'Run the Crash Lab', kind: 'diagnostic', hue: 'var(--hud-hue-amber)' },
+  { href: '/settings', glyph: '⚙', label: 'Settings', kind: 'graphics · controls', hue: 'var(--hud-hue-green)' },
 ]
 
 export function MainMenu () {

@@ -35,19 +35,25 @@ All dependencies come from the public npm registry; no token or private scope is
 | --- | --- |
 | `W` / `↑` | Thrust |
 | `S` / `↓` | Brake |
-| `←` `→` / `Q` `E` | Turn (and steer the nose mid-jump — *aftertouch*) |
-| `A` `D` | Strafe left / right |
+| `A` `D` / `←` `→` | Turn (and steer the nose mid-jump — *aftertouch*) |
+| `Q` `E` | Strafe left / right — a sidestep, no yaw |
+| Mouse (captured) | Turn, and nudge the camera a little. Click the game to capture, `Esc` releases |
 | `R` `F` | Aim or look up / down |
 | `Shift` (hold) | Boost — extra thrust + higher top speed while the reserve lasts |
 | `C` | Toggle chase ⇄ cockpit view |
 | `Backspace` | Respawn at the last checkpoint |
-| `Space` / `X` | Battle primary / secondary weapon |
-| Drag on the canvas | Steer, absolute from the press point, recentring on release |
-| Move the mouse (no button) | Look around — a slight camera pan, easing back to centre |
+| `Space` · left click (captured) / `X` | Battle primary / secondary weapon |
+| Drag on the canvas (not captured) | Steer, absolute from the press point, recentring on release |
+| Move the mouse (not captured) | Look around — a slight camera pan, easing back to centre |
 
-Steering and panning deliberately use different gestures. Drag was already steering, so panning
-rides plain hover instead: the two can never contend, and looking around cannot fight a turn
-mid-corner.
+A captured mouse steers by RATE: moving it turns the ship and stopping stops the turn, the way
+mouse-look turns a camera. Uncaptured (capture off in Settings, or after `Esc`), drag still steers
+and hover pans.
+
+`/settings` (also on the menu, and the ⚙ in the game's top-right corner) holds the graphics
+options — quality preset, resolution, frame-rate cap, anti-aliasing, shadows, post effects, depth
+of field, motion blur, field of view, fullscreen — plus camera shake and motion response, mouse
+capture and sensitivity, and whether the touch controls are drawn.
 
 ## Race rules
 
@@ -55,8 +61,10 @@ mid-corner.
 - **Loop tracks** (Neon Canyon, Orbital Ring) are **3 laps** — cross the checkpoints in order;
   the start/finish line closes each lap. **Origin Circuit** is a single **sprint** to the finish.
 - Falling off, flipping over, or pressing `Backspace` respawns you at the last cleared checkpoint.
-- Hard impacts shake the camera and flash the screen. The shake is much gentler in the cockpit —
-  a jolt that reads well from outside is nauseating from a seat.
+- The camera answers what the hull is doing: it sags back under thrust, lurches in on the brakes,
+  swings out through corners and kicks away from whatever you hit. Hard impacts shake the camera and
+  flash the screen. All of it is much gentler in the cockpit — a jolt that reads well from outside
+  is nauseating from a seat — and both scale in Settings.
 - Lap / total / best times show in the holographic HUD; the finish screen has a **Race Again**
   button.
 
@@ -299,7 +307,11 @@ the systems bank right, and leave the sightline open. A nine-cell translucent ba
 cockpit one continuous glass surface. The six outer silhouettes are stored as normalised vector traces,
 so their sparse strokes and asymmetric tapers stay crisp without shipping a reference bitmap. A separate
 camera-locked screen plane owns transient layers:
-countdown, finish and scoreboard states, errors, toasts, tuning, crash flash, and touch controls.
+countdown, finish and scoreboard states, errors, toasts, tuning and crash flash. The touch controls
+are the visor's own **touch deck**: a hologram shaded by the same facet shader as the panels, curving
+toward the eye at the edges, with the visor folding inward to leave it the outer ring of the frame.
+The sight — pipper, impact mark, lock rings, flight-path marker — is a layer of small marks placed on
+their view rays every rendered frame, so it never trails what it is marking.
 
 - `tokens.ts` is the semantic palette — amber as the primary cockpit holo colour (the cockpit's own
   light), cyan reserved as the contrast accent (targets, gates, friendlies), red for alerts and
@@ -308,11 +320,12 @@ countdown, finish and scoreboard states, errors, toasts, tuning, crash flash, an
   doubled strokes, corner brackets, glow, and the rolling scanline every panel, the overlay, and the
   touch controls draw through, so the three surfaces read as one instrument rather than lookalikes.
 - `panel.ts` owns canvas textures, drawing primitives, and hit regions; `facets.ts` owns the seven
-  live-data layouts; `layout.ts` owns the continuous visor topology; `overlay.ts` owns full-screen
-  and touch layers.
+  live-data layouts; `layout.ts` owns the continuous visor topology; `overlay.ts` owns the
+  full-screen layers; `touch-deck.ts` the thumb controls; `sight.ts` the per-frame marks.
 - `spatial-hud.ts` owns ship-station anchoring, raycast/UV hit testing, pointer capture, multitouch,
   and disposal. Pointer-look pans the camera across the stationary visor, while only the transient
-  screen plane remains camera-locked. Panels upload at 12 Hz and the active overlay at up to 30 Hz.
+  screen plane remains camera-locked. Facets repaint at most two per frame, each at up to 20 Hz, and
+  the overlay only when what it shows changes.
 - `index.ts` contains thin race and battle adapters. The renderer never imports scene-specific
   simulation internals, and React never subscribes to pointer-rate input.
 - Every facet displays live session, vehicle, target, objective, weapon, or control data and exposes
@@ -321,9 +334,11 @@ countdown, finish and scoreboard states, errors, toasts, tuning, crash flash, an
   gain over transparent canvas ink. They remain depth-independent and `toneMapped: false`, keeping
   cockpit colour legible through the scene composer without adding a dedicated bloom path.
 
-The race and battle routes intentionally render no interactive DOM outside the WebGL canvas.
-Accessibility metadata lives on the canvas itself, while keyboard, mouse, pen, and touch all write
-the same mutable `Controls` object used by the simulation.
+The race and battle routes render one small piece of DOM outside the WebGL canvas: fullscreen and
+settings buttons, and the mouse-capture hint (`Ʊgame-chrome`) — fullscreen and pointer capture are
+only granted inside a gesture on a real element. Accessibility metadata lives on the canvas itself,
+while keyboard, mouse, pen, and touch all write the same mutable `Controls` object used by the
+simulation.
 
 State is read **imperatively** — `telemetry` directly, and the HUD store's `getState()` per frame.
 Subscribing would put a React commit in the render path, which is the exact thing the throttling in

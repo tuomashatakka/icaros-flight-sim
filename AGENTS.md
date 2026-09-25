@@ -327,9 +327,21 @@ write it (`raceStore` + `raceActions`). React reads a store with
 subscribes with `store.select`. A type or constant declared anywhere else is a
 duplicate waiting to drift.
 
-**Controls.** `Q/E` and the arrows turn, `A/D` strafe, `R/F` walk the vertical
-aim, `Backspace` respawns. `R` used to be respawn and `F` used to be battle's
-fire-primary; both moved. `controls.pitch` is a raw held axis and each mode owns
+**Controls.** `A/D` and the arrows turn, `Q/E` strafe, `R/F` walk the vertical
+aim, `Backspace` respawns. `A/D` and `Q/E` were the other way round for a while,
+which put the primary lateral pair on the secondary control. `steer > 0` and
+`strafe > 0` are BOTH to the pilot's right on every path — keys, touch rail,
+touch stick. `R` used to be respawn and `F` used to be battle's fire-primary;
+both moved.
+
+**The mouse is captured on a click into the canvas** (`settings.pointerLock`,
+default on). Captured, movement is a RATE: it adds to a steer axis that bleeds
+back to centre (`MOUSE_STEER_HALF_LIFE`) and nudges the camera's pan a little,
+so moving the mouse turns the ship and stopping stops the turn. Battle's left
+button fires while captured; the click that takes the capture is not a shot.
+A captured pointer has no position, so the spatial HUD ignores its events and
+drops the capture itself when a finish card or popover needs clicking. `Esc`
+releases it. `controls.pitch` is a raw held axis and each mode owns
 its own policy — race springs it back to level in the render phase, battle
 integrates it into `BattlePlayer.aimAngle` inside the sim so the trim holds, is
 deterministic, and survives the netcode. In battle it feeds `BattleSim.aimOf`,
@@ -345,12 +357,20 @@ ship move; the only pose mutation left is a teleport. It used to be a rapier
 for yaw AND upright, which meant no coupling between anything and no momentum
 doing work.
 
-**The rig's geometry IS the handling model.** A lateral nozzle sits aft of and
-above the COM, so a strafe cannot happen without also yawing the nose into it,
-banking into it, and dipping the nose — all three fall out of `tau = r x F`.
-There is no downstream code adding those effects, so moving a mount point
-changes how the ship drives and nothing else will notice.
-`packages/physics/test/thrusters.test.ts` pins the signs; change a position and read what it says.
+**The rig's geometry IS the handling model.** The lateral nozzles sit ON the
+COM station and above it, so a strafe is a sideways translation that banks the
+hull into it with no yaw and no pitch — both fall out of `tau = r x F`. They
+used to sit a metre aft, and a strafe was then mostly a yaw AWAY from the key
+(push the tail right, the nose goes left), about 95 degrees in two seconds:
+pressing strafe-right turned the ship left. There is no downstream code adding
+or cancelling effects, so moving a mount point changes how the ship drives and
+nothing else will notice. `packages/physics/test/thrusters.test.ts` pins the
+signs; change a position and read what it says.
+
+**Body +X is PORT.** With +Y up and the nose on +Z, three's right-handed frame
+puts the pilot's right on -X. Several comments used to say "+X right"; the
+lateral pair was named off that and pushed the ship the opposite way to its
+name.
 
 **A hull's shape is measured, then moved — never tabulated.** Nine ships
 arrive through three pipelines (a glTF scene, a clone of a WipEout FBX scan, a
@@ -407,26 +427,52 @@ it back on the track — it ramps off every undulation and keeps going. The `v^2
 downforce term in `DRAG`/`DOWNFORCE` is what plants it. Removing it looks like
 tidying and turns the track into a launch ramp.
 
-**Touch is a third path onto the same `Controls` object.** The standalone spatial
-HUD (`packages/engine/src/hud/`) draws twin sticks and action buttons into its screen
-plane, then writes through native pointer listeners — never React state, because
-a `useState` per pointermove re-renders at thumb rate. Weapon triggers live on
+**Touch is a third path onto the same `Controls` object.** The spatial HUD
+(`packages/engine/src/hud/`) draws twin sticks and action buttons as the visor's
+**touch deck** (`touch-deck.ts`) — a camera-locked hologram shaded by the SAME
+facet shader as the visor's panels, on a bowl that curves toward the eye at the
+edges, while `hudStation(…, touchDeck)` folds the visor inward and lifts it so
+the controls are its outer ring rather than plates over its instruments. Every
+deck vertex sits on the view ray a flat screen plane would put it on, so hit
+testing stays in plain canvas coordinates. The deck's raster repaints only when
+a plate lights or a stick engages; the two knobs are quads moved every frame.
+Input goes through native pointer listeners — never React state, because a
+`useState` per pointermove re-renders at thumb rate. Weapon triggers live on
 `Controls` (`fire`, `fireSecondary`) rather than in `battle.ts` so keys, mouse,
-and touch agree. The rail is drawn for **everyone**, desktop included — there is
-no device sniff left to get a machine wrong, and `wantsTouchControls` is now one
-line. `?touch=0` is the only way to turn it off; `?touch=1` additionally paints
-the diagnostic readout, and `dev-cli --query touch=1` reaches it.
+and touch agree. Whether the deck is up: `?touch=0`/`?touch=1` first, then the
+`touchControls` setting, whose `auto` asks `navigator.maxTouchPoints` (which
+convertibles and desktop-mode iPads report correctly, unlike `pointer: coarse`).
+`?touch=1` also paints the diagnostic readout, and `dev-cli --query touch=1`
+reaches it.
 
 **One touch layout, every mode, and nothing may withhold it.** `touchLayout`
 puts every control race and battle share on the same pixels — two sticks, a
 shoulder rail up each side (strafe, plus the air brake to port and boost to
 starboard), and the view/reset pair between the thumbs. Battle adds two weapon
-plates above that pair and moves nothing. The controls are drawn LAST in
-`drawHudOverlay`, outside every modal branch: they used to sit inside the
-live-layer branch, so a finish card, the tuning popover or a battle whose
-server never answered (`status: 'error'` — the ordinary state of a
-client-only deployment) took them away entirely. Their hit regions are emitted
-after a modal's, so a stick under a card is still a stick.
+plates above that pair and moves nothing. The deck is its own layer, drawn and
+hit-tested independently of every modal on the overlay sheet: the controls
+used to sit inside the overlay's live-layer branch, so a finish card, the
+tuning popover or a battle whose server never answered (`status: 'error'` —
+the ordinary state of a client-only deployment) took them away entirely. The
+deck is hit-tested BEFORE the overlay, so a stick under a card is still a
+stick.
+
+**The sight is placed every frame, not painted.** Pipper, impact mark, lock
+rings, flight-path marker and convergence lines are small quads and lines in
+`hud/sight.ts`, positioned each rendered frame on the view ray of the point
+they mark. They used to be painted into the overlay raster at the HUD's
+15-30 Hz repaint budget, which left the pipper trailing the aim point through
+every turn — and projected against a `matrixWorldInverse` a frame stale, from
+the predicted BODY rather than the pose the ship is drawn at. The battle sight
+is aimed from the drawn pose every frame; only its ray-march is throttled.
+
+**The overlay sheet repaints on change.** `overlayKey` is what it shows that
+can change without a clock (status, countdown second, toasts, cards); it
+repaints when that moves or while something on it animates. It used to be
+marked dirty on every facet repaint, so a mostly-empty 1280x720 raster was
+cleared, redrawn and re-uploaded 15-20 times a second. The seven facets are
+repainted at most two per frame (`scheduleHudPanels`) instead of all seven on
+one frame every 50 ms, which was a regular long frame.
 
 **Below a 1.2 aspect the visor is worn, not carried, and it fits proportionally.**
 `hudStation` scales it to the frame's width on BOTH axes (scaling X alone
@@ -514,6 +560,32 @@ decorative.
 
 **Yaw sign lives in the vehicle step.** `steer` is negated exactly once, in
 `packages/physics/src/vehicle-step.ts`. +Y rotation is a LEFT turn.
+`strafe > 0` fires `lateral.R`, which pushes -X: to starboard.
+
+**The camera answers the hull's effort.** `LocalPrediction` splits each live
+tick's velocity change into what the rig pushed (`netForce / m + g`) and what
+something else did — the remainder is a collision — and `publishTelemetry`
+hands both over as `telemetry.accel` (smoothed, ship axes) and `telemetry.jolt`
+(accumulated, consumed by the render phase). The rig drives an under-damped
+spring toward `-accel * gain` in the ship's frame, so the camera sags back
+under thrust, lurches in on the brakes, swings out through a corner and dips on
+a landing, plus a small roll and a FOV kick on boost; a jolt is an impulse on
+that spring and a shake. Replayed frames are not felt twice, and a correction
+invalidates the baseline so it never reads as a hit. Race's `crashSeq` flash
+had been dead since the network refactor deleted the vehicle module; this
+restores it.
+
+**Settings are a store, applied live.** `settingsStore` (`packages/state`) is
+persisted and read by the engine: the quality preset, resolution, AA, shadows,
+post switches and FOV/shake/motion reach a mounted scene through
+subscriptions, and `/settings` is a route of its own. Only the frame cap waits
+for the next mount — it lives on the frame-loop manager shared by the page.
+A fixed preset holds its stage (only an emergency degrades it); `auto` walks the
+ladder. **Resolution changes must reach the composer**: `EffectComposer` keeps
+its own pixel ratio from construction, so `renderer.setPixelRatio` alone left
+every render target of the post chain at the ratio the page loaded with, and
+the ladder's resolution steps never relieved it. `mountBaseScene`'s
+`setPixelRatio` does both.
 
 **Shadows need both halves.** The sun module follows the ship
 (`packages/engine/src/modules/sun.ts`) because a fixed shadow frustum loses it once the

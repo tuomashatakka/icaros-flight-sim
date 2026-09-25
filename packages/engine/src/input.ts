@@ -104,18 +104,17 @@ export function createControls (): Controls {
   }
 }
 
-const isLeft     = (key: string) => key === 'ArrowLeft' || key.toLowerCase() === 'q'
-const isRight    = (key: string) => key === 'ArrowRight' || key.toLowerCase() === 'e'
+// A/D turn and Q/E strafe. It was the other way round for a while, which put
+//  the primary lateral pair on the secondary control — and because strafe was
+//  then mostly a yaw AWAY from the key, A/D read as a turn the wrong way.
+const isLeft     = (key: string) => key === 'ArrowLeft' || key.toLowerCase() === 'a'
+const isRight    = (key: string) => key === 'ArrowRight' || key.toLowerCase() === 'd'
+const isStrafeL  = (key: string) => key.toLowerCase() === 'q'
+const isStrafeR  = (key: string) => key.toLowerCase() === 'e'
 const isThrottle = (key: string) => key === 'ArrowUp' || key.toLowerCase() === 'w'
 const isBrake    = (key: string) => key === 'ArrowDown' || key.toLowerCase() === 's'
 const clampSteer = (value: number) => Math.max(-1, Math.min(1, value))
 
-/**
- * Wire keyboard + pointer input into `controls`.
- *
- * @param target - The canvas; it is the drag surface and gets pointer capture.
- * @returns A detach function — call it from the app's dispose chain.
- */
 /**
  * The control surface of the scene currently mounted, or null.
  *
@@ -143,18 +142,120 @@ export function setTouchOverlayActive (value: boolean): void {
   touchOverlay = value
 }
 
-export function attachControls (target: HTMLElement, controls: Controls): () => void {
+/**
+ * Mouse steering, while the pointer is captured.
+ *
+ * Movement is a RATE, not a position: each pixel adds to a steer axis that
+ * bleeds back to centre on its own, so moving the mouse turns the ship and
+ * stopping stops the turn — the same thing mouse-look does to a camera, which
+ * is what a hand already expects. An absolute "virtual stick" needs the mouse
+ * walked back to a centre nobody can see once the cursor is hidden.
+ */
+const MOUSE_STEER_PER_PX    = 0.004
+const MOUSE_STEER_HALF_LIFE = 0.12
+
+/**
+ * The camera's share of the same movement: a small lead into the turn, and a
+ * vertical glance. Scaled well inside the pan limits — a nudge, not a look.
+ */
+const MOUSE_NUDGE_PER_PX    = 0.006
+const MOUSE_NUDGE_HALF_LIFE = 0.3
+const MOUSE_NUDGE_SCALE     = 0.45
+
+export type ControlOptions = {
+
+  /** Capture the mouse on a click into the canvas. */
+  pointerLock: boolean;
+
+  /** Multiplier on mouse steering and nudge. */
+  sensitivity: number;
+  invertY:     boolean;
+}
+
+export type AttachedControls = {
+  detach(): void;
+
+  /** Decay the mouse axes. Once per RENDERED frame, with the real delta. */
+  tick(dt: number): void;
+  configure(options: Partial<ControlOptions>): void;
+
+  /** True while the canvas holds the pointer. */
+  readonly locked: boolean;
+}
+
+/**
+ * Wire keyboard, mouse and pointer input into `controls`.
+ *
+ * @param target - The canvas: the drag surface, and what captures the mouse.
+ * @returns The detach function for the app's dispose chain, and the per-frame
+ * tick the mouse axes decay on.
+ */
+export function attachControls (
+  target: HTMLElement,
+  controls: Controls,
+  initial: Partial<ControlOptions> = {}
+): AttachedControls {
   active = controls
+
+  const options: ControlOptions = { pointerLock: true, sensitivity: 1, invertY: false, ...initial }
 
   const pressed       = new Set<'left' | 'right'>()
   const strafePressed = new Set<'strafeLeft' | 'strafeRight'>()
   const pitchPressed  = new Set<'pitchUp' | 'pitchDown'>()
   let keyboardSteer = 0
   let pointerSteer  = 0
+  let mouseSteer    = 0
+  let nudgeX        = 0
+  let nudgeY        = 0
+  let locked        = false
 
   const syncSteer = () => {
-    // Keyboard wins while held; pointer is the fallback.
-    controls.steer = keyboardSteer || pointerSteer
+    // Keyboard wins while held; the captured mouse, then a drag, are fallbacks.
+    controls.steer = keyboardSteer || mouseSteer || pointerSteer
+  }
+
+  const clearMouse = () => {
+    mouseSteer    = 0
+    nudgeX        = 0
+    nudgeY        = 0
+    controls.panX = 0
+    controls.panY = 0
+    syncSteer()
+  }
+
+  const onLockChange = () => {
+    const now = document.pointerLockElement === target
+    if (now === locked)
+      return
+    locked = now
+    clearMouse()
+  }
+
+  const requestLock = () => {
+    if (!options.pointerLock || locked || typeof target.requestPointerLock !== 'function')
+      return
+    try {
+      // Raw deltas where the browser offers them: OS acceleration on a
+      // steering axis makes the same flick turn a different amount each time.
+      const request = (target.requestPointerLock as (options?: { unadjustedMovement?: boolean }) => Promise<void> | void)
+        .call(target, { unadjustedMovement: true })
+      if (request && typeof (request as Promise<void>).catch === 'function')
+        (request as Promise<void>).catch(() => {
+          // Refused: no raw-input support, or the browser's cooldown after an
+          // Esc. The plain request covers the first; the next click, the second.
+          try {
+            const fallback = target.requestPointerLock() as unknown as Promise<void> | void
+            if (fallback && typeof (fallback as Promise<void>).catch === 'function')
+              (fallback as Promise<void>).catch(() => {})
+          }
+          catch {
+            // Nothing to do; the drag and hover paths still work unlocked.
+          }
+        })
+    }
+    catch {
+      // Older engines throw synchronously on the options bag.
+    }
   }
 
   const refreshKeyboardSteer = () => {
@@ -165,9 +266,10 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
   }
 
   const refreshStrafe = () => {
-    const sLeft     = strafePressed.has('strafeLeft')
-    const sRight    = strafePressed.has('strafeRight')
-    controls.strafe = sLeft === sRight ? 0 : sRight ? -1 : 1
+    const sLeft  = strafePressed.has('strafeLeft')
+    const sRight = strafePressed.has('strafeRight')
+    // Same sense as steer: positive is to the pilot's right.
+    controls.strafe = sLeft === sRight ? 0 : sRight ? 1 : -1
   }
 
   const refreshPitch = () => {
@@ -206,11 +308,11 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
       refreshKeyboardSteer()
     }
 
-    if (k === 'a') {
+    if (isStrafeL(event.key)) {
       strafePressed.add('strafeLeft')
       refreshStrafe()
     }
-    else if (k === 'd') {
+    else if (isStrafeR(event.key)) {
       strafePressed.add('strafeRight')
       refreshStrafe()
     }
@@ -267,11 +369,11 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
       refreshKeyboardSteer()
     }
 
-    if (k === 'a') {
+    if (isStrafeL(event.key)) {
       strafePressed.delete('strafeLeft')
       refreshStrafe()
     }
-    else if (k === 'd') {
+    else if (isStrafeR(event.key)) {
       strafePressed.delete('strafeRight')
       refreshStrafe()
     }
@@ -309,6 +411,9 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
     pitchPressed.clear()
     keyboardSteer = 0
     pointerSteer = 0
+    mouseSteer   = 0
+    nudgeX       = 0
+    nudgeY       = 0
     controls.throttle      = false
     controls.throttleAxis  = 0
     controls.brake         = false
@@ -331,6 +436,17 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
   let pointerStartX            = 0
 
   const onPointerDown = (event: PointerEvent) => {
+    // Captured, a click is a click — battle's triggers read it — not a drag.
+    if (locked)
+      return
+
+    // A plain click into the canvas takes the mouse. Anything the HUD claimed
+    // never gets here: its handler stops propagation on a hit.
+    if (event.pointerType === 'mouse' && event.button === 0 && options.pointerLock) {
+      requestLock()
+      return
+    }
+
     if (pointerId !== null || touchOverlay && event.pointerType === 'touch')
       return
     pointerId = event.pointerId
@@ -344,6 +460,17 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
   // two never contend: while a drag is active the pan is left frozen at
   // whatever it was, so looking around cannot fight a turn mid-corner.
   const onPointerMove = (event: PointerEvent) => {
+    if (locked) {
+      const gain = options.sensitivity
+      mouseSteer = clampSteer(mouseSteer + event.movementX * MOUSE_STEER_PER_PX * gain)
+      nudgeX     = clampSteer(nudgeX + event.movementX * MOUSE_NUDGE_PER_PX * gain)
+      nudgeY     = clampSteer(nudgeY + event.movementY * MOUSE_NUDGE_PER_PX * gain * (options.invertY ? -1 : 1))
+      controls.panX = nudgeX * MOUSE_NUDGE_SCALE
+      controls.panY = nudgeY * MOUSE_NUDGE_SCALE
+      syncSteer()
+      return
+    }
+
     // The overlay owns every touch pointer when its controls are up, including
     // the ones that miss a control. Without this the drop in `onPointerDown`
     // leaves `pointerId` null and a finger dragged on empty canvas falls into
@@ -353,10 +480,13 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
       return
 
     if (pointerId === null) {
-      const rect = target.getBoundingClientRect()
-      if (rect.width > 0 && rect.height > 0) {
-        controls.panX = clampSteer((event.clientX - rect.left) / rect.width * 2 - 1)
-        controls.panY = clampSteer((event.clientY - rect.top) / rect.height * 2 - 1)
+      // `offsetX/Y` are already relative to the canvas, which spares a
+      // `getBoundingClientRect` — a forced layout — at the mouse's report rate.
+      const width  = target.clientWidth
+      const height = target.clientHeight
+      if (width > 0 && height > 0) {
+        controls.panX = clampSteer(event.offsetX / width * 2 - 1)
+        controls.panY = clampSteer(event.offsetY / height * 2 - 1)
       }
       return
     }
@@ -371,6 +501,8 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
 
   // Ease back to neutral rather than freezing at the last edge position.
   const onPointerLeave = () => {
+    if (locked)
+      return
     controls.panX = 0
     controls.panY = 0
   }
@@ -388,15 +520,19 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
   window.addEventListener('keydown', onKeyDown)
   window.addEventListener('keyup', onKeyUp)
   window.addEventListener('blur', onBlur)
+  document.addEventListener('pointerlockchange', onLockChange)
   target.addEventListener('pointerdown', onPointerDown)
   target.addEventListener('pointermove', onPointerMove)
   target.addEventListener('pointerup', endPointer)
   target.addEventListener('pointercancel', endPointer)
   target.addEventListener('pointerleave', onPointerLeave)
 
-  return () => {
+  const detach = () => {
     if (active === controls)
       active = null
+    if (locked && document.pointerLockElement === target)
+      document.exitPointerLock()
+    document.removeEventListener('pointerlockchange', onLockChange)
     window.removeEventListener('keydown', onKeyDown)
     window.removeEventListener('keyup', onKeyUp)
     window.removeEventListener('blur', onBlur)
@@ -405,5 +541,35 @@ export function attachControls (target: HTMLElement, controls: Controls): () => 
     target.removeEventListener('pointerup', endPointer)
     target.removeEventListener('pointercancel', endPointer)
     target.removeEventListener('pointerleave', onPointerLeave)
+  }
+
+  return {
+    detach,
+
+    tick (dt) {
+      if (!locked || mouseSteer === 0 && nudgeX === 0 && nudgeY === 0)
+        return
+
+      mouseSteer *= Math.pow(2, -dt / MOUSE_STEER_HALF_LIFE)
+      nudgeX     *= Math.pow(2, -dt / MOUSE_NUDGE_HALF_LIFE)
+      nudgeY     *= Math.pow(2, -dt / MOUSE_NUDGE_HALF_LIFE)
+      if (Math.abs(mouseSteer) < 1e-3)
+        mouseSteer = 0
+      if (Math.abs(nudgeX) < 1e-3 && Math.abs(nudgeY) < 1e-3)
+        nudgeX = nudgeY = 0
+      controls.panX = nudgeX * MOUSE_NUDGE_SCALE
+      controls.panY = nudgeY * MOUSE_NUDGE_SCALE
+      syncSteer()
+    },
+
+    configure (next) {
+      Object.assign(options, next)
+      if (!options.pointerLock && locked && document.pointerLockElement === target)
+        document.exitPointerLock()
+    },
+
+    get locked () {
+      return locked
+    },
   }
 }

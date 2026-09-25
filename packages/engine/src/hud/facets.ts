@@ -78,8 +78,34 @@ function panelRenderKey (panel: HudPanel, data: HudData, frame: HudFrame): strin
   return [ ...common, battle.status, quantise(battle.countdown, 1), ...byPanel[panel.name] ].join('|')
 }
 
+/**
+ * How many facets may repaint this frame, and how often any one of them may.
+ *
+ * All seven used to repaint on the same frame, once per panel period: a
+ * canvas raster plus a texture upload each, stacked into one frame every
+ * 50 ms and nothing in the two between. At 60 fps that is a regular long frame
+ * three times a period — the HUD's own contribution to the game feeling
+ * jittery rather than merely slow. Spent a couple at a time instead, the same
+ * work lands spread across every frame. A facet skipped for budget is simply
+ * first in line next frame: its key has not been recorded, so it still reads
+ * as changed.
+ */
+const schedule = { budget: Number.POSITIVE_INFINITY, period: 0 }
+const drawnAt  = new WeakMap<HudPanel, number>()
+
+export function scheduleHudPanels (budget: number, period: number): void {
+  schedule.budget = budget
+  schedule.period = period
+}
+
 function renderPanel (panel: HudPanel, data: HudData, frame: HudFrame, draw: () => void): void {
-  panel.render(panelRenderKey(panel, data, frame), frame.elapsed, draw)
+  if (schedule.budget <= 0 || frame.elapsed - (drawnAt.get(panel) ?? Number.NEGATIVE_INFINITY) < schedule.period)
+    return
+
+  if (panel.render(panelRenderKey(panel, data, frame), frame.elapsed, draw)) {
+    drawnAt.set(panel, frame.elapsed)
+    schedule.budget--
+  }
 }
 
 export function createHudPanels (): Record<HudPanelKey, HudPanel> {

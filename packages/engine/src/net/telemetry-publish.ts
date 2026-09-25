@@ -13,6 +13,7 @@
  * ones before the local ship exists.
  */
 
+import { Vector3 } from 'three'
 import type { LocalPrediction } from './prediction'
 import type { Telemetry } from '../telemetry'
 import type RAPIER from '@dimforge/rapier3d-deterministic-compat'
@@ -36,4 +37,20 @@ export function publishTelemetry (
   telemetry.thrustCommand = prediction?.thrustCommand ?? 0
   telemetry.gLoad         = prediction?.gLoad ?? 0
   telemetry.velocity.set(velocity.x, velocity.y, velocity.z)
+
+  if (!prediction)
+    return
+
+  telemetry.accel.copy(prediction.acceleration)
+
+  // Accumulated rather than assigned: the render phase may run once for
+  // several ticks, and an impact on the first of them must survive the rest.
+  const impacts = prediction.drainImpacts(_jolt)
+  telemetry.jolt.add(_jolt)
+  if (impacts.crashes > 0) {
+    telemetry.crashSeq += impacts.crashes
+    telemetry.shake     = Math.max(telemetry.shake, impacts.shake)
+  }
 }
+
+const _jolt = new Vector3()

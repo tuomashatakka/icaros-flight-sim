@@ -1,15 +1,19 @@
 import * as THREE from 'three'
+import { settingsStore } from 'Ƨ'
+import type { TouchControlsSetting } from 'Ƨ'
 import type { Controls } from '../input'
 import { setTouchOverlayActive } from '../input'
 import { createHudStation, hudStation } from './anchor'
-import { createHudPanelMesh, createHudPanels, disposeHudPanelMesh, drawHudPanels, tickHudPanelMesh } from './facets'
+import { createHudPanelMesh, createHudPanels, disposeHudPanelMesh, drawHudPanels, scheduleHudPanels, tickHudPanelMesh } from './facets'
 import { HUD_AXIS_GATE, hudSliderValue, shapeHudAxis } from './interaction'
-import { drawHudOverlay, isHudBlockingOverlay } from './overlay'
+import { drawHudOverlay, isHudBlockingOverlay, overlayKey } from './overlay'
 import { HudPanel } from './panel'
 import { createTouchGestures } from './pointers'
+import { createSightLayer } from './sight'
+import { createTouchDeck } from './touch-deck'
 import { HUD_TRANSITION_S, createHudReveal } from './transition'
 import { HUD_OVERLAY_PERIOD, HUD_PANEL_HZ, HUD_REFERENCE_FOV } from './tokens'
-import { NO_INSETS, touchLayout, wantsTouchControls } from './touch-layout'
+import { NO_INSETS, deviceHasTouch, wantsTouchControls } from './touch-layout'
 import type { SafeAreaInsets } from './touch-layout'
 import type { HudActionId, HudData, HudFrame, HudPanelKey, HudRegion, HudSource } from './types'
 
@@ -132,6 +136,9 @@ const TOUCH_PAN_RADIUS = 0.22
 /** Pinch travel for a full chase-to-cockpit sweep, as a fraction of the short edge. */
 const PINCH_RANGE = 0.42
 
+/** Facet repaints allowed per rendered frame. See `scheduleHudPanels`. */
+const PANELS_PER_FRAME = 2
+
 /**
  * The shared, canvas-owned race and battle HUD.
  *
@@ -166,9 +173,15 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
   const overlayRoot = new THREE.Group()
   overlayRoot.add(overlayMesh)
 
+  // The thumb controls, as a hologram of the visor's own, and the sight as a
+  //  layer of marks placed every frame. See their files for why each left the
+  //  overlay sheet.
+  const deck  = createTouchDeck()
+  const sight = createSightLayer()
+
   const object = new THREE.Group()
   object.name  = 'spatial-cockpit-hud'
-  object.add(visorRoot, overlayRoot)
+  object.add(visorRoot, overlayRoot, deck.object, sight.object)
 
   const raycaster      = new THREE.Raycaster()
   const activePointers = new Map<number, ActivePointer>()
@@ -226,17 +239,30 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
   //  because reading `window.location.search` here is a layer that knows
   //  nothing about the router: the engine mounts on its own schedule, so the
   //  value it saw was whatever the URL happened to be at that instant.
-  const forced  = forcedTouch
-  const coarse  = window.matchMedia('(pointer: coarse)')
-  const isTouch = wantsTouchControls(forced)
-  const hidden  = process.env.NODE_ENV !== 'production' &&
+  const forced   = forcedTouch
+  const coarse   = window.matchMedia('(pointer: coarse)')
+  const hasTouch = deviceHasTouch()
+  const hidden   = process.env.NODE_ENV !== 'production' &&
     new URLSearchParams(window.location.search).get('nohud') === '1'
+
+  let isTouch = false
 
   // Canvas drag-steering and a virtual stick want the same finger, so the
   //  pointer path drops TOUCH input while the sticks are up. Mouse and pen are
   //  untouched by this, which is what lets the rail be up on a desktop.
-  if (isTouch)
-    setTouchOverlayActive(true)
+  const applyTouchSetting = (setting: TouchControlsSetting) => {
+    const next = wantsTouchControls(forced, setting, hasTouch)
+    if (next === isTouch)
+      return
+    isTouch              = next
+    deck.object.visible  = next
+    setTouchOverlayActive(next)
+    deck.invalidate()
+  }
+  deck.object.visible = false
+  applyTouchSetting(settingsStore.get().touchControls)
+
+  const unsubscribeTouch = settingsStore.select(state => state.touchControls, applyTouchSetting)
 
   /** Last computed blocking state, for the `?touch=1` readout. */
   let lastBlocking = false
@@ -270,6 +296,7 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
 
   let lastFrame: HudFrame | null = null
   let lastData: HudData          = source.read()
+  let lastOverlayKey             = ''
   let panelDrawAt                = -Infinity
   let overlayDrawAt              = -Infinity
   let overlayDirty               = true
@@ -303,7 +330,7 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
     // Seated the visor is worn; in chase it is a hologram the ship carries.
     // `hudStation` is the single continuous function between the two, so the
     // pinch blend moves the anchor as well as the depth.
-    hudStation(station, frame)
+    hudStation(station, frame, isTouch)
     visorRoot.position.copy(station.position)
     visorRoot.quaternion.copy(station.quaternion)
     visorRoot.scale.set(station.scale.x, station.scale.y, 1)
@@ -338,6 +365,8 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
     // has to be thrown away with it. See `HudPanel.resize`.
     if (overlay.resize(targetWidth, height))
       overlayDirty = true
+    if (deck.panel.resize(targetWidth, height))
+      deck.invalidate()
 
     readSurface()
     if (cssSize.width !== surface.width || cssSize.height !== surface.height) {
@@ -345,6 +374,7 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
       cssSize.height = surface.height
       insets         = readSafeAreaInsets()
       overlayDirty   = true
+      deck.invalidate()
     }
   }
 
@@ -380,17 +410,11 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
       frame,
       crashUntil,
       copyUntil,
-      isTouch,
-      controls,
-      stickX,
-      stickY,
       insets,
       cssSize,
-      held:         heldActions,
       modalPhase:   modalReveal.value(frame.elapsed),
       modalData,
       modalClosing: modalReveal.closing(),
-      touchPhase:   touchReveal.value(frame.elapsed),
       touchDebug:   forced === '1' ? touchDebugLine(frame) : null,
     })
     overlayDirty = false
@@ -453,11 +477,24 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
       lastData    = source.read()
       panelDrawAt = frame.elapsed
       expireToasts(lastData, frame.elapsed)
-      drawPanels(lastData, frame)
-      overlayDirty = true
+
+      const key = overlayKey(lastData)
+      if (key !== lastOverlayKey) {
+        lastOverlayKey = key
+        overlayDirty   = true
+      }
     }
 
+    // Every frame, but at most two facets a frame and each no faster than the
+    // panel period — see `scheduleHudPanels`. While the visor is still
+    // scanning in, all of them, so it assembles in one piece.
+    scheduleHudPanels(revealPhase < 1 ? Number.POSITIVE_INFINITY : PANELS_PER_FRAME, panelPeriod)
+    drawPanels(lastData, frame)
+
     const blocking = isHudBlockingOverlay(lastData)
+    // A card that needs clicking cannot be clicked through a captured mouse.
+    if (blocking && !lastBlocking && document.pointerLockElement === canvas)
+      document.exitPointerLock()
     lastBlocking   = blocking
     modalReveal.set(blocking, frame.elapsed)
     if (blocking)
@@ -495,23 +532,43 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
     // `isTouch` would pin the largest surface in the HUD at 30 Hz on every
     // machine forever. What earns the faster cadence is a thumb actually on it,
     // which `activePointers` already reports.
-    const overlayLive = activePointers.size > 0 || transitioning ||
+    const overlayLive = transitioning ||
       modalReveal.live(frame.elapsed) ||
       frame.elapsed < crashUntil ||
       lastData.mode === 'race' && lastData.race.status === 'countdown' ||
-      lastData.mode === 'battle' && lastData.battle.toasts.length > 0
+      lastData.mode === 'battle' && lastData.battle.toasts.length > 0 ||
+      lastData.mode === 'battle' && lastData.battle.myHealth / Math.max(1, lastData.battle.maxHealth) < 0.3
     const period = Math.max(overlayLive ? HUD_OVERLAY_PERIOD : panelPeriod, drawPeriod)
 
     // `overlayDirty` says the surface is WRONG, not that redrawing it is free —
     // and things set it every frame (an arriving visor, any layer
     // mid-transition). Without the second clause it short-circuits the cadence
     // outright, and the tier's budget stops meaning anything for the duration.
-    const due = overlayDirty || frame.elapsed - overlayDrawAt >= period
+    const due = overlayDirty || overlayLive && frame.elapsed - overlayDrawAt >= period
     if (due && frame.elapsed - overlayDrawAt >= drawPeriod) {
       overlayDrawAt = frame.elapsed
       syncSurface(frame)
       drawOverlay(lastData, frame)
     }
+
+    // Both per-frame layers: where they are changes every frame, what they
+    // show only when it changes.
+    const aspect = viewAspect(frame.camera)
+    sight.update(lastData, frame, aspect)
+    if (isTouch)
+      deck.update({
+        camera:  frame.camera,
+        aspect,
+        elapsed: frame.elapsed,
+        mode:    lastData.mode,
+        insets,
+        cssSize,
+        controls,
+        held:    heldActions,
+        stickX,
+        stickY,
+        phase:   touchReveal.value(frame.elapsed),
+      })
   }
 
   type CanvasPointReturnType = { x: number; y: number }
@@ -528,7 +585,14 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
     if (hidden || !lastFrame)
       return null
 
-    const point      = canvasPoint(clientX, clientY)
+    const point = canvasPoint(clientX, clientY)
+
+    // The deck first: no card, popover or error sheet may take the controls
+    // away, so a stick under a finish card is still a stick.
+    const deckHit = isTouch ? deck.panel.hitTest(point.x, point.y) : null
+    if (deckHit)
+      return deckHit
+
     const overlayHit = overlay.hitTest(point.x, point.y)
     if (overlayHit)
       return overlayHit
@@ -553,9 +617,10 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
     if (!lastFrame)
       return
 
-    const hit       = hitAt(clientX, clientY)
-    const nextId    = hit?.id ?? null
-    overlay.hovered = hit && overlay.regions.includes(hit) ? nextId : null
+    const hit          = hitAt(clientX, clientY)
+    const nextId       = hit?.id ?? null
+    overlay.hovered    = hit && overlay.regions.includes(hit) ? nextId : null
+    deck.panel.hovered = hit && deck.panel.regions.includes(hit) ? nextId : null
     for (const panel of Object.values(panels))
       panel.hovered = hit && panel.regions.includes(hit) ? nextId : null
     canvas.style.cursor = hit ? 'pointer' : 'crosshair'
@@ -610,7 +675,10 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
    * (`vehicle-step.ts`), which is what a drag device does.
    */
   function syncTouchAxes (): void {
-    const railStrafe = (heldActions.has('strafe-right') ? -1 : 0) +
+    // Positive is to the pilot's right on every path — keys, rail and stick.
+    //  The rail used to be negated to match the keys while the stick was not,
+    //  so the two touch strafes pushed opposite ways.
+    const railStrafe = (heldActions.has('strafe-right') ? 1 : 0) -
       (heldActions.has('strafe-left') ? 1 : 0)
     const stickStrafe = shapeHudAxis(stickX.move)
     const forward     = shapeHudAxis(-stickY.move)
@@ -626,7 +694,6 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
     const stickBrake = forward < -HUD_AXIS_GATE
     controls.reverse = stickBrake
     controls.brake   = stickBrake || heldActions.has('airbrake')
-    overlayDirty     = true
   }
 
   function activate (region: HudRegion): void {
@@ -681,7 +748,6 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
 
     controls.steer = shapeHudAxis(x)
     controls.pitch = shapeHudAxis(-y)
-    overlayDirty   = true
   }
 
   /**
@@ -693,17 +759,9 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
    * before it ran out of pad.
    */
   function stickTravelCss (): number {
-    if (!lastData)
+    const layout = deck.layout()
+    if (!layout)
       return 60
-
-    const layout = touchLayout({
-      width:     overlay.canvas.width,
-      height:    overlay.canvas.height,
-      cssWidth:  cssSize.width,
-      cssHeight: cssSize.height,
-      insets,
-      mode:      lastData.mode,
-    })
     return Math.max(24, layout.stickTravel / Math.max(layout.pixelScale, 1e-3))
   }
 
@@ -735,6 +793,11 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
   }
 
   const onPointerDown = (event: PointerEvent) => {
+    // A captured mouse has no position on the HUD — its clientX is frozen
+    // wherever the capture began — so its clicks belong to the game.
+    if (document.pointerLockElement === canvas)
+      return
+
     const region = hitAt(event.clientX, event.clientY)
     if (!region) {
       // A finger on empty canvas is a gesture, not a miss. Mouse and pen fall
@@ -766,6 +829,9 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
   }
 
   const onPointerMove = (event: PointerEvent) => {
+    if (document.pointerLockElement === canvas)
+      return
+
     const active = activePointers.get(event.pointerId)
     if (!active) {
       if (event.pointerType === 'touch') {
@@ -854,7 +920,8 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
   const onPointerLeave  = () => {
     const hadHover  = hoverId !== null
     hoverId         = null
-    overlay.hovered = null
+    overlay.hovered    = null
+    deck.panel.hovered = null
     for (const panel of Object.values(panels))
       panel.hovered = null
     canvas.style.cursor = 'crosshair'
@@ -876,6 +943,7 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
 
     dispose () {
       disposed = true
+      unsubscribeTouch()
       canvas.removeEventListener('pointerdown', onPointerDown)
       canvas.removeEventListener('pointermove', onPointerMove)
       canvas.removeEventListener('pointerup', onPointerUp)
@@ -909,6 +977,8 @@ export function createSpatialHud ({ canvas, controls, source, forcedTouch = null
       overlay.dispose()
       overlayGeometry.dispose()
       overlayMaterial.dispose()
+      deck.dispose()
+      sight.dispose()
 
       disposeHudPanelMesh(panelMesh)
       object.removeFromParent()

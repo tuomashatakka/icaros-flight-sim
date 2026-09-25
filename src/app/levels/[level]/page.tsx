@@ -3,6 +3,7 @@
 import { Suspense, use, useCallback, useMemo } from 'react'
 import { useSearchParams } from 'next/navigation'
 import { SceneCanvas } from 'Ʊscene-canvas'
+import { GameChrome } from 'Ʊgame-chrome'
 import { compileRace } from 'Ʊeditor/compile'
 import { DRAFT_LEVEL, readDraft } from 'Ʊeditor/draft-handoff'
 import { mountRace } from 'Ɠrace'
@@ -69,7 +70,10 @@ function RaceScene ({ level }: RaceSceneProps) {
     [ level, search, draft ]
   )
 
-  return <SceneCanvas mount={ mount } fallback={ false } />
+  return <>
+    <SceneCanvas mount={ mount } fallback={ false } />
+    <GameChrome />
+  </>
 }
 
 export default function RacePage ({ params }: RacePageProps) {

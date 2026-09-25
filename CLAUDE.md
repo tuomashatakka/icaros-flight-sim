@@ -75,6 +75,12 @@ what a summary field means. Invoke it when debugging runtime behaviour.
   the FIRST frame forever. Whether the resize lands before or after that upload
   is a race a dev build wins and a production build loses, which is how the
   touch controls came to be missing on the deployed build and nowhere else.
+- **Body +X is PORT, and `strafe > 0` is to starboard** — the same sense as
+  `steer > 0`. Controls are `A/D` turn, `Q/E` strafe; the lateral nozzles sit
+  on the COM station so a strafe is a sidestep, not a yaw.
+- **A pixel-ratio change must reach the composer too.** `EffectComposer`
+  keeps its own ratio from construction; `setPixelRatio` in `scenes/base.ts`
+  updates both. Player settings live in `settingsStore` and apply live.
 - **Physics debug layers are ON by default in dev**, with number keys 1-9 to
   toggle and 0 to clear. `?overlay=` (even empty) overrides the default.
 - **Dev code must not ship.** After `bun run build`,

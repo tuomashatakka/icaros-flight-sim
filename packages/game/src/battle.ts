@@ -155,15 +155,29 @@ export async function mountBattle (
   const sightHardpoints: THREE.Vector3[] = []
   const hitCandidates: HitCandidate[]    = []
 
-  function readSight (): HudSight | null {
+  function readSight (position: THREE.Vector3, quaternion: THREE.Quaternion, refresh: boolean): HudSight | null {
     const chassis = prediction?.rig.chassis
     if (!chassis || !world || !sightRay)
       return null
 
-    const q = chassis.rotation()
-    sightRotation.set(q.x, q.y, q.z, q.w)
-    muzzleFrom(sight.origin, chassis.translation(), sightRotation)
+    // From the pose the ship is DRAWN at — interpolated, with the prediction's
+    // render offset in it — not the body's. The body runs up to a tick ahead
+    // of what is on screen and jumps on a correction; the pipper has to sit on
+    // the guns the player is looking at.
+    sightRotation.copy(quaternion)
+    muzzleFrom(sight.origin, position, sightRotation)
     aimFrom(sight.direction, sightRotation, prediction!.aimNormalised * AIM_MAX)
+
+    // Between ray-marches the reach is held and re-projected along the aim as
+    // it is NOW, so the marks move with the guns every frame.
+    if (!refresh) {
+      sight.impact = Number.isFinite(sight.range)
+        ? sightImpact.copy(sight.direction).multiplyScalar(sight.range)
+          .add(sight.origin)
+        : null
+      sight.hardpoints = shipVisualRef.current?.muzzleWorld(sightHardpoints) ?? sightHardpoints
+      return sight
+    }
 
     const store  = battleStore.get()
     const weapon = store.primary ? WEAPONS[store.primary.id] : WEAPONS[DEFAULT_LOADOUT.primary]
@@ -233,13 +247,17 @@ export async function mountBattle (
   // `activeControls()` rather than a captured reference: these listeners are
   // installed before `mountBaseScene` has built the control surface, and they
   // only ever run long after it has.
+  //
+  // With the mouse captured there is no drag to protect, so the left button is
+  // the gun, as anyone reaching for a mouse in a shooter expects. The click
+  // that TAKES the capture is not a shot: the lock lands after this handler.
   const setTrigger = (e: PointerEvent, down: boolean) => {
     const c = activeControls()
     if (!c)
       return
     if (e.button === 2)
       c.fireSecondary = down
-    else if (e.button === 1)
+    else if (e.button === 1 || e.button === 0 && document.pointerLockElement === canvas)
       c.fire = down
   }
   const onPointerDown = (e: PointerEvent) => setTrigger(e, true)
@@ -372,7 +390,7 @@ export async function mountBattle (
       scenery = buildArenaVisual(ctx, arena)
     },
     post:       post.options,
-    onQuality:  level => post.setQuality(level),
+    onPost:     budget => post.setBudget(budget),
     onPostView: view => {
       post.setFocus(view.focusDistance)
       post.setMotion(view.speed, view.accel)

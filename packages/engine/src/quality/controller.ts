@@ -170,7 +170,13 @@ export function createQualityController (options: {
       const emergency = sample.p99Ms > 45 || sample.longFrameFrequency > 0.2
       const over      = sample.p95Ms > 20 || sample.gpuMs != null && sample.gpuMs > 18 || sample.longFrameFrequency > 0.08
       const cool      = at - lastTransitionAt >= COOLDOWN_MS
-      if (over && cool && stage < QUALITY_STAGES.length - 1) {
+      // A fixed preset is the player's choice and only an emergency overrides
+      // it; `auto` is the one that trades detail for frame time on its own.
+      // Every step down that touches resolution reallocates the whole post
+      // chain, so a preset that also walked the ladder was a hitch every
+      // cooldown on a machine that was merely a little over budget.
+      const adaptive  = preference === 'auto'
+      if (over && cool && (adaptive || emergency) && stage < QUALITY_STAGES.length - 1) {
         move(stage + 1, 'frame-budget', emergency)
         return
       }
@@ -193,13 +199,15 @@ export function createQualityController (options: {
     },
 
     setPreference (next) {
+      if (next === preference)
+        return
       preference = next
 
-      const requested = preferenceStage(next)
-      // Preferences take effect immediately only when they are safer. Upgrades
-      // still earn their way back through the stable-window path.
-      if (requested > stage)
-        move(requested, 'frame-budget', false)
+      // A fixed preset is applied as asked, both ways — it is a setting, not a
+      // suggestion. `auto` starts from the hardware guess and adapts from there.
+      const requested = preferenceStage(next === 'auto' ? startup : next)
+      if (requested !== stage)
+        move(requested, requested > stage ? 'frame-budget' : 'stable', false)
     },
 
     snapshot: () => ({

@@ -120,22 +120,46 @@ const CLUSTER_MAX_CSS = 300
 const PORTRAIT_ASPECT = 1.1
 
 /**
- * Whether this session gets the touch rail. It does, unless it says otherwise.
+ * Whether this session gets the touch controls.
  *
- * There is no device sniff any more. The rail used to be gated on `pointer:
- * coarse` or a non-zero `maxTouchPoints`, which meant the controls did not
- * exist at all on a desktop, could not be found by anyone looking for them,
- * and silently disappeared on every machine the sniff read wrong — a
- * convertible reports whichever mode it was last used in, and an iPad in
- * desktop mode reports `fine`. A rail that is sometimes absent is worse than
- * one that is always there: on a mouse it is a set of clickable plates next to
- * the sticks, and it costs nothing to ignore.
+ * `forced` is the `?touch` query parameter, honoured in every build and above
+ * everything: `'0'` turns them off, `'1'` on. Then the player's setting; its
+ * `auto` asks whether the device can be touched at all.
  *
- * `forced` is the `?touch` query parameter, honoured in every build: `'0'`
- * turns the rail off, anything else (including absent) leaves it on.
+ * The rail used to be drawn for everyone, desktop included, because an earlier
+ * sniff on `pointer: coarse` read convertibles and desktop-mode iPads wrong.
+ * `hasTouch` is `maxTouchPoints`, which both of those report correctly, and a
+ * settings page now covers any machine that still guesses wrong — so a mouse
+ * and keyboard no longer pay for, or look through, a set of plates they
+ * cannot use.
  */
-export function wantsTouchControls (forced: string | null): boolean {
-  return forced !== '0'
+export function wantsTouchControls (
+  forced: string | null,
+  setting: 'auto' | 'on' | 'off' = 'on',
+  hasTouch = true
+): boolean {
+  if (forced === '0')
+    return false
+  if (forced === '1')
+    return true
+  if (setting !== 'auto')
+    return setting === 'on'
+  return hasTouch
+}
+
+/**
+ * Whether the device has a touchscreen at all.
+ *
+ * `maxTouchPoints`, not `pointer: coarse`: the media query reports whichever
+ * input a convertible was last used with and an iPad in desktop mode reports
+ * `fine`, but both still count their touch points. `any-pointer` catches the
+ * rest. Only consulted for the `auto` setting — `on`, `off` and `?touch=`
+ * always win.
+ */
+export function deviceHasTouch (): boolean {
+  if (typeof navigator !== 'undefined' && navigator.maxTouchPoints > 0)
+    return true
+  return typeof window !== 'undefined' && window.matchMedia?.('(any-pointer: coarse)').matches === true
 }
 
 type ClusterInput = {

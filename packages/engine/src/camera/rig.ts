@@ -34,7 +34,85 @@ const PAN_HALF_LIFE = 0.18
  */
 const HUD_LEAD = 0.6
 
+/**
+ * Felt motion: how the camera answers what the hull is doing.
+ *
+ * A camera bolted at a fixed offset reports the ship's position and nothing
+ * about its effort — full boost and a coast look the same, and a wall is a
+ * number on a gauge. These drive a damped spring in the ship's frame toward
+ * `-accel * gain`, so the camera sags back under thrust, lurches in on the
+ * brakes, swings out through a corner and dips on a landing, and overshoots a
+ * little on the way back, which is what gives it weight.
+ *
+ * Gains are metres of offset per m/s^2. Full thrust is ~16 m/s^2 and boost
+ * roughly doubles it; a flat-out corner pulls ~40 laterally, so the clamps are
+ * what shape the top end.
+ */
+const MOTION = {
+  longGain:    0.035,
+  longBack:    1.5,
+  longForward: 0.8,
+  latGain:     0.022,
+  latMax:      0.9,
+  vertGain:    0.02,
+  vertMax:     0.45,
+
+  /** Spring natural frequency (rad/s) and damping ratio. Under-damped on purpose. */
+  omega: 7.5,
+  zeta:  0.58,
+
+  /** Camera roll into a corner, radians per m/s^2 of lateral load, and its cap (~2.6 deg). */
+  rollGain: 0.0014,
+  rollMax:  0.045,
+
+  /** FOV kick, degrees: at top speed, on boost, and per m/s^2 of surge. */
+  fovSpeed: 3.5,
+  fovBoost: 5,
+  fovAccel: 0.12,
+  fovMax:   9,
+
+  /**
+   * A collision: spring velocity per m/s^2 of contact acceleration, and how
+   * much shake it buys. A wall at racing speed is several hundred m/s^2.
+   */
+  kickGain:  0.012,
+  kickMax:   6,
+  joltShake: 1 / 260,
+
+  /** Seated, the head moves a fraction of what a boom-mounted camera can. */
+  seatScale: 0.18,
+} as const
+
+/** Rotational shake, radians per unit of shake. Reads far stronger than translation at chase distance. */
+const SHAKE_TILT = 0.014
+
 export type { CameraView }
+
+/**
+ * What the hull is doing, for the felt-motion spring. All in the SHIP's axes
+ * (+X port, +Y up, +Z forward). `jolt` is consumed: the caller zeroes it after
+ * handing it over.
+ */
+export type CameraMotion = {
+  accel: THREE.Vector3;
+  jolt:  THREE.Vector3;
+
+  /** Ground speed over top speed, 0..1. */
+  speed:    number;
+  boosting: boolean;
+}
+
+export type CameraRigOptions = {
+
+  /** Chase field of view, degrees. */
+  chaseFov?: number;
+
+  /** Impact shake multiplier, 0 = none. */
+  shakeScale?: number;
+
+  /** Felt-motion multiplier, 0 = a rigid boom. */
+  motionScale?: number;
+}
 
 /**
  * A camera preset. Everything that differs between the two views lives here, so
@@ -117,6 +195,12 @@ const COCKPIT: Station = {
 }
 
 const _fwd       = new THREE.Vector3()
+const _dynWorld  = new THREE.Vector3()
+const _kick      = new THREE.Vector3()
+const _rollQuat  = new THREE.Quaternion()
+const _tiltEuler = new THREE.Euler(0, 0, 0, 'YXZ')
+const _tiltQuat  = new THREE.Quaternion()
+const _viewAxis  = new THREE.Vector3(0, 0, 1)
 const _yawQuat   = new THREE.Quaternion()
 const _blendQuat = new THREE.Quaternion()
 const _hullUp    = new THREE.Vector3()
@@ -165,7 +249,10 @@ export type CameraRig = {
   hudLead(target: THREE.Quaternion): THREE.Quaternion;
 
   /** Advance the rig. Call from the RENDER phase with the real delta and the interpolated pose. */
-  drive(realDelta: number, position: THREE.Vector3, quaternion: THREE.Quaternion, pan: CameraPan): void;
+  drive(realDelta: number, position: THREE.Vector3, quaternion: THREE.Quaternion, pan: CameraPan, motion?: CameraMotion): void;
+
+  /** Player settings: chase FOV, shake and felt-motion strength. */
+  configure(options: CameraRigOptions): void;
 
   /** Cut to the target immediately — spawn, respawn, teleport. */
   requestSnap(): void;
@@ -226,11 +313,94 @@ export function createCameraRig (rng: SeededRng, far = 400): CameraRig {
   let panY = 0
   let aim  = 0
 
-  /** Last applied shake, subtracted before the next update so it never feeds back. */
+  /** Last applied shake + felt-motion offset, subtracted before the next update so it never feeds back. */
   const lastShake     = new THREE.Vector3()
+
+  // The felt-motion spring: an offset in the ship's frame and its velocity,
+  //  plus a roll and a FOV delta on springs of their own.
+  const dynOffset   = new THREE.Vector3()
+  const dynVelocity = new THREE.Vector3()
+  let roll         = 0
+  let rollVelocity = 0
+  let fovKick      = 0
+  let fovVelocity  = 0
+
+  let chaseFov    = CHASE.fov
+  let shakeScale  = 1
+  let motionScale = 1
   const hudQuaternion = new THREE.Quaternion()
   const hudLead       = new THREE.Quaternion()
   let shakeAmount = 0
+
+  /**
+   * Advance the felt-motion springs by one rendered frame.
+   *
+   * Semi-implicit Euler in fixed sub-steps: the render delta is variable and
+   * an under-damped spring stepped at 30 ms goes unstable long before one
+   * stepped at 8 ms does.
+   */
+  function stepMotion (dt: number, motion: CameraMotion | undefined, seated: number): void {
+    const scale = motionScale * (reducedMotion() ? 0.3 : 1)
+
+    let tx         = 0
+    let ty         = 0
+    let tz         = 0
+    let targetRoll = 0
+    let targetFov  = 0
+
+    if (motion) {
+      const a = motion.accel
+      tx = THREE.MathUtils.clamp(-a.x * MOTION.latGain, -MOTION.latMax, MOTION.latMax) * scale
+      ty = THREE.MathUtils.clamp(-a.y * MOTION.vertGain, -MOTION.vertMax, MOTION.vertMax) * scale
+      tz = THREE.MathUtils.clamp(-a.z * MOTION.longGain, -MOTION.longBack, MOTION.longForward) * scale
+
+      // A corner to starboard is lateral load toward -X; banking the view
+      // into it is a negative roll about the camera's own view axis.
+      targetRoll = THREE.MathUtils.clamp(a.x * MOTION.rollGain, -MOTION.rollMax, MOTION.rollMax) * scale
+      targetFov  = Math.min(MOTION.fovMax, (
+        motion.speed * MOTION.fovSpeed +
+        (motion.boosting ? MOTION.fovBoost : 0) +
+        THREE.MathUtils.clamp(a.z * MOTION.fovAccel, -2, 4)
+      ) * Math.min(1, scale)) * (1 - seated * 0.5)
+
+      // A collision is an impulse, not a target: it throws the spring away
+      // from the hit and lets it ring back.
+      const jolt = motion.jolt
+      if (jolt.lengthSq() > 0) {
+        const magnitude = jolt.length()
+        _kick.copy(jolt).multiplyScalar(-MOTION.kickGain * scale)
+        if (_kick.length() > MOTION.kickMax)
+          _kick.setLength(MOTION.kickMax)
+        dynVelocity.add(_kick)
+        if (!reducedMotion())
+          shakeAmount = Math.max(shakeAmount, Math.min(1.2, magnitude * MOTION.joltShake) * shakeScale)
+      }
+    }
+
+    const k     = MOTION.omega * MOTION.omega
+    const c     = 2 * MOTION.zeta * MOTION.omega
+    const steps = Math.max(1, Math.ceil(dt / (1 / 120)))
+    const h     = dt / steps
+    for (let i = 0; i < steps; i++) {
+      dynVelocity.x += (k * (tx - dynOffset.x) - c * dynVelocity.x) * h
+      dynVelocity.y += (k * (ty - dynOffset.y) - c * dynVelocity.y) * h
+      dynVelocity.z += (k * (tz - dynOffset.z) - c * dynVelocity.z) * h
+      dynOffset.addScaledVector(dynVelocity, h)
+
+      rollVelocity += (k * (targetRoll - roll) - c * rollVelocity) * h
+      roll         += rollVelocity * h
+
+      // The FOV spring is stiffer and critically damped: an overshooting lens
+      // reads as a zoom wobble rather than as weight.
+      fovVelocity += (40 * (targetFov - fovKick) - 2 * Math.sqrt(40) * fovVelocity) * h
+      fovKick     += fovVelocity * h
+    }
+
+    // Keep a runaway (a solver blow-up, a teleport the caller forgot to snap)
+    // from flinging the camera off into the scenery.
+    if (dynOffset.lengthSq() > 9)
+      dynOffset.setLength(3)
+  }
 
   return {
     camera: rig.camera,
@@ -251,7 +421,16 @@ export function createCameraRig (rng: SeededRng, far = 400): CameraRig {
     shake (amount) {
       if (reducedMotion())
         return
-      shakeAmount = Math.max(shakeAmount, amount)
+      shakeAmount = Math.max(shakeAmount, amount * shakeScale)
+    },
+
+    configure (options) {
+      if (options.chaseFov !== undefined && Number.isFinite(options.chaseFov))
+        chaseFov = options.chaseFov
+      if (options.shakeScale !== undefined)
+        shakeScale = Math.max(0, options.shakeScale)
+      if (options.motionScale !== undefined)
+        motionScale = Math.max(0, options.motionScale)
     },
 
     toggleView () {
@@ -272,7 +451,7 @@ export function createCameraRig (rng: SeededRng, far = 400): CameraRig {
       return smoothstep(raw)
     },
 
-    drive (realDelta, position, quaternion, pan) {
+    drive (realDelta, position, quaternion, pan, motion) {
       // --- transition ------------------------------------------------------
       const step = realDelta / TRANSITION_S
       if (raw < target)
@@ -322,7 +501,11 @@ export function createCameraRig (rng: SeededRng, far = 400): CameraRig {
       _station.lookDamping     = lerp(CHASE.lookDamping, COCKPIT.lookDamping, e)
       rig.aim(_station)
 
-      const fov = lerp(CHASE.fov, COCKPIT.fov, e)
+      // --- felt motion ------------------------------------------------------
+      // Integrated before the FOV is set, so the kick lands on this frame.
+      stepMotion(realDelta, motion, e)
+
+      const fov = lerp(chaseFov, COCKPIT.fov, e) + fovKick
       if (Math.abs(rig.camera.fov - fov) > 1e-4) {
         rig.camera.fov = fov
         rig.camera.updateProjectionMatrix()
@@ -337,19 +520,25 @@ export function createCameraRig (rng: SeededRng, far = 400): CameraRig {
       if (snapRequested) {
         rig.snap(position, _blendQuat)
         snapRequested = false
+        dynOffset.set(0, 0, 0)
+        dynVelocity.set(0, 0, 0)
+        roll         = 0
+        rollVelocity = 0
       }
       else
         rig.update(position, _blendQuat, realDelta)
 
-      const shakeScale = lerp(CHASE.shakeScale, COCKPIT.shakeScale, e)
+      const stationShake = lerp(CHASE.shakeScale, COCKPIT.shakeScale, e)
+      let tilt           = 0
 
       if (shakeAmount > 0.001) {
-        const magnitude = shakeAmount * shakeScale
+        const magnitude = shakeAmount * stationShake
         _shake.set(
           (shakeRng.next() - 0.5) * magnitude * 2,
           (shakeRng.next() - 0.5) * magnitude * 2,
           (shakeRng.next() - 0.5) * magnitude * 2
         )
+        tilt = magnitude
         shakeAmount *= Math.exp(-realDelta * 6)
       }
       else {
@@ -357,8 +546,33 @@ export function createCameraRig (rng: SeededRng, far = 400): CameraRig {
         shakeAmount = 0
       }
 
+      // The spring's offset, taken from the ship's frame (yaw-only in chase,
+      // the whole hull seated) into the world. Seated it is scaled right down:
+      // a head in a seat moves centimetres, not the metre a boom can.
+      const seat = lerp(1, MOTION.seatScale, e)
+      _dynWorld.copy(dynOffset).multiplyScalar(seat)
+        .applyQuaternion(_blendQuat)
+      _shake.add(_dynWorld)
+
       rig.camera.position.add(_shake)
       lastShake.copy(_shake)
+
+      // Roll into the corner, about the view axis, before the HUD anchor is
+      // read — so the visor stays square to the frame instead of counter-
+      // rotating against it.
+      if (Math.abs(roll) > 1e-5) {
+        _rollQuat.setFromAxisAngle(_viewAxis, roll)
+        rig.camera.quaternion.multiply(_rollQuat)
+      }
+      if (tilt > 0) {
+        _tiltEuler.set(
+          (shakeRng.next() - 0.5) * 2 * tilt * SHAKE_TILT,
+          (shakeRng.next() - 0.5) * 2 * tilt * SHAKE_TILT,
+          0
+        )
+        _tiltQuat.setFromEuler(_tiltEuler)
+        rig.camera.quaternion.multiply(_tiltQuat)
+      }
 
       // Save the ship-following orientation before pointer-look. The camera is
       // free to pan across the cockpit after this, while the visor stays bolted

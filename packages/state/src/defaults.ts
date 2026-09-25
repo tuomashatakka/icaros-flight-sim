@@ -8,7 +8,7 @@ import { DEFAULT_CONFIGS, SHIP_IDS } from 'Ȼship/registry'
 import { vehicleConfig } from 'Φconfig'
 import type {
   BattleSessionState, CameraView, GameplayState, HangarViewState, LockOnState, NetHealth,
-  RaceHudState, RaceState, RaceTimers, ShipConfig, ShipId, SpeedLevel,
+  RaceHudState, RaceState, RaceTimers, SettingsState, ShipConfig, ShipId, SpeedLevel,
 } from './types'
 
 
@@ -173,3 +173,35 @@ export const INITIAL_HANGAR_VIEW: HangarViewState = {
   flightTilt: true,
   engines:    true,
 }
+
+// --- settings -----------------------------------------------------------------
+
+export const SETTINGS_STORE_KEY = 'crash-velocity:settings'
+
+export const SETTINGS_STORE_VERSION = 1
+
+export const DEFAULT_SETTINGS: SettingsState = {
+  preset:           'auto',
+  resolution:       'auto',
+  frameCap:         0,
+  antialias:        'auto',
+  shadows:          'auto',
+  postEffects:      true,
+  depthOfField:     true,
+  motionBlur:       true,
+  fov:              40,
+  cameraShake:      1,
+  cameraMotion:     1,
+  pointerLock:      true,
+  mouseSensitivity: 1,
+  invertMouseY:     false,
+  touchControls:    'auto',
+}
+
+/** The range the settings page offers, and the clamp a stale save goes through. */
+export const SETTINGS_LIMITS = {
+  fov:              { min: 30, max: 75, step: 1 },
+  cameraShake:      { min: 0, max: 1.5, step: 0.05 },
+  cameraMotion:     { min: 0, max: 1.5, step: 0.05 },
+  mouseSensitivity: { min: 0.2, max: 3, step: 0.05 },
+} as const

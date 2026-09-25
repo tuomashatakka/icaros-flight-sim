@@ -268,6 +268,77 @@ export type HangarViewState = {
 
 export type HangarViewToggle = keyof HangarViewState
 
+// --- player settings ----------------------------------------------------------
+
+/**
+ * The graphics budget the player asked for.
+ *
+ * `auto` is the adaptive ladder in `Σquality/controller`: it starts from a
+ * hardware guess and walks down (and slowly back up) against measured frame
+ * times. The three fixed presets pin a stage and never move off it — a player
+ * who chose "high" is told the truth about what "high" costs rather than
+ * having it quietly taken away.
+ */
+export type GraphicsPreset = 'auto' | 'low' | 'medium' | 'high'
+
+/**
+ * The drawing buffer's height, in device pixels, or a policy for choosing one.
+ *
+ * `auto` renders at up to 1.5x the CSS size (and never past 1440 lines), which
+ * on a retina laptop is roughly half the pixels of `native` for a picture that
+ * the post chain's own AA pass makes hard to tell apart. `native` is the
+ * device's full ratio, capped at 2. A number is an absolute target height —
+ * what the word "resolution" means to most people — and the width follows the
+ * window's aspect.
+ */
+export type ResolutionSetting = 'auto' | 'native' | '2160' | '1440' | '1080' | '900' | '720' | '540'
+
+/** Frames per second the loop may draw; 0 = as fast as the display refreshes. */
+export type FrameCap = 0 | 30 | 60 | 120
+
+export type AntialiasSetting = 'auto' | 'smaa' | 'fxaa' | 'off'
+
+export type ShadowSetting = 'auto' | 'off' | 'low' | 'high'
+
+/** Whether the on-screen thumb controls are drawn. `auto` asks the device. */
+export type TouchControlsSetting = 'auto' | 'on' | 'off'
+
+export type SettingsState = {
+
+  // --- graphics ---
+  preset:     GraphicsPreset;
+  resolution: ResolutionSetting;
+  frameCap:   FrameCap;
+  antialias:  AntialiasSetting;
+  shadows:    ShadowSetting;
+
+  /** The lens chain: bloom, grade, aberration. Off draws the scene straight to the screen. */
+  postEffects:  boolean;
+  depthOfField: boolean;
+
+  /** Speed streaks and the acceleration smear. */
+  motionBlur: boolean;
+
+  /** Chase camera field of view, degrees. The cockpit keeps its own. */
+  fov: number;
+
+  // --- camera ---
+
+  /** Impact shake, 0 = none, 1 = as designed. */
+  cameraShake: number;
+
+  /** How hard the camera answers thrust, braking and turns, 0..1.5. */
+  cameraMotion: number;
+
+  // --- controls ---
+
+  /** Capture the mouse on click, so it steers the ship instead of a cursor. */
+  pointerLock:      boolean;
+  mouseSensitivity: number;
+  invertMouseY:     boolean;
+  touchControls:    TouchControlsSetting;
+}
+
 // --- engine app state (the race `App<RaceState>` store) -----------------------
 
 /**
